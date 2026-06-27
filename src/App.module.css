@@ -1,0 +1,141 @@
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 10px 16px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.headerNav {
+  flex: 0 0 auto;
+}
+
+.headerSpacer {
+  flex: 1;
+  min-width: 0;
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.reportsBtn {
+  flex-shrink: 0;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  transition: all var(--transition);
+}
+
+.reportsBtn:hover {
+  color: var(--text-primary);
+  border-color: var(--level1-border);
+  background: rgba(124, 111, 201, 0.08);
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  padding: 4px 8px;
+  margin: -4px -8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.logo:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.logoActive {
+  background: var(--level1-bg-active);
+}
+
+.logoActive:hover {
+  background: var(--level1-bg-active);
+}
+
+.logoIcon {
+  font-size: 22px;
+  color: var(--level1-accent);
+}
+
+.logoText {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.logoActive .logoText {
+  color: var(--level1-text);
+}
+
+.addTaskBtn {
+  margin-left: auto;
+  padding: 8px 16px;
+  background: var(--level1-bg-active);
+  color: var(--level1-text);
+  border: 1px solid var(--level1-border);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 500;
+  transition: background var(--transition);
+  white-space: nowrap;
+}
+
+.addTaskBtn:hover {
+  background: var(--level1-border);
+}
+
+.main {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.loadingScreen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 32px;
+  text-align: center;
+  background: var(--bg-primary);
+}
+
+.loadingText {
+  margin: 0;
+  font-size: 15px;
+  color: var(--text-secondary);
+}
+
+.loadingHint {
+  margin: 0;
+  max-width: 420px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}

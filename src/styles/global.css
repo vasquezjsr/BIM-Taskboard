@@ -1,0 +1,159 @@
+/* Dark mode base */
+:root {
+  --bg-primary: #12141c;
+  --bg-secondary: #1a1d28;
+  --bg-tertiary: #222633;
+  --bg-elevated: #2a2f3f;
+  --text-primary: #e8eaf0;
+  --text-secondary: #9ba3b8;
+  --text-muted: #6b7289;
+  --border: #333848;
+  --border-subtle: #2a2f3f;
+
+  /* Level 1 — Main tabs (Clients / Employees) — Pastel Lavender */
+  --level1-bg: #3d3560;
+  --level1-bg-active: #4a4075;
+  --level1-accent: #c4b5fd;
+  --level1-text: #ede9fe;
+  --level1-border: #7c6fc9;
+
+  /* Level 2 — Client tabs — Pastel Mint */
+  --level2-bg: #1e3a35;
+  --level2-bg-active: #265049;
+  --level2-accent: #6ee7b7;
+  --level2-text: #d1fae5;
+  --level2-border: #34d399;
+
+  /* Level 3 — Project tabs — Pastel Peach */
+  --level3-bg: #3d2e22;
+  --level3-bg-active: #4d3a2b;
+  --level3-accent: #fdba74;
+  --level3-text: #ffedd5;
+  --level3-border: #fb923c;
+
+  /* Level 4 — Board type tabs — Pastel Sky */
+  --level4-bg: #1e2d3d;
+  --level4-bg-active: #253848;
+  --level4-accent: #7dd3fc;
+  --level4-text: #e0f2fe;
+  --level4-border: #38bdf8;
+
+  /* Sheet hierarchy — pastel Board Section / Trade / Level / Sub Level */
+  --sheet-grid-line: #687288;
+  --sheet-grid-line-strong: #8892a8;
+  --sheet-board-section-bg: color-mix(in srgb, #fdba74 38%, var(--bg-secondary));
+  --sheet-board-section-text: #ffedd5;
+  --sheet-board-section-border: color-mix(in srgb, #fb923c 55%, transparent);
+  --sheet-trade-group-bg: color-mix(in srgb, #6ee7b7 32%, var(--bg-secondary));
+  --sheet-trade-group-text: #d1fae5;
+  --sheet-trade-group-border: color-mix(in srgb, #34d399 50%, transparent);
+  --sheet-level-group-bg: color-mix(in srgb, #7dd3fc 36%, var(--bg-secondary));
+  --sheet-level-group-text: #e0f2fe;
+  --sheet-level-group-border: color-mix(in srgb, #38bdf8 50%, transparent);
+  --sheet-sub-level-group-bg: color-mix(in srgb, #c4b5fd 34%, var(--bg-secondary));
+  --sheet-sub-level-group-text: #ede9fe;
+  --sheet-sub-level-group-border: color-mix(in srgb, #a78bfa 50%, transparent);
+  --sheet-task-bg: var(--bg-secondary);
+  --sheet-subtask-bg: #252a38;
+
+  /* Status column accents */
+  --status-not-started: #94a3b8;
+  --status-not-ready: #fca5a5;
+  --status-ready: #fde68a;
+  --status-in-progress: #93c5fd;
+  --status-on-hold: #d8b4fe;
+  --status-complete: #86efac;
+
+  /* Detailers board — Pastel Indigo */
+  --detailer-board-bg: #2a2d4d;
+  --detailer-board-bg-active: #353865;
+  --detailer-board-accent: #a5b4fc;
+  --detailer-board-text: #e0e7ff;
+  --detailer-board-border: #818cf8;
+
+  /* Support board — Pastel Amber */
+  --support-board-bg: #3d3520;
+  --support-board-bg-active: #4d4428;
+  --support-board-accent: #fcd34d;
+  --support-board-text: #fef3c7;
+  --support-board-border: #fbbf24;
+
+  /* Legacy employee vars (used by task card badges) */
+  --employee-bg: #3d2230;
+  --employee-accent: #f9a8d4;
+
+  /* Cards */
+  --card-bg: #2a2f3f;
+  --card-hover: #323848;
+  --card-shadow: rgba(0, 0, 0, 0.3);
+
+  /* Role badges */
+  --role-detailer: #a5b4fc;
+  --role-support: #fcd34d;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --transition: 150ms ease;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  overflow: hidden;
+  height: 100vh;
+}
+
+#root {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
+}
+
+select {
+  color-scheme: dark;
+}
+
+select option {
+  background-color: var(--bg-elevated);
+  color: var(--text-primary);
+}
+
+input,
+textarea,
+select {
+  font-family: inherit;
+  font-size: 14px;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}

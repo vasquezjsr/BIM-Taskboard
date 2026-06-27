@@ -1,0 +1,384 @@
+.wrapper {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 24px 28px 16px;
+}
+
+.header {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.title {
+  margin: 0 0 6px;
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.subtitle {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.identityCard {
+  min-width: 260px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sectionLabel {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.select {
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color-scheme: dark;
+}
+
+.select:focus {
+  outline: none;
+  border-color: var(--level4-accent);
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.toolbarHint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.addTeamBtn {
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--level1-text);
+  background: var(--level1-bg-active);
+  border: 1px solid var(--level1-border);
+  border-radius: var(--radius-sm);
+}
+
+.addTeamBtn:hover {
+  background: var(--level1-border);
+}
+
+.readOnlyNote {
+  flex-shrink: 0;
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.editHint {
+  flex-shrink: 0;
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  font-size: 12px;
+  color: var(--level4-accent);
+  border: 1px solid rgba(125, 211, 252, 0.28);
+  border-radius: var(--radius-sm);
+  background: rgba(125, 211, 252, 0.08);
+}
+
+.editHint strong {
+  font-weight: 700;
+}
+
+.chartArea {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.teamDropActive {
+  outline: 2px dashed var(--level4-accent);
+  outline-offset: 4px;
+}
+
+.teamAdminRow {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.teamRenameBtn,
+.teamRemoveBtn {
+  padding: 4px 10px;
+  font-size: 11px;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+}
+
+.teamRenameBtn:hover,
+.teamRemoveBtn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+}
+
+.teamRemoveBtn {
+  color: #fca5a5;
+}
+
+.teamRenameInput {
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.board {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  overflow-x: auto;
+  padding-bottom: 8px;
+}
+
+.teamColumn {
+  flex: 0 0 280px;
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+}
+
+.teamColumnOver {
+  border-color: var(--level4-accent);
+  box-shadow: 0 0 0 1px rgba(125, 211, 252, 0.25);
+}
+
+.teamColumnUnassigned {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.teamHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.teamNameInput {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.teamNameInput:disabled {
+  opacity: 0.85;
+  cursor: default;
+}
+
+.teamNameStatic {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.removeTeamBtn {
+  padding: 4px 8px;
+  font-size: 12px;
+  color: #fca5a5;
+  border-radius: var(--radius-sm);
+}
+
+.removeTeamBtn:hover {
+  background: rgba(248, 113, 113, 0.12);
+}
+
+.memberList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 120px;
+}
+
+.memberCard {
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.memberCardDragging {
+  opacity: 0.55;
+}
+
+.memberHeader {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.memberHeaderDropTarget {
+  outline: 1px dashed var(--level4-accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+  background: rgba(125, 211, 252, 0.08);
+}
+
+.memberTitleBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.reportsToLabel {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.reportsToField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.reportsToFieldLabel {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.reportsToSelect {
+  padding: 5px 8px;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color-scheme: dark;
+}
+
+.reportsToSelect:focus {
+  outline: none;
+  border-color: var(--level4-accent);
+}
+
+.memberBranch {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.memberCardNested {
+  border-left: 2px solid rgba(129, 140, 248, 0.35);
+}
+
+.dragHandle {
+  cursor: grab;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1;
+  user-select: none;
+}
+
+.dragHandle:active {
+  cursor: grabbing;
+}
+
+.memberName {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.roleBadge {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: rgba(129, 140, 248, 0.15);
+  border: 1px solid rgba(129, 140, 248, 0.35);
+  color: #c7d2fe;
+}
+
+.roleBadgeSupport {
+  background: rgba(251, 191, 36, 0.15);
+  border-color: rgba(251, 191, 36, 0.35);
+  color: #fde68a;
+}
+
+.permissionList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.permissionToggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.permissionToggle input {
+  margin: 0;
+  accent-color: var(--level4-accent);
+}
+
+.permissionToggleDisabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.emptyTeam {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+  padding: 8px 0;
+}

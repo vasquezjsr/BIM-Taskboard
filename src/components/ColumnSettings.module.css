@@ -1,0 +1,365 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 24px;
+}
+
+.modal {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  width: 560px;
+  max-width: 100%;
+  max-height: calc(100vh - 48px);
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.header h2 {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.intro {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-muted);
+  max-width: 420px;
+}
+
+.intro strong {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.boardField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 12px;
+}
+
+.boardLabel {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.boardSelect {
+  width: 100%;
+  max-width: 280px;
+  padding: 7px 10px;
+  font-size: 13px;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.boardSelect:focus {
+  outline: none;
+  border-color: var(--level4-accent);
+}
+
+.closeBtn {
+  font-size: 24px;
+  color: var(--text-muted);
+  line-height: 1;
+  padding: 0 4px;
+  flex-shrink: 0;
+}
+
+.closeBtn:hover {
+  color: var(--text-primary);
+}
+
+.body {
+  padding: 16px 24px 20px;
+  overflow-y: auto;
+}
+
+.boardPickerHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.boardPickerActions {
+  display: flex;
+  gap: 8px;
+}
+
+.linkBtn {
+  padding: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--level4-text);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.linkBtn:hover {
+  text-decoration: underline;
+}
+
+.boardChipGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.boardChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.boardChip:hover {
+  border-color: var(--level4-border);
+  color: var(--text-primary);
+}
+
+.boardChipSelected {
+  color: var(--level4-text);
+  background: var(--level4-bg);
+  border-color: var(--level4-border);
+}
+
+.check {
+  font-size: 10px;
+  line-height: 1;
+}
+
+.multiSelect {
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 13px;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.multiSelect:focus {
+  outline: none;
+  border-color: var(--level4-accent);
+}
+
+.multiSelect option {
+  padding: 4px 6px;
+}
+
+.secondaryBtn {
+  margin-top: 8px;
+  padding: 7px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--level4-text);
+  background: var(--level4-bg);
+  border: 1px solid var(--level4-border);
+  border-radius: var(--radius-sm);
+}
+
+.secondaryBtn:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.secondaryBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.savedTemplateRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.savedTemplateRow .typeSelect {
+  flex: 1;
+}
+
+.customDivider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 4px 0 14px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.customDivider::before,
+.customDivider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.addGrid {
+  display: grid;
+  grid-template-columns: 1fr 180px;
+  gap: 10px;
+  align-items: end;
+  margin-bottom: 12px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.fieldLabel {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.fieldHint {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.3;
+}
+
+.textInput,
+.typeSelect,
+.optionsInput {
+  width: 100%;
+  padding: 7px 10px;
+  font-size: 13px;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.textInput:focus,
+.typeSelect:focus,
+.optionsInput:focus {
+  outline: none;
+  border-color: var(--level4-accent);
+}
+
+.typeSelect {
+  cursor: pointer;
+}
+
+.optionsInput {
+  resize: vertical;
+  min-height: 72px;
+  font-family: inherit;
+  line-height: 1.45;
+}
+
+.addBtn {
+  margin-top: 12px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--level4-text);
+  background: var(--level4-bg);
+  border: 1px solid var(--level4-border);
+  border-radius: var(--radius-sm);
+}
+
+.addBtn:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.addBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.alignBtnGroup {
+  display: flex;
+  gap: 6px;
+}
+
+.alignBtn {
+  flex: 1;
+  padding: 7px 10px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.alignBtn:hover {
+  border-color: var(--level4-border);
+  color: var(--text-primary);
+}
+
+.alignBtnActive {
+  color: var(--level4-text);
+  background: var(--level4-bg);
+  border-color: var(--level4-border);
+}
+
+.checkboxGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.checkboxField {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.checkboxField input {
+  flex-shrink: 0;
+}
+
+.previewText {
+  margin-top: 12px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}

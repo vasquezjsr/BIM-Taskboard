@@ -1,0 +1,1638 @@
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.sheetHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.scrollArea {
+  position: relative;
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.scrollInner {
+  min-width: 100%;
+}
+
+.sheetToolbar {
+  position: sticky;
+  top: 0;
+  left: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border);
+  min-width: 100%;
+  flex-shrink: 0;
+}
+
+.sheetToolbarBtn {
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--level4-text);
+  background: var(--level4-bg-active);
+  border: 1px solid var(--level4-border);
+  transition: all var(--transition);
+}
+
+.sheetToolbarBtn:hover {
+  background: var(--level4-bg);
+  border-color: var(--level4-accent);
+}
+
+.sheetToolbarHint {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.newTaskBtn {
+  position: sticky;
+  right: 14px;
+  margin-left: auto;
+  flex-shrink: 0;
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--level4-text);
+  background: var(--level4-bg-active);
+  border: 1px solid var(--level4-border);
+  transition: all var(--transition);
+}
+
+.newTaskBtn:hover {
+  background: var(--level4-bg);
+  border-color: var(--level4-accent);
+}
+
+.subtaskBadge {
+  flex-shrink: 0;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 5px;
+  margin-right: 6px;
+  border-radius: 4px;
+  background: var(--level2-bg-active);
+  color: var(--level2-accent);
+}
+
+.sheetActions {
+  display: flex;
+  gap: 8px;
+}
+
+.addGroupBtn {
+  padding: 5px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--level4-accent);
+  border: 1px dashed var(--level4-border);
+  background: transparent;
+  transition: all var(--transition);
+}
+
+.addGroupBtn:hover {
+  color: var(--level4-text);
+  background: var(--level4-bg);
+  border-style: solid;
+}
+
+.rowCount {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.sheetHeaderLeft {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.ghostBanner {
+  font-size: 11px;
+  color: var(--level4-accent);
+  background: var(--level4-bg);
+  padding: 3px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--level4-border);
+}
+
+.selectionHint {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.ghostRow {
+  opacity: 0.72;
+}
+
+.ghostRow .cellInput,
+.ghostRow .cellSelect,
+.ghostRow .cellDate,
+.ghostRow .durationCell .cellDate {
+  pointer-events: none;
+  color: var(--text-secondary);
+}
+
+.ghostRow :global(.assigneeCell) .trigger {
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.ghostIcon {
+  font-size: 12px;
+  color: var(--level4-accent);
+  opacity: 0.8;
+}
+
+.table {
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
+  table-layout: fixed;
+  border: 1px solid var(--sheet-grid-line-strong);
+}
+
+.table thead {
+  position: sticky;
+  top: 0;
+  z-index: 15;
+}
+
+.table thead tr {
+  background: var(--level4-bg-active);
+}
+
+.table th {
+  position: sticky;
+  top: 0;
+  background: var(--level4-bg-active);
+  color: var(--level4-text);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  text-align: left;
+  padding: 0;
+  border-right: 1px solid var(--sheet-grid-line-strong);
+  border-bottom: 2px solid var(--sheet-grid-line-strong);
+  white-space: nowrap;
+  position: relative;
+  overflow: hidden;
+}
+
+.table th:last-child {
+  border-right: 1px solid var(--sheet-grid-line-strong);
+}
+
+.thContent {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding: 10px 12px;
+  position: relative;
+}
+
+.thLabel {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.thLabelEditable {
+  cursor: text;
+  border-radius: var(--radius-sm);
+}
+
+.thLabelEditable:hover {
+  background: rgba(125, 211, 252, 0.1);
+}
+
+.thLabelInput {
+  flex: 1;
+  min-width: 0;
+  margin-right: 6px;
+  padding: 2px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--level4-text);
+  background: var(--bg-primary);
+  border: 1px solid var(--level4-border);
+  border-radius: var(--radius-sm);
+  outline: none;
+}
+
+.thLabelInput:focus {
+  border-color: var(--level4-accent);
+}
+
+.statusHeaderAction {
+  position: relative;
+  flex-shrink: 0;
+  z-index: 2;
+}
+
+.statusManageBtn {
+  font-size: 13px;
+  line-height: 1;
+  color: var(--level4-accent);
+  opacity: 0.75;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+}
+
+.statusManageBtn:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.headerDragHandle {
+  flex-shrink: 0;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--level4-accent);
+  opacity: 0.65;
+  padding: 0;
+  margin-left: -3px;
+  margin-right: 6px;
+  cursor: grab;
+  touch-action: none;
+}
+
+.headerDragHandle:active {
+  cursor: grabbing;
+}
+
+.headerDragging {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.columnManageBtn {
+  font-size: 16px;
+  line-height: 1;
+  font-weight: 600;
+  color: var(--level4-text);
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+}
+
+.columnManageBtn:hover {
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.durationCell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.customColumnCell {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 100%;
+}
+
+.durationCell .cellDate {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 6px;
+  font-size: 12px;
+}
+
+.durationSep {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.resizeHandle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 3;
+  touch-action: none;
+}
+
+.resizeHandle::after {
+  content: '';
+  position: absolute;
+  top: 20%;
+  bottom: 20%;
+  right: 2px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--level4-border);
+  opacity: 0;
+  transition: opacity var(--transition);
+}
+
+.table th:hover .resizeHandle::after,
+.resizeHandle:hover::after {
+  opacity: 1;
+}
+
+.table td {
+  padding: 0;
+  border-right: 1px solid var(--sheet-grid-line);
+  border-bottom: 1px solid var(--sheet-grid-line);
+  vertical-align: middle;
+  background: var(--bg-secondary);
+  overflow: hidden;
+}
+
+.table td:has(.sheetDragSlot),
+.table td.colDrag {
+  overflow: visible !important;
+}
+
+.table tbody tr:nth-child(even) td {
+  background-color: inherit;
+}
+
+.table tbody tr:hover td {
+  filter: brightness(1.06);
+}
+
+.colRow {
+  text-align: center !important;
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 2px 4px !important;
+  vertical-align: middle;
+  overflow: visible !important;
+  min-width: 48px;
+}
+
+.colCollapse {
+  text-align: center !important;
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 2px 0 !important;
+  vertical-align: middle;
+  width: 26px;
+  min-width: 24px;
+  max-width: 36px;
+}
+
+.colDrag {
+  text-align: center !important;
+  padding: 0 !important;
+  vertical-align: middle;
+  overflow: visible !important;
+  width: 28px !important;
+  min-width: 28px !important;
+  max-width: 28px !important;
+}
+
+.colDragInner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 28px;
+  margin: 0 auto;
+}
+
+.colDragHeader {
+  width: 28px !important;
+  min-width: 28px !important;
+  max-width: 28px !important;
+  padding: 0 !important;
+}
+
+.colDragHeader .thContent {
+  justify-content: center;
+  padding: 8px 0;
+}
+
+.colRowFlat {
+  text-align: center !important;
+  padding: 4px !important;
+  vertical-align: middle;
+}
+
+.colCollapseFlat {
+  text-align: center !important;
+  padding: 4px 2px !important;
+  vertical-align: middle;
+}
+
+.rowGutter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 28px;
+}
+
+.rowCheckbox {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  cursor: pointer;
+  accent-color: var(--level4-accent);
+}
+
+.rowCheckboxSpacer {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+}
+
+.headerSelectAllCell {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.selectionBarHost {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding: 8px 0;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-tertiary);
+}
+
+.selectionBar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--level4-border);
+  border-bottom: 1px solid var(--level4-border);
+}
+
+.selectionBarLabel {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.selectionBarField {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.selectionBarFieldLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.bulkStatusSelect {
+  width: auto;
+  min-width: 160px;
+  padding: 6px 28px 6px 10px;
+  font-size: 13px;
+  background-color: var(--bg-primary);
+}
+
+.selectionBarClear {
+  margin-left: auto;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+  border-radius: var(--radius-sm);
+}
+
+.selectionBarAction {
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--level4-text);
+  background: var(--level4-bg);
+  border-radius: var(--radius-sm);
+}
+
+.selectionBarAction:hover {
+  filter: brightness(1.08);
+}
+
+.selectionBarDelete {
+  color: #fecaca;
+  background: rgba(239, 68, 68, 0.2);
+  border: 1px solid rgba(239, 68, 68, 0.45);
+}
+
+.selectionBarDelete:hover {
+  filter: brightness(1.1);
+  background: rgba(239, 68, 68, 0.3);
+}
+
+.selectionBarClear:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.headerLocked {
+  background: color-mix(in srgb, var(--bg-elevated) 92%, var(--level4-bg));
+}
+
+.columnLockIcon {
+  flex: 0 0 auto;
+  font-size: 10px;
+  line-height: 1;
+  opacity: 0.65;
+  user-select: none;
+}
+
+.overviewSection {
+  margin-bottom: 32px;
+  padding: 0 14px;
+}
+
+.overviewSection:first-child {
+  padding-top: 14px;
+}
+
+.overviewSection:last-child {
+  margin-bottom: 0;
+  padding-bottom: 14px;
+}
+
+.overviewSectionHeading {
+  display: block;
+  margin: 0;
+  padding: 0;
+  font-size: 22px;
+  line-height: 1.3;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--level4-text);
+  text-shadow:
+    1px 0 0 var(--level4-border),
+    -1px 0 0 var(--level4-border),
+    0 1px 0 var(--level4-border),
+    0 -1px 0 var(--level4-border),
+    1px 1px 0 var(--level4-border),
+    -1px -1px 0 var(--level4-border),
+    1px -1px 0 var(--level4-border),
+    -1px 1px 0 var(--level4-border),
+    0 0 6px color-mix(in srgb, var(--level4-accent) 90%, transparent),
+    0 0 16px color-mix(in srgb, var(--level4-accent) 65%, transparent),
+    0 0 28px color-mix(in srgb, var(--level4-border) 45%, transparent);
+}
+
+.overviewSectionHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 16px;
+  padding: 8px 0 10px;
+}
+
+.overviewSectionCollapseBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: transparent;
+  color: var(--level4-text);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  outline: none;
+  text-shadow:
+    1px 0 0 var(--level4-border),
+    -1px 0 0 var(--level4-border),
+    0 1px 0 var(--level4-border),
+    0 -1px 0 var(--level4-border),
+    0 0 6px color-mix(in srgb, var(--level4-accent) 90%, transparent),
+    0 0 14px color-mix(in srgb, var(--level4-accent) 65%, transparent),
+    0 0 24px color-mix(in srgb, var(--level4-border) 45%, transparent);
+  transition: text-shadow 0.15s ease, opacity 0.15s ease;
+}
+
+.overviewSectionCollapseBtn:hover {
+  opacity: 1;
+  text-shadow:
+    1px 0 0 var(--level4-border),
+    -1px 0 0 var(--level4-border),
+    0 1px 0 var(--level4-border),
+    0 -1px 0 var(--level4-border),
+    0 0 8px color-mix(in srgb, var(--level4-accent) 95%, transparent),
+    0 0 20px color-mix(in srgb, var(--level4-accent) 75%, transparent),
+    0 0 32px color-mix(in srgb, var(--level4-border) 55%, transparent);
+}
+
+.overviewSectionCollapseBtn:focus-visible {
+  outline: 1px solid var(--level4-border);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.overviewSectionCollapsed .overviewSectionHeader {
+  margin-bottom: 0;
+  padding-bottom: 8px;
+}
+
+.contextMenuLabel {
+  padding: 6px 12px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.contextMenuDivider {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--border);
+}
+
+.rowIconGroup {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 28px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.rowIconBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  font-size: 12px;
+  line-height: 1;
+  border: none;
+  background: rgba(125, 211, 252, 0.06);
+  border-radius: 4px;
+  opacity: 1;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+  padding: 0;
+  transition: opacity var(--transition), background var(--transition);
+}
+
+.rowIconBtn:hover {
+  opacity: 1;
+  background: rgba(125, 211, 252, 0.12);
+}
+
+.rowIconActive {
+  opacity: 1;
+  background: rgba(125, 211, 252, 0.08);
+}
+
+.rowIconCommentUnread {
+  opacity: 1;
+  background: rgba(254, 202, 202, 0.35);
+  box-shadow: inset 0 0 0 1px rgba(248, 113, 113, 0.55);
+}
+
+.rowIconCommentRead {
+  opacity: 1;
+  background: rgba(186, 230, 253, 0.28);
+  box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.55);
+}
+
+.dragHandleInline {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  margin: 0 auto;
+  color: #cbd5e1;
+  cursor: grab;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 3px;
+  background: rgba(15, 23, 42, 0.5);
+  padding: 0;
+}
+
+.dragHandleInline:hover {
+  color: #f8fafc;
+  background: rgba(15, 23, 42, 0.75);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.groupRow .dragHandleInline {
+  color: #e2e8f0;
+  background: rgba(15, 23, 42, 0.4);
+}
+
+.taskRow .dragHandleInline {
+  color: #cbd5e1;
+  background: rgba(15, 23, 42, 0.55);
+}
+
+.dragGripSvg {
+  display: none;
+}
+
+.dragGripFallback {
+  display: block;
+  font-size: 13px;
+  line-height: 1;
+  letter-spacing: -0.08em;
+  user-select: none;
+}
+
+.dragHandleInline:active {
+  cursor: grabbing;
+}
+
+.flatToolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.flatToolbarBtn {
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--level4-text);
+  background: var(--level4-bg-active);
+  border: 1px solid var(--level4-border);
+  border-radius: var(--radius-sm);
+}
+
+.flatToolbarBtn:hover {
+  filter: brightness(1.08);
+}
+
+.flatToolbarHint {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.colActions {
+  padding: 0 !important;
+  text-align: center;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.colActionsHeader .thContent {
+  justify-content: center;
+}
+
+.colActionsCenter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 40px;
+  padding: 4px 8px;
+  box-sizing: border-box;
+}
+
+.branchLabel {
+  display: block;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cellInput,
+.cellSelect,
+.cellDate {
+  width: 100%;
+  padding: 6px 10px;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-size: 13px;
+  outline: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cellInput:focus-visible,
+.cellSelect:focus-visible,
+.cellDate:focus-visible {
+  background: rgba(125, 211, 252, 0.06);
+  box-shadow: inset 0 0 0 1px var(--level4-border);
+}
+
+.scrollArea button:focus:not(:focus-visible),
+.scrollArea input:focus:not(:focus-visible),
+.scrollArea select:focus:not(:focus-visible) {
+  outline: none;
+  box-shadow: none;
+}
+
+.cellSelect {
+  border-left: 3px solid transparent;
+  cursor: pointer;
+  color-scheme: dark;
+  background-color: rgba(0, 0, 0, 0.12);
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%239ba3b8' d='M3 4.5 6 7.5 9 4.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 28px;
+}
+
+.cellSelect option {
+  background-color: var(--bg-elevated);
+  color: var(--text-primary);
+  padding: 6px 8px;
+}
+
+.cellSelect option:checked {
+  background-color: var(--level4-bg-active);
+  color: var(--level4-text);
+}
+
+.cellSelect option:hover {
+  background-color: var(--bg-tertiary);
+}
+
+.cellSelect.statusSelect {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: none;
+  background-repeat: no-repeat;
+  width: 100%;
+  max-width: none;
+  height: auto;
+  min-height: 28px;
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: none;
+  border-left: none !important;
+  text-align: center;
+  text-align-last: center;
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.1);
+}
+
+.statusSelect {
+  font-weight: 600;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.statusSelect:focus,
+.statusSelect:focus-visible {
+  background-image: none;
+  box-shadow:
+    inset 0 0 0 1px rgba(15, 23, 42, 0.14),
+    0 0 0 2px rgba(125, 211, 252, 0.4);
+}
+
+.statusSelect option {
+  text-align: left;
+}
+
+.statusCellWrap {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 36px;
+  padding: 4px 6px;
+  box-sizing: border-box;
+}
+
+.cellDate {
+  color-scheme: dark;
+  font-size: 12px;
+}
+
+.boardBadge {
+  display: inline-block;
+  margin: 8px 12px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  background: var(--level4-bg);
+  color: var(--level4-accent);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: calc(100% - 24px);
+}
+
+.deleteBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  min-height: 28px;
+  font-size: 16px;
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity var(--transition), color var(--transition);
+}
+
+.table tbody tr:hover .deleteBtn {
+  opacity: 1;
+}
+
+.deleteBtn:hover {
+  color: var(--status-not-ready);
+}
+
+.empty {
+  text-align: center;
+  padding: 48px 16px !important;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.sheetWorkspacePad {
+  width: 100%;
+  min-height: min(320px, 40vh);
+  flex: 1;
+}
+
+/* Group rows — full-width band, not tied to data columns */
+.groupRow td {
+  background: var(--bg-tertiary) !important;
+  border-right: 1px solid var(--sheet-grid-line);
+  border-bottom: 1px solid var(--sheet-grid-line);
+}
+
+.groupRow:hover td {
+  background: inherit !important;
+  filter: brightness(1.06);
+}
+
+.groupRowSelected td {
+  box-shadow: inset 0 0 0 2px var(--level4-border);
+  filter: brightness(1.08);
+}
+
+.groupRow .colCollapse {
+  border-right: 1px solid var(--sheet-grid-line-strong);
+  overflow: visible;
+}
+
+.groupRow .colRow {
+  overflow: visible;
+  padding: 4px 6px !important;
+}
+
+.groupRow .colRow .rowGutter {
+  justify-content: center;
+}
+
+.taskRow .colCollapse {
+  border-right: 1px solid var(--sheet-grid-line-strong);
+}
+
+/* Board Section — pastel orange */
+.groupBoardSection td {
+  background: var(--sheet-board-section-bg) !important;
+  color: var(--sheet-board-section-text);
+}
+
+/* Level Group — pastel blue */
+.groupLevelGroup td {
+  background: var(--sheet-level-group-bg) !important;
+  color: var(--sheet-level-group-text);
+}
+
+/* Trade Group — pastel green */
+.groupTradeGroup td {
+  background: var(--sheet-trade-group-bg) !important;
+  color: var(--sheet-trade-group-text);
+}
+
+/* Sub Level Group — pastel purple */
+.groupSubLevelGroup td {
+  background: var(--sheet-sub-level-group-bg) !important;
+  color: var(--sheet-sub-level-group-text);
+}
+
+.groupDropFeedback {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+  padding: 10px 12px;
+  background: rgba(251, 191, 36, 0.12);
+  border: 1px solid rgba(251, 191, 36, 0.45);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.groupDropFeedback button {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.groupRowFull {
+  padding: 0 !important;
+  overflow: visible !important;
+}
+
+.groupRowEmpty {
+  padding: 0 !important;
+}
+
+.groupRowStatusCell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 6px 10px;
+}
+
+.groupRowStatusCell .groupProgress {
+  width: 100%;
+  max-width: 168px;
+}
+
+.groupRowStatusCell .groupProgressTrack {
+  flex: 1;
+  width: auto;
+  min-width: 100px;
+  max-width: 128px;
+}
+
+.groupRowDurationCell {
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 4px 8px;
+}
+
+.groupRowDurationCell .durationCell .cellDate {
+  pointer-events: auto;
+  cursor: pointer;
+  background: rgba(0, 0, 0, 0.18);
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.groupRowDurationCell .durationCell .cellDate:focus-visible {
+  background: rgba(0, 0, 0, 0.28);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+}
+
+.ghostRow .groupRowDurationCell .durationCell .cellDate {
+  pointer-events: auto;
+  cursor: pointer;
+  color: inherit;
+}
+
+/* Shared row layout: fixed drag column, then indented title/content */
+.sheetRowLead {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+}
+
+.sheetDragSlot {
+  flex: 0 0 36px;
+  width: 36px;
+  min-width: 36px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 4px;
+}
+
+.groupRowFull .sheetRowLead {
+  min-height: 40px;
+  padding: 8px 14px 8px 0;
+}
+
+.groupRow .colActions {
+  vertical-align: middle;
+}
+
+.groupRowContent {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.groupRowInner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 8px 14px;
+  width: 100%;
+}
+
+.groupRowGutter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 28px;
+}
+
+.groupRowDragging td {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.groupNameInput {
+  flex: 1 1 auto;
+  min-width: 80px;
+  max-width: none;
+  padding: 4px 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  outline: none;
+}
+
+.groupNameInput:focus {
+  background: rgba(0, 0, 0, 0.2);
+  border-color: var(--border);
+}
+
+.groupName {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.groupRowActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  margin-left: auto;
+  position: sticky;
+  right: 14px;
+}
+
+.groupProgress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.groupProgressTrack {
+  width: 120px;
+  height: 10px;
+  background: rgba(0, 0, 0, 0.45);
+  border-radius: 5px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+
+.groupProgressFill {
+  height: 100%;
+  min-width: 0;
+  background: linear-gradient(90deg, #4ade80, var(--status-complete));
+  border-radius: 4px;
+  transition: width 0.25s ease;
+}
+
+.groupProgressLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  min-width: 34px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.groupNewBtn {
+  flex-shrink: 0;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+}
+
+.groupNewBtn:hover {
+  color: var(--text-primary);
+  background: rgba(0, 0, 0, 0.4);
+  border-color: var(--text-muted);
+}
+
+.groupNewWrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.groupNewMenu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 30;
+  min-width: 132px;
+  padding: 4px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+.groupNewMenu button {
+  display: block;
+  width: 100%;
+  padding: 7px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  text-align: left;
+  color: var(--text-primary);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.groupNewMenu button:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.collapseBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  min-width: 20px;
+  min-height: 22px;
+  flex-shrink: 0;
+  padding: 0;
+  margin: 0 auto;
+  font-size: 9px;
+  line-height: 1;
+  color: var(--text-muted);
+  outline: none;
+  border: none;
+  background: transparent;
+}
+
+.collapseBtn:hover {
+  color: var(--text-primary);
+}
+
+.collapseBtn:focus-visible {
+  outline: 1px solid var(--border);
+  border-radius: 2px;
+}
+
+.taskTitleCell,
+.sheetRowLead {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+}
+
+.taskTitleContent {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+}
+
+.taskRow {
+  user-select: none;
+}
+
+.taskRow :is(input:not([type='checkbox']), textarea, select) {
+  user-select: text;
+}
+
+.taskRow td {
+  background: var(--sheet-task-bg);
+}
+
+.taskRowSubtask td {
+  background: var(--sheet-subtask-bg);
+}
+
+.taskRow:hover td,
+.taskRowSubtask:hover td {
+  filter: brightness(1.05);
+}
+
+.dragHandle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 28px;
+  font-size: 14px;
+  color: var(--text-muted);
+  cursor: grab;
+  border: none;
+  background: transparent;
+  padding: 0;
+}
+
+.dragHandle:active {
+  cursor: grabbing;
+}
+
+.taskRowDragging td {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.taskRowSelected td {
+  background: rgba(125, 211, 252, 0.1) !important;
+  box-shadow: inset 0 0 0 1px var(--level4-border);
+}
+
+.dropTarget td {
+  box-shadow: inset 0 0 0 2px var(--level4-border);
+}
+
+.groupRow {
+  position: relative;
+}
+
+.taskRow {
+  position: relative;
+}
+
+.groupRow.dropTargetRegroup td {
+  background: rgba(56, 189, 248, 0.28) !important;
+  box-shadow: inset 0 0 0 2px #38bdf8;
+}
+
+.groupRow.dropTargetRegroup::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 2px solid #38bdf8;
+  background: rgba(56, 189, 248, 0.12);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.groupBoardSection.dropTargetRegroup td {
+  background: rgba(251, 146, 60, 0.35) !important;
+}
+
+.groupLevelGroup.dropTargetRegroup td {
+  background: rgba(125, 211, 252, 0.28) !important;
+}
+
+.groupTradeGroup.dropTargetRegroup td {
+  background: rgba(110, 231, 183, 0.28) !important;
+}
+
+.groupRow.dropTargetAfter::after,
+.taskRow.dropLineAfter::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 4px;
+  background: #38bdf8;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.groupRow.dropTargetBefore::after,
+.taskRow.dropLineBefore::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 4px;
+  background: #38bdf8;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.groupRow.dropTargetAfter td,
+.groupRow.dropTargetBefore td {
+  background: inherit !important;
+  box-shadow: none;
+}
+
+.taskRow.dropLineAfter td,
+.taskRow.dropLineBefore td {
+  box-shadow: none;
+  background: rgba(56, 189, 248, 0.06) !important;
+}
+
+.dragIntentBar {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: rgba(125, 211, 252, 0.12);
+  border-bottom: 1px solid var(--level4-border);
+}
+
+.rowActions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 28px;
+}
+
+.duplicateBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  font-size: 14px;
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity var(--transition), color var(--transition);
+}
+
+.table tbody tr:hover .duplicateBtn,
+.table tbody tr:hover .deleteBtn {
+  opacity: 1;
+}
+
+.duplicateBtn:hover {
+  color: var(--level4-accent);
+}
+
+.dragOverlay {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--level4-border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  font-size: 13px;
+  color: var(--text-primary);
+  max-width: 420px;
+  pointer-events: none;
+}
+
+.dragOverlayGrip {
+  color: var(--level4-accent);
+}
+
+.contextMenu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 180px;
+  padding: 4px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.contextMenu button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--text-primary);
+  border-radius: var(--radius-sm);
+  text-align: left;
+}
+
+.contextMenu button:hover:not(:disabled) {
+  background: var(--level4-bg);
+  color: var(--level4-text);
+}
+
+.contextMenu button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.contextShortcut {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: 16px;
+}
+
+.contextMenuDelete {
+  color: var(--status-not-ready) !important;
+}
+
+.contextMenuDelete:hover {
+  background: rgba(251, 113, 133, 0.12) !important;
+  color: var(--status-not-ready) !important;
+}
+
+.trashOverlay {
+  position: absolute;
+  top: 8px;
+  right: 14px;
+  z-index: 25;
+  pointer-events: none;
+}
+
+.trashOverlay > * {
+  pointer-events: auto;
+}
+
+.trashDrop {
+  padding: 10px 18px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--bg-tertiary);
+  border: 2px dashed var(--border);
+  transition: all var(--transition);
+}
+
+.trashDropActive {
+  color: var(--status-not-ready);
+  background: rgba(251, 113, 133, 0.12);
+  border-color: var(--status-not-ready);
+  border-style: solid;
+  transform: scale(1.05);
+}

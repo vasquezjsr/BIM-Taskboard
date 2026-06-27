@@ -1,0 +1,257 @@
+.panel {
+  flex-shrink: 0;
+  width: 340px;
+  padding: 10px 14px;
+  border-left: 1px solid var(--border);
+  background: var(--bg-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+}
+
+.panelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.panelTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settingsBtn {
+  font-size: 14px;
+  line-height: 1;
+  color: var(--level4-accent);
+  opacity: 0.8;
+  padding: 3px 5px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+.settingsBtn:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.sectionLabel {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.tagRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.tag {
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.detailerTag {
+  background: var(--detailer-board-bg-active);
+  border: 1px solid var(--detailer-board-border);
+  color: var(--detailer-board-text);
+}
+
+.supportTag {
+  background: var(--support-board-bg-active);
+  border: 1px solid var(--support-board-border);
+  color: var(--support-board-text);
+}
+
+.emptyValue {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.metaRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 4px 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border-subtle);
+  align-items: end;
+}
+
+.metaRow + .metaRow {
+  padding-top: 8px;
+  border-top: none;
+}
+
+.metaItemCentered .metaItemLabel,
+.metaItemCentered .metaValueSlot,
+.metaItemCentered .metaValue {
+  width: 100%;
+  justify-content: center;
+  text-align: center;
+}
+
+.metaItemWrap .metaValue {
+  white-space: normal;
+  line-height: 1.3;
+}
+
+.metaItemCompact {
+  min-width: 0;
+}
+
+.metaItemBudget {
+  min-width: 0;
+}
+
+.metaItemBudget .metaItemLabel {
+  width: 100%;
+  justify-content: center;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.metaItemBudget .metaValueSlot {
+  width: 100%;
+  justify-content: center;
+}
+
+.metaItemBudget .metaValue {
+  text-align: center;
+}
+
+.metaItem {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.metaItemLabel {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  line-height: 1.2;
+  min-height: 24px;
+  display: flex;
+  align-items: flex-end;
+}
+
+.metaValueSlot {
+  min-height: 22px;
+  display: flex;
+  align-items: center;
+}
+
+.metaValue {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+  line-height: 1.25;
+  white-space: nowrap;
+  font-variant-numeric: proportional-nums;
+}
+
+.metaInput {
+  width: 100%;
+  min-width: 0;
+  padding: 2px 4px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color-scheme: dark;
+}
+
+.metaInput:focus {
+  outline: none;
+  border-color: var(--level4-accent);
+}
+
+.metaInput::placeholder {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.budgetHoursRow {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  width: 100%;
+}
+
+.budgetInput {
+  flex: 1 1 0;
+  width: 0;
+  min-width: 2.2em;
+  height: 22px;
+  padding: 0 4px;
+  box-sizing: border-box;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color-scheme: dark;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.budgetInput::-webkit-outer-spin-button,
+.budgetInput::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.budgetInput:focus {
+  outline: none;
+  border-color: var(--level4-accent);
+}
+
+.budgetInput::placeholder {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.budgetSlash {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.budgetSuffix {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-left: 2px;
+  white-space: nowrap;
+  line-height: 1.2;
+}

@@ -1,0 +1,212 @@
+.wrapper {
+  padding: 20px 24px 48px;
+  max-width: 1280px;
+}
+
+.header {
+  margin-bottom: 24px;
+}
+
+.title {
+  margin: 0 0 6px;
+  font-size: 1.35rem;
+  font-weight: 600;
+}
+
+.subtitle {
+  margin: 0;
+  color: var(--text-muted, #94a3b8);
+  font-size: 0.9rem;
+  max-width: 720px;
+  line-height: 1.45;
+}
+
+.metricsRow {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 14px;
+  margin-bottom: 28px;
+}
+
+.metricCard {
+  background: var(--surface-2, rgba(30, 41, 59, 0.6));
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: var(--radius-md, 10px);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.metricLabel {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted, #94a3b8);
+}
+
+.metricValue {
+  font-size: 1.35rem;
+  font-weight: 600;
+}
+
+.risk {
+  color: #fca5a5;
+}
+
+.projectGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+  margin-bottom: 28px;
+}
+
+.projectGrid > h3,
+.stageRollup > h3 {
+  grid-column: 1 / -1;
+  margin: 0 0 4px;
+  font-size: 1rem;
+}
+
+.projectCard {
+  background: var(--surface-2, rgba(30, 41, 59, 0.6));
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: var(--radius-md, 10px);
+  padding: 16px;
+}
+
+.projectCardHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.projectCardHeader h3 {
+  margin: 0 0 4px;
+  font-size: 1rem;
+}
+
+.clientName {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-muted, #94a3b8);
+}
+
+.openBtn {
+  border: 1px solid rgba(125, 211, 252, 0.45);
+  background: rgba(125, 211, 252, 0.08);
+  color: var(--level4-accent, #7dd3fc);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.openBtn:hover {
+  background: rgba(125, 211, 252, 0.16);
+}
+
+.metaGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 16px;
+  margin: 0 0 12px;
+}
+
+.metaGrid dt {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted, #94a3b8);
+}
+
+.metaGrid dd {
+  margin: 2px 0 0;
+  font-size: 0.88rem;
+}
+
+.progressBarTrack {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.15);
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+
+.progressBarFill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #7dd3fc, #86efac);
+}
+
+.stageGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 8px;
+}
+
+.stageRollup {
+  margin-bottom: 28px;
+}
+
+.stageChip {
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 8px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.stageLabel {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted, #94a3b8);
+}
+
+.stagePercent {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.pmAssignRow {
+  margin-top: 10px;
+}
+
+.linkBtn {
+  border: none;
+  background: none;
+  color: var(--level4-accent, #7dd3fc);
+  font-size: 0.85rem;
+  cursor: pointer;
+  padding: 0;
+}
+
+.workflowLegend {
+  border-top: 1px solid rgba(148, 163, 184, 0.15);
+  padding-top: 20px;
+  margin-top: 8px;
+}
+
+.workflowLegend h3 {
+  margin: 0 0 10px;
+  font-size: 0.95rem;
+}
+
+.workflowLegend ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-muted, #94a3b8);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.empty {
+  margin: 0;
+  color: var(--text-muted, #94a3b8);
+}

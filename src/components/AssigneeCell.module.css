@@ -1,0 +1,152 @@
+.cell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 28px;
+  padding: 2px 4px;
+}
+
+.trigger {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  width: 100%;
+  min-height: 24px;
+  padding: 0 4px 0 2px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.triggerContent {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+}
+
+.trigger:focus-visible {
+  outline: 1px solid var(--level4-border);
+  border-radius: 4px;
+}
+
+.trigger:hover {
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 4px;
+}
+
+.trigger:hover .chevron {
+  color: var(--text-secondary);
+}
+
+.triggerLocked {
+  box-shadow: inset 0 0 0 1px rgba(124, 111, 201, 0.35);
+  border-radius: 4px;
+}
+
+.badgeRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 3px;
+  max-width: 100%;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 4px;
+  border: 1.5px solid;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  line-height: 1;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.empty {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 4px;
+  border: 1.5px dashed var(--border-subtle);
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1;
+  user-select: none;
+}
+
+.chevron {
+  flex-shrink: 0;
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--text-muted);
+  line-height: 1;
+  opacity: 0.85;
+}
+
+.picker {
+  position: fixed;
+  transform: translateX(-50%);
+  z-index: 2000;
+  min-width: 180px;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.pickerEmpty {
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.pickerOption {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.pickerOption:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.pickerOption input {
+  flex-shrink: 0;
+  accent-color: var(--level4-accent);
+}
+
+.pickerName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cell:has(.trigger:focus-visible) {
+  background: rgba(125, 211, 252, 0.06);
+  box-shadow: inset 0 0 0 1px var(--level4-border);
+}

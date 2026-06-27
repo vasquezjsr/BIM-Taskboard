@@ -1,0 +1,5848 @@
+import { create } from 'zustand';
+
+import { persist, createJSONStorage } from 'zustand/middleware';
+
+import { v4 as uuid } from 'uuid';
+
+import type {
+
+  Client,
+
+  Employee,
+
+  EmployeeBoardTab,
+
+  GroupTier,
+
+  MainTab,
+
+  Project,
+
+  ProjectBoardType,
+
+  Task,
+
+  TaskAttachment,
+
+  TaskComment,
+
+  TaskClipboardData,
+
+  TaskGroup,
+
+  TaskStatus,
+
+  TaskStatusDefinition,
+
+  AppPermission,
+
+  DashboardAssignments,
+
+  DashboardType,
+
+  OrgTeam,
+
+  TimeEntry,
+
+} from '../types';
+
+import {
+  MAIN_SECTION_BOARDS,
+  DEFAULT_SUB_BOARD_TAB_ORDER,
+  normalizeSubBoardTabOrder,
+  isCustomBoardId,
+  type BuiltInProjectBoardType,
+  type CustomBoard,
+  getProjectSubBoardOrder,
+} from '../types';
+
+import { defaultSectionName, collectDescendantGroupIds, restoreAssignedTaskBoardTypes, assignUngroupedSectionTasks, dedupeProjectSections, enrichTaskUpdatesWithBranchGroup, repairOrphanedTaskGroups, repairGroupTiers, reassignOrphanedBranchTasksToLevels, migrateTaskDurationsToLevelGroups, repairTasksOnWrongBoardSection } from '../utils/groupRows';
+import { DEFAULT_EMPLOYEES, JOE_VASQUEZ_ID, LEGACY_NAME_TO_ID, normalizeEmployeesWithRemap, TAYLOR_MORGAN_ID, isOwnerEmployee, isProtectedRosterEmployee } from '../data/employees';
+import { createDefaultDashboardAssignments } from '../data/dashboards';
+import {
+  createSeededDashboardAssignments,
+  mergeDashboardAssignments,
+  mergeDepartmentStaff,
+} from '../data/departmentStaff';
+import { buildBimOrgRoster, createBimOrgChartReportsTo } from '../data/bimOrgChart';
+import { applyDefaultProjectTeams, ensureDefaultProjectTeams } from '../data/projectTeams';
+import { defaultProjectFields, normalizeProject, type ProjectSettingsUpdate } from '../types';
+import { cloneProjectFromTemplate, type NewProjectOptions } from '../utils/projectTemplate';
+import { canAccessOrgChart, canEditBudgetHours, canManageColumns, canViewActivityLog, canViewDashboard, canViewEmployeeTime, canViewOwnerDashboard } from '../utils/permissions';
+import type { ActivityLogEntry, DeletedColumnArchive } from '../utils/activityLog';
+import {
+  applyColumnArchiveRestore,
+  buildColumnDeleteArchive,
+  columnActivitySummary,
+  findColumnDefinition,
+  logActivity,
+  resolveActivityActorId,
+  stripColumnFromState,
+} from './activityLogHelpers';
+import { backfillTaskNumbers, nextTaskNumberForProject } from '../utils/taskNumbers';
+import { normalizeTimeEntry, prepareTimeEntryPayload } from '../utils/timeEntry';
+import {
+  createDefaultEmployeeCredentials,
+  createJoeVasquezCredential,
+  DEFAULT_LOGIN_PASSWORD,
+  generateInvitePassword,
+  isValidEmail,
+  lookupEmployeeLogin,
+  syncEmployeeAuthAndColors,
+  verifyEmployeeLogin,
+  type EmployeeCredentialsMap,
+} from '../utils/auth';
+import {
+  assigneeStyleKey,
+  buildUniqueAssigneeStyles,
+  createDefaultEmployeeAssigneeStyles,
+  pickNextUniqueAssigneeStyle,
+  type EmployeeAssigneeStylesMap,
+} from '../data/assigneeColors';
+import {
+  buildOrgChartLevels,
+  computeEmployeeDepth,
+  createDefaultEmployeePermissions,
+  createDefaultEmployeeReportsTo,
+  createDefaultOrgChartLevelSlots,
+  createDefaultOrgTeams,
+  defaultOrgCategoryForRole,
+  migrateOrgTeamsToCategories,
+  managersForOrgChartDepth,
+  orgCategoryToTeamId,
+  resolveOrgChartCardPositions,
+  canPlaceCardAtBodyIndex,
+  roleForOrgCategory,
+  teamIdToOrgCategory,
+  inferOrgCategory,
+  isOrgOwner,
+  isValidReportingManager,
+  type EmployeePermissionsMap,
+  type EmployeeReportsToMap,
+  normalizeEmployeeReportsTo,
+  normalizeOrgChartLevelSlots,
+  removeEmployeeFromOrgChartSlots,
+  wouldCreateReportingCycle,
+  type OrgChartLevelSlotsMap,
+} from '../utils/orgChart';
+
+import {
+
+  buildAllSeedData,
+
+  createSeedClients,
+
+  createSeedProjects,
+
+  buildProjectSeed,
+
+  ensureProjectTemplate,
+
+  resetPortfolioToTemplate,
+
+  pruneToClientTemplateOnly,
+
+  ensureProjectHierarchy,
+
+  assignZoneTasksToChildGroups,
+
+  dedupeTasksByProjectTitle,
+
+  injectSampleRfiAndDocumentTasks,
+
+  migrateBranchBoardTaskStructure,
+
+  migrateTradeBeforeLevelGroupStructure,
+
+  rebuildTradeLevelSectionHierarchy,
+
+  isTradeLevelSectionBroken,
+
+  resolveProjectSeedInput,
+
+  reconcileBranchBoardTasksIfNeeded,
+
+  isProjectCoordinationTask,
+
+  PROJECT_COORDINATION_GROUP_NAME,
+
+  TEMPLATE_CLIENT_NAME,
+
+  TEMPLATE_PROJECT_NAME,
+
+} from '../data/vdcSeedData';
+
+import { buildEmptyProjectBoards, resetTemplateToEmptyBoards, isTemplateProject } from '../utils/projectTemplate';
+import { applyTemplatePmBoardChecklist } from '../utils/applyPmBoardChecklist';
+import { applyTemplateBoardSamples } from '../utils/applyTemplateBoardSamples';
+import { applyWorkflowDueDateColumns } from '../utils/applyWorkflowDueDateColumns';
+import { applyTemplateMaterialColumn } from '../data/templateMaterialColumn';
+import {
+  appendPremadeColumnToBoardState,
+  appendPremadeColumnToOverviewSectionState,
+  ensurePremadeInMainOverviewSectionOrders,
+  ensurePremadeSheetColumns,
+} from '../data/premadeSheetColumns';
+import {
+  applyCustomColumnToTargets,
+  applyPremadeColumnsToTargets,
+  buildSheetColumnDefinition,
+  savedTemplateFromColumn,
+} from '../utils/columnBatchHelpers';
+import {
+  getMainOverviewSectionColumnOrder,
+  normalizeMainOverviewSectionColumnOrder,
+  resolveStoredMainOverviewSectionColumnOrder,
+} from '../utils/mainOverviewColumns';
+import { revertTemplateExpandedLevels } from '../utils/tradeFirstLevelConfig';
+
+import {
+  collectTaskIdsInGroupSubtrees,
+  computeMoveGroupsToBoard,
+  type SheetGroupMergeUpdate,
+  type SheetGroupUpdate,
+  type SheetTaskUpdate,
+} from '../utils/sheetDrag';
+import { findSectionBoardType, syncTaskBoardFromGroupPlacement } from '../utils/sheetDrag';
+import { inferTaskBranchBoardType } from '../utils/groupRows';
+import {
+  cloneSnapshot,
+  pushHistory,
+  type HistorySnapshot,
+} from '../utils/history';
+import { defaultStatusForBoard } from '../utils/taskStatus';
+import { devStoreSyncStorage } from '../utils/devStoreSyncStorage';
+import { normalizeTaskAssignees, taskHasAssignee } from '../utils/taskAssignees';
+import {
+  applyAutoAssigneesToTask,
+  applyDeliverablesAutoAssignTeams,
+  enrichTaskUpdatesWithAutoAssignees,
+  migrateDeliverablesTaskStatus,
+  reconcileTaskAssigneeLock,
+} from '../utils/taskAssigneesAuto';
+import {
+  DEFAULT_DELIVERABLES_TASK_STATUSES,
+  DEFAULT_SPOOLING_TASK_STATUSES,
+  DEFAULT_TASK_STATUSES,
+  createDefaultBoardTaskStatuses,
+  getBoardTaskStatuses,
+  migrateRfiBoardTaskStatuses,
+  migrateTasksToBoardStatuses,
+  normalizeProjectBoardTaskStatuses,
+  normalizeRfiBoardTaskStatuses,
+  isRfiBoardStatusListLocked,
+  normalizeBoardTaskStatuses,
+  normalizeTaskStatuses,
+  pickNewStatusColor,
+  statusBoardForTask,
+  type BoardTaskStatusesMap,
+  type ProjectBoardTaskStatusesMap,
+} from '../utils/taskStatuses';
+import {
+  buildDefaultTaskBoardVisibleStatuses,
+  collectTaskBoardStatusOptions,
+  isTaskVisibleOnTaskBoard,
+  normalizeTaskBoardVisibleStatuses,
+  taskBoardVisibleStatusSet,
+} from '../utils/taskBoardVisibility';
+import { syncStatusColorMaps, applyStatusColorGlobally } from '../utils/statusColorSync';
+import { consolidateDuplicateStatuses } from '../utils/statusConsolidation';
+import { duplicateGroupSubtrees } from '../utils/duplicateGroups';
+import {
+  createDefaultBoardSheetColumns,
+  createDefaultBoardSheetColumnOrder,
+  defaultBoardColumnOrder,
+  appendSheetColumnDefinition,
+  getAllConfiguredBoardTypes,
+  getBoardLocalSheetColumns,
+  getBoardSheetColumnOrder,
+  getBoardSheetColumns,
+  isMainOverviewSharedColumn,
+  normalizeBoardSheetColumnOrder,
+  normalizeBoardSheetColumns,
+  propagateMainSheetColumnToAllBoards,
+  stripBoardColumnFromSubBoardOrders,
+  stripFlatBoardHiddenColumns,
+  syncMainOverviewColumnsToAllBoards,
+  syncMainSheetColumnUpdateToAllBoards,
+  filterBoardCustomColumns,
+  type BoardSheetColumnOrderMap,
+  type BoardSheetColumnsMap,
+} from '../utils/sheetColumns';
+
+
+
+interface AppState {
+
+  clients: Client[];
+
+  projects: Project[];
+
+  employees: Employee[];
+
+  tasks: Task[];
+
+  taskGroups: TaskGroup[];
+
+  /** User-created boards scoped to a project */
+  customBoards: CustomBoard[];
+
+  /** Per-board task status options */
+  boardTaskStatuses: BoardTaskStatusesMap;
+
+  /** Per-project overrides for board status lists */
+  projectBoardTaskStatuses: ProjectBoardTaskStatusesMap;
+
+  /** @deprecated Legacy global statuses — migrated to boardTaskStatuses */
+  taskStatuses?: TaskStatusDefinition[];
+
+  /** Per-board spreadsheet column definitions */
+  boardSheetColumns: BoardSheetColumnsMap;
+
+  /** Per-board spreadsheet column display order */
+  boardSheetColumnOrder: BoardSheetColumnOrderMap;
+
+  /** Main Overview only — per-section column order (keys are section board types) */
+  mainOverviewSectionColumnOrder: BoardSheetColumnOrderMap;
+
+  /** Main Overview only — section-specific column definitions not on the sub-board */
+  mainOverviewSectionSheetColumns: BoardSheetColumnsMap;
+
+  /** File attachments keyed per task row */
+  taskAttachments: TaskAttachment[];
+
+  /** Comment threads keyed per task row */
+  taskComments: TaskComment[];
+
+  /** Last time comments were viewed per task (ISO timestamp) */
+  taskCommentReadAt: Record<string, string>;
+
+  /** Tab order for built-in sub-boards (Detailers, Deliverables, etc.) — Main Overview stays first */
+  subBoardTabOrder: BuiltInProjectBoardType[];
+
+  /** Copied task fields for Ctrl+V paste (session only, not persisted) */
+  taskClipboard: TaskClipboardData | null;
+
+  /** Sheet row drag in progress — disables board tab reorder (session only) */
+  sheetDragActive: boolean;
+
+  /** Board tab highlighted while dragging sheet rows (session only) */
+  sheetDragHoverBoard: ProjectBoardType | null;
+
+  historyPast: HistorySnapshot[];
+  historyFuture: HistorySnapshot[];
+
+  activityLog: ActivityLogEntry[];
+  deletedColumnArchive: DeletedColumnArchive[];
+
+  /** User-saved column layouts for reuse when adding columns */
+  savedSheetColumnTemplates: import('../types').SavedSheetColumnTemplate[];
+
+
+
+  activeMainTab: MainTab;
+
+  activeClientId: string | null;
+
+  activeProjectId: string | null;
+
+  activeBoardType: ProjectBoardType;
+
+  activeEmployeeBoard: EmployeeBoardTab;
+
+  /** Status IDs shown on the employee task board */
+  taskBoardVisibleStatuses: string[];
+
+  clientsView: 'dashboard' | 'board';
+
+  /** Signed-in employee — controls budget-hours editing and org chart access */
+  currentUserId: string | null;
+
+  /** Real signed-in user while previewing another employee perspective (session only) */
+  viewAsOriginalUserId: string | null;
+
+  orgTeams: OrgTeam[];
+
+  employeePermissions: EmployeePermissionsMap;
+
+  /** Maps employee id → manager employee id within their team */
+  employeeReportsTo: EmployeeReportsToMap;
+
+  /** Per-level horizontal slot layout for the org chart (null = phantom slot) */
+  orgChartLevelSlots: OrgChartLevelSlotsMap;
+
+  timeEntries: TimeEntry[];
+
+  employeeAssigneeStyles: EmployeeAssigneeStylesMap;
+
+  employeeCredentials: EmployeeCredentialsMap;
+
+  dashboardAssignments?: DashboardAssignments;
+
+  setActiveMainTab: (tab: MainTab) => void;
+
+  setActiveClientId: (id: string | null) => void;
+
+  setActiveProjectId: (id: string | null) => void;
+
+  setActiveBoardType: (type: ProjectBoardType) => void;
+
+  setActiveEmployeeBoard: (board: EmployeeBoardTab) => void;
+
+  setTaskBoardVisibleStatuses: (statusIds: string[]) => void;
+
+  setClientsView: (view: 'dashboard' | 'board') => void;
+
+  login: (
+    loginId: string,
+    password: string
+  ) => 'success' | 'not-found' | 'ambiguous' | 'invalid-password';
+
+  ensureDevSession: () => void;
+
+  setViewAsEmployee: (employeeId: string | null) => void;
+
+  logout: () => void;
+
+  goToMainScreen: () => void;
+
+  openProjectBoard: (clientId: string, projectId: string, boardType: ProjectBoardType) => void;
+
+  addClient: (name: string) => void;
+
+  updateClient: (id: string, updates: Partial<Pick<Client, 'name'>>) => void;
+
+  removeClient: (id: string) => void;
+
+  addProject: (clientId: string, name: string, options?: NewProjectOptions) => void;
+
+  addProjectFromTemplate: (clientId: string, name: string, options: NewProjectOptions) => void;
+
+  removeProject: (id: string) => void;
+
+  updateProjectSettings: (projectId: string, updates: ProjectSettingsUpdate) => void;
+
+  assignProjectPm: (projectId: string, employeeId: string) => void;
+
+  unassignProjectPm: (projectId: string, employeeId: string) => void;
+
+  addEmployee: (
+    name: string,
+    role: Employee['role'],
+    orgCategory: Employee['orgCategory'] | undefined,
+    email: string
+  ) => {
+    employeeId: string;
+    employeeName: string;
+    invitePassword: string;
+    email: string;
+  };
+
+  updateEmployee: (id: string, updates: Partial<Pick<Employee, 'name' | 'role' | 'orgCategory'>>) => void;
+
+  updateEmployeeEmail: (id: string, email: string) => void;
+
+  removeEmployee: (id: string) => void;
+
+  addOrgTeam: (name: string) => void;
+
+  renameOrgTeam: (teamId: string, name: string) => void;
+
+  removeOrgTeam: (teamId: string) => void;
+
+  moveEmployeeToTeam: (employeeId: string, teamId: string | null) => void;
+
+  setEmployeeManagers: (employeeId: string, managerIds: string[]) => void;
+
+  addEmployeeManager: (employeeId: string, managerId: string) => void;
+
+  toggleEmployeeManager: (employeeId: string, managerId: string, enabled: boolean) => void;
+
+  moveOrgChartEmployeeToSlot: (depth: number, employeeId: string, halfSlotIndex: number) => void;
+  placeEmployeeOnOrgChartSlot: (depth: number, employeeId: string, halfSlotIndex: number) => void;
+  organizeOrgChartLayout: () => void;
+
+  setEmployeePermission: (employeeId: string, permission: AppPermission, enabled: boolean) => void;
+
+  assignDashboardMember: (dashboard: DashboardType, roleId: string, employeeId: string) => void;
+
+  unassignDashboardMember: (dashboard: DashboardType, roleId: string, employeeId: string) => void;
+
+  addTimeEntry: (entry: Omit<TimeEntry, 'id' | 'createdAt'>) => void;
+
+  updateTimeEntry: (id: string, entry: Omit<TimeEntry, 'id' | 'createdAt'>) => void;
+
+  removeTimeEntry: (id: string) => void;
+
+  addTask: (task: Omit<Task, 'id' | 'createdAt'>) => void;
+
+  updateTask: (id: string, updates: Partial<Task>) => void;
+
+  updateTasks: (ids: string[], updates: Partial<Task>) => void;
+
+  updateTasksWith: (ids: string[], updater: (task: Task) => Partial<Task>) => void;
+
+  refreshTasksAutoAssign: (ids: string[]) => void;
+
+  refreshActiveView: () => void;
+
+  removeTask: (id: string) => void;
+
+  removeTasks: (ids: string[]) => void;
+
+  moveTask: (
+
+    taskId: string,
+
+    updates: {
+
+      status?: TaskStatus;
+
+      assigneeIds?: string[];
+
+      assigneesLocked?: boolean;
+
+      clientId?: string | null;
+
+      projectId?: string | null;
+
+      boardType?: Task['boardType'];
+
+      groupId?: string | null;
+
+      priority?: number;
+
+      dueDate?: string | null;
+
+    }
+
+  ) => void;
+
+  reorderEmployeeTasks: (assigneeId: string, taskIds: string[]) => void;
+
+  reorderSubBoardTabs: (order: BuiltInProjectBoardType[]) => void;
+
+  reorderProjectBoardTabs: (projectId: string, order: ProjectBoardType[]) => void;
+
+  addCustomBoard: (clientId: string, projectId: string, name: string) => ProjectBoardType | null;
+
+  addBoardTaskStatus: (
+    boardType: ProjectBoardType,
+    label: string,
+    autoAssignTeam: 'detailers' | 'support' | null | undefined,
+    projectId: string | null,
+    applyToAllDeliverables: boolean
+  ) => string | null;
+
+  removeBoardTaskStatus: (
+    boardType: ProjectBoardType,
+    id: string,
+    projectId: string | null,
+    applyToAllDeliverables: boolean
+  ) => void;
+
+  updateBoardTaskStatus: (
+    boardType: ProjectBoardType,
+    id: string,
+    updates: Partial<Pick<TaskStatusDefinition, 'label' | 'color' | 'countsAsComplete' | 'autoAssignTeam'>>,
+    projectId: string | null,
+    applyToAllDeliverables: boolean
+  ) => void;
+
+  reorderBoardTaskStatuses: (
+    boardType: ProjectBoardType,
+    statusIds: string[],
+    projectId: string | null,
+    applyToAllDeliverables: boolean
+  ) => void;
+
+  syncStatusColorsAcrossProjects: () => number;
+
+  addBoardSheetColumn: (
+    boardType: ProjectBoardType,
+    label: string,
+    type: import('../types').SheetColumnType,
+    options?: string[],
+    headerAlignment?: import('../types').SheetColumnAlign,
+    cellAlignment?: import('../types').SheetColumnAlign
+  ) => string | null;
+
+  removeBoardSheetColumn: (boardType: ProjectBoardType, id: string) => void;
+
+  updateBoardSheetColumn: (
+    boardType: ProjectBoardType,
+    id: string,
+    updates: Partial<
+      Pick<
+        import('../types').SheetColumnDefinition,
+        'label' | 'type' | 'options' | 'headerAlignment' | 'cellAlignment'
+      >
+    >
+  ) => void;
+
+  reorderBoardSheetColumns: (boardType: ProjectBoardType, columnOrder: string[]) => void;
+
+  reorderMainOverviewSectionColumns: (
+    sectionBoardType: ProjectBoardType,
+    columnOrder: string[]
+  ) => void;
+
+  addMainOverviewSectionColumn: (
+    sectionBoardType: ProjectBoardType,
+    label: string,
+    type: import('../types').SheetColumnType,
+    options?: string[],
+    headerAlignment?: import('../types').SheetColumnAlign,
+    cellAlignment?: import('../types').SheetColumnAlign
+  ) => string | null;
+
+  addPremadeBoardColumn: (boardType: ProjectBoardType, premadeId: string) => boolean;
+
+  addPremadeOverviewSectionColumn: (
+    sectionBoardType: ProjectBoardType,
+    premadeId: string
+  ) => boolean;
+
+  addPremadeColumnsToTargets: (
+    targets: ProjectBoardType[],
+    premadeIds: string[],
+    mode: 'board' | 'overview'
+  ) => number;
+
+  addCustomColumnToTargets: (
+    targets: ProjectBoardType[],
+    mode: 'board' | 'overview',
+    label: string,
+    type: import('../types').SheetColumnType,
+    options?: string[],
+    headerAlignment?: import('../types').SheetColumnAlign,
+    cellAlignment?: import('../types').SheetColumnAlign,
+    saveToLibrary?: boolean
+  ) => string | null;
+
+  saveSheetColumnTemplate: (
+    label: string,
+    type: import('../types').SheetColumnType,
+    options?: string[],
+    headerAlignment?: import('../types').SheetColumnAlign,
+    cellAlignment?: import('../types').SheetColumnAlign
+  ) => string;
+
+  removeSavedSheetColumnTemplate: (id: string) => void;
+
+  removeMainOverviewSectionColumn: (sectionBoardType: ProjectBoardType, id: string) => void;
+
+  restoreDeletedColumn: (archiveId: string) => boolean;
+
+  updateMainOverviewSectionColumn: (
+    sectionBoardType: ProjectBoardType,
+    id: string,
+    updates: Partial<
+      Pick<
+        import('../types').SheetColumnDefinition,
+        'label' | 'type' | 'options' | 'headerAlignment' | 'cellAlignment'
+      >
+    >
+  ) => void;
+
+  duplicateTask: (taskId: string) => string | null;
+
+  duplicateTasks: (taskIds: string[]) => string[];
+
+  duplicateGroup: (groupId: string) => string | null;
+
+  duplicateGroups: (groupIds: string[]) => string[];
+
+  copyTask: (taskId: string) => void;
+
+  pasteTask: (options: {
+    clientId: string;
+    projectId: string;
+    insertAfterTaskId?: string | null;
+  }) => string | null;
+
+  undo: () => void;
+  redo: () => void;
+
+  createTaskInGroup: (options: {
+    clientId: string;
+    projectId: string;
+    groupId: string | null;
+    boardType?: ProjectBoardType | 'main';
+  }) => string | null;
+
+  createSubtask: (parentTaskId: string) => string | null;
+
+  applySheetTaskUpdates: (updates: SheetTaskUpdate[]) => void;
+
+  applySheetGroupUpdates: (updates: SheetGroupUpdate[]) => void;
+
+  moveSheetItemsToBoard: (options: {
+    clientId: string;
+    projectId: string;
+    groupIds: string[];
+    taskIds: string[];
+    targetBoardType: ProjectBoardType;
+  }) => void;
+
+  setSheetDragActive: (active: boolean) => void;
+
+  setSheetDragHoverBoard: (board: ProjectBoardType | null) => void;
+
+  applySheetGroupMerge: (merge: SheetGroupMergeUpdate) => void;
+
+  addGroup: (
+
+    group: Omit<TaskGroup, 'id' | 'sortOrder'> & { sortOrder?: number }
+
+  ) => string;
+
+  updateGroup: (id: string, updates: Partial<TaskGroup>) => void;
+
+  removeGroup: (id: string) => void;
+
+  removeGroups: (ids: string[]) => void;
+
+  addFlatBoardHeader: (
+    clientId: string,
+    projectId: string,
+    boardType: ProjectBoardType,
+    name?: string
+  ) => string;
+
+  upsertTaskAttachment: (params: {
+    taskId: string;
+    fileName: string;
+    mimeType: string;
+    sizeBytes: number;
+    storageId: string;
+    uploadedById: string | null;
+    mode: 'new' | 'replace' | 'newVersion';
+  }) => void;
+
+  removeTaskAttachment: (attachmentId: string) => string[];
+
+  addTaskComment: (taskId: string, authorId: string | null, body: string) => void;
+
+  removeTaskComment: (commentId: string) => void;
+
+  markTaskCommentsRead: (taskId: string) => void;
+
+  ensureProjectGroups: (clientId: string, projectId: string) => void;
+
+}
+
+
+
+const seedEmployees: Employee[] = buildBimOrgRoster([...DEFAULT_EMPLOYEES]);
+
+
+
+function getEmployeeIds(employees: Employee[]) {
+
+  return {
+
+    detailers: employees.filter((e) => e.role === 'detailer').map((e) => e.id),
+
+    support: employees.filter((e) => e.role === 'support-specialist').map((e) => e.id),
+
+  };
+
+}
+
+
+
+function createInitialPortfolio() {
+
+  const clients = createSeedClients();
+
+  const projects = createSeedProjects(clients);
+
+  const templateClient = clients.find((c) => c.name === TEMPLATE_CLIENT_NAME)!;
+
+  const templateProject = projects.find((p) => p.name === TEMPLATE_PROJECT_NAME)!;
+
+  const groups = buildEmptyProjectBoards(templateClient.id, templateProject.id);
+
+  return { clients, projects, groups, tasks: [] as Task[], templateClient, templateProject };
+
+}
+
+
+
+function mergePersistedState(p: Partial<AppState>, current: AppState): AppState {
+  const { employees, tasks } = normalizeEmployeesWithRemap(
+    p.employees ?? current.employees,
+    p.tasks ?? current.tasks
+  );
+  let clients = p.clients?.length ? p.clients : current.clients;
+  let projects = (p.projects?.length ? p.projects : current.projects).map(normalizeProject);
+  let taskGroups = p.taskGroups ?? current.taskGroups;
+  let tasksOut = tasks.map(normalizeTaskFields);
+  let customBoards = p.customBoards ?? current.customBoards ?? [];
+  let projectBoardTaskStatuses = normalizeProjectBoardTaskStatuses(
+    p.projectBoardTaskStatuses ?? current.projectBoardTaskStatuses
+  );
+  let timeEntries = p.timeEntries ?? current.timeEntries ?? [];
+
+  const prunedPortfolio = pruneToClientTemplateOnly(
+    clients,
+    projects,
+    taskGroups,
+    tasksOut,
+    customBoards,
+    projectBoardTaskStatuses,
+    timeEntries,
+    getEmployeeIds(employees)
+  );
+  clients = prunedPortfolio.clients;
+  projects = ensureDefaultProjectTeams(prunedPortfolio.projects.map(normalizeProject));
+  taskGroups = prunedPortfolio.taskGroups;
+  tasksOut = prunedPortfolio.tasks.map(normalizeTaskFields);
+  customBoards = prunedPortfolio.customBoards;
+  projectBoardTaskStatuses = prunedPortfolio.projectBoardTaskStatuses;
+  timeEntries = prunedPortfolio.timeEntries;
+
+  const templateProject =
+    projects.find((project) => project.name === TEMPLATE_PROJECT_NAME || project.isTemplate) ??
+    projects[0];
+  if (templateProject) {
+    taskGroups = ensureMainSections(taskGroups, templateProject.clientId, templateProject.id);
+    const pmChecklist = applyTemplatePmBoardChecklist(projects, taskGroups, tasksOut);
+    taskGroups = pmChecklist.taskGroups;
+    tasksOut = pmChecklist.tasks;
+    const boardSamples = applyTemplateBoardSamples(projects, taskGroups, tasksOut);
+    taskGroups = boardSamples.taskGroups;
+    tasksOut = boardSamples.tasks;
+
+    const templateHasExpandedLevels = taskGroups.some(
+      (group) =>
+        group.projectId === templateProject.id &&
+        /^Level [3-8]$/.test(group.name)
+    );
+    if (templateHasExpandedLevels || templateProject.buildingLevels.length > 0) {
+      const reverted = revertTemplateExpandedLevels(
+        templateProject.id,
+        taskGroups,
+        tasksOut
+      );
+      taskGroups = reverted.taskGroups;
+      tasksOut = reverted.tasks;
+      projects = projects.map((project) =>
+        project.id === templateProject.id
+          ? normalizeProject({
+              ...project,
+              buildingLevels: [],
+              activeLevels: [],
+            })
+          : project
+      );
+    }
+  }
+
+  const taskIds = new Set(tasksOut.map((task) => task.id));
+  const taskAttachments = (p.taskAttachments ?? current.taskAttachments ?? []).filter((attachment) =>
+    taskIds.has(attachment.taskId)
+  );
+  const taskComments = (p.taskComments ?? current.taskComments ?? []).filter((comment) =>
+    taskIds.has(comment.taskId)
+  );
+
+  tasksOut = migrateRfiBoardTaskStatuses(tasksOut);
+
+  const subBoardTabOrder = normalizeSubBoardTabOrder(p.subBoardTabOrder ?? current.subBoardTabOrder);
+  const navigation = resolvePersistedNavigation(
+    { ...p, ...readReloadNavigation() },
+    current,
+    clients,
+    projects,
+    customBoards,
+    subBoardTabOrder
+  );
+
+  if (!clients.some((client) => client.id === navigation.activeClientId)) {
+    navigation.activeClientId = prunedPortfolio.activeClientId;
+  }
+  if (!projects.some((project) => project.id === navigation.activeProjectId)) {
+    navigation.activeProjectId = prunedPortfolio.activeProjectId;
+  }
+
+  const currentUserId = p.currentUserId ?? current.currentUserId ?? null;
+  const resolvedUserId =
+    currentUserId && employees.some((employee) => employee.id === currentUserId)
+      ? currentUserId
+      : null;
+  const employeePermissions =
+    p.employeePermissions ??
+    current.employeePermissions ??
+    createDefaultEmployeePermissions(employees);
+  const syncedAuth = syncEmployeeAuthAndColors(
+    employees.map((employee) => employee.id),
+    p.employeeAssigneeStyles ?? current.employeeAssigneeStyles ?? {},
+    p.employeeCredentials ?? current.employeeCredentials ?? {},
+    buildUniqueAssigneeStyles,
+    employees
+  );
+  if (
+    navigation.activeMainTab === 'org-chart' &&
+    !canAccessOrgChart(resolvedUserId, employees, employeePermissions)
+  ) {
+    navigation.activeMainTab = 'clients';
+  }
+
+  if (
+    navigation.activeMainTab === 'owner-dashboard' &&
+    !canViewOwnerDashboard(resolvedUserId, employees, employeePermissions)
+  ) {
+    navigation.activeMainTab = 'clients';
+  }
+
+  if (
+    navigation.activeMainTab === 'pm-dashboard' &&
+    !canViewDashboard('pm', resolvedUserId, employees, employeePermissions)
+  ) {
+    navigation.activeMainTab = 'clients';
+  }
+
+  if (
+    navigation.activeMainTab === 'field-dashboard' &&
+    !canViewDashboard('field', resolvedUserId, employees, employeePermissions)
+  ) {
+    navigation.activeMainTab = 'clients';
+  }
+
+  if (
+    navigation.activeMainTab === 'fab-dashboard' &&
+    !canViewDashboard('fab', resolvedUserId, employees, employeePermissions)
+  ) {
+    navigation.activeMainTab = 'clients';
+  }
+
+  if (
+    navigation.activeMainTab === 'shipping-dashboard' &&
+    !canViewDashboard('shipping', resolvedUserId, employees, employeePermissions)
+  ) {
+    navigation.activeMainTab = 'clients';
+  }
+
+  if (
+    navigation.activeMainTab === 'activity-log' &&
+    !canViewActivityLog(resolvedUserId, employees, employeePermissions)
+  ) {
+    navigation.activeMainTab = 'clients';
+  }
+
+  const normalizedBoardTaskStatuses = normalizeBoardTaskStatuses(
+    p.boardTaskStatuses ?? current.boardTaskStatuses,
+    p.taskStatuses
+  );
+  const normalizedProjectBoardTaskStatuses = normalizeProjectBoardTaskStatuses(
+    p.projectBoardTaskStatuses ?? current.projectBoardTaskStatuses
+  );
+  const consolidatedStatuses = consolidateDuplicateStatuses(
+    normalizedBoardTaskStatuses,
+    normalizedProjectBoardTaskStatuses,
+    tasksOut,
+    p.taskBoardVisibleStatuses ?? current.taskBoardVisibleStatuses ?? []
+  );
+  tasksOut = consolidatedStatuses.tasks;
+  const syncedStatusColors = syncStatusColorMaps(
+    consolidatedStatuses.boardTaskStatuses,
+    consolidatedStatuses.projectBoardTaskStatuses
+  );
+
+  let boardSheetColumns = normalizeBoardSheetColumns(p.boardSheetColumns ?? current.boardSheetColumns);
+  let boardSheetColumnOrder = normalizeBoardSheetColumnOrder(
+    p.boardSheetColumnOrder ?? current.boardSheetColumnOrder,
+    p.boardSheetColumns ?? current.boardSheetColumns
+  );
+  const premadeEnsured = ensurePremadeSheetColumns(boardSheetColumns, boardSheetColumnOrder);
+  boardSheetColumns = premadeEnsured.boardSheetColumns;
+  boardSheetColumnOrder = premadeEnsured.boardSheetColumnOrder;
+
+  return {
+    ...current,
+    ...p,
+    ...navigation,
+    clients,
+    employees,
+    tasks: tasksOut,
+    taskGroups,
+    projects,
+    customBoards,
+    subBoardTabOrder,
+    currentUserId: resolvedUserId,
+    orgTeams: p.orgTeams ?? current.orgTeams ?? createDefaultOrgTeams(employees),
+    employeePermissions,
+    timeEntries,
+    employeeReportsTo: normalizeEmployeeReportsTo(p.employeeReportsTo ?? current.employeeReportsTo),
+    orgChartLevelSlots: normalizeOrgChartLevelSlots(p.orgChartLevelSlots ?? current.orgChartLevelSlots),
+    employeeAssigneeStyles: syncedAuth.employeeAssigneeStyles,
+    employeeCredentials: syncedAuth.employeeCredentials,
+    boardTaskStatuses: syncedStatusColors.boardTaskStatuses,
+    projectBoardTaskStatuses: syncedStatusColors.projectBoardTaskStatuses,
+    boardSheetColumns,
+    boardSheetColumnOrder: boardSheetColumnOrder,
+    mainOverviewSectionColumnOrder: normalizeMainOverviewSectionColumnOrder(
+      p.mainOverviewSectionColumnOrder ?? current.mainOverviewSectionColumnOrder ?? {},
+      p.mainOverviewSectionSheetColumns ?? current.mainOverviewSectionSheetColumns ?? {},
+      p.boardSheetColumns ?? current.boardSheetColumns
+    ),
+    mainOverviewSectionSheetColumns: normalizeBoardSheetColumns(
+      p.mainOverviewSectionSheetColumns ?? current.mainOverviewSectionSheetColumns
+    ),
+    taskAttachments,
+    taskComments,
+    taskCommentReadAt: p.taskCommentReadAt ?? current.taskCommentReadAt ?? {},
+    taskBoardVisibleStatuses: normalizeTaskBoardVisibleStatuses(
+      consolidatedStatuses.taskBoardVisibleStatuses,
+      collectTaskBoardStatusOptions(
+        syncedStatusColors.boardTaskStatuses,
+        syncedStatusColors.projectBoardTaskStatuses,
+        tasksOut
+      )
+    ),
+    dashboardAssignments:
+      p.dashboardAssignments ?? current.dashboardAssignments ?? createDefaultDashboardAssignments(),
+    activityLog: Array.isArray(p.activityLog) ? p.activityLog : (current.activityLog ?? []),
+    deletedColumnArchive: Array.isArray(p.deletedColumnArchive)
+      ? p.deletedColumnArchive
+      : (current.deletedColumnArchive ?? []),
+    savedSheetColumnTemplates: Array.isArray(p.savedSheetColumnTemplates)
+      ? p.savedSheetColumnTemplates
+      : (current.savedSheetColumnTemplates ?? []),
+  };
+}
+
+
+
+function applyProjectStructureRepairs(
+  projects: Project[],
+  taskGroups: TaskGroup[],
+  tasks: Task[],
+  employees: Employee[],
+  options?: { preserveGroupHierarchy?: boolean }
+): { taskGroups: TaskGroup[]; tasks: Task[] } {
+  let nextGroups = taskGroups;
+  for (const project of projects) {
+    nextGroups = dedupeProjectSections(nextGroups, project.id);
+  }
+
+  const employeeIds = getEmployeeIds(employees);
+  let nextTasks = tasks;
+
+  if (options?.preserveGroupHierarchy) {
+    nextTasks = assignZoneTasksToChildGroups(nextTasks, nextGroups, projects);
+    nextTasks = dedupeTasksByProjectTitle(nextTasks);
+  } else {
+    const reconciled = reconcileBranchBoardTasksIfNeeded(
+      projects,
+      nextGroups,
+      tasks,
+      employeeIds
+    );
+    nextGroups = reconciled.taskGroups;
+    nextTasks = reconciled.tasks;
+  }
+
+  const hierarchy = ensureProjectHierarchy(projects, nextGroups, nextTasks, employeeIds);
+  nextGroups = hierarchy.taskGroups;
+  nextTasks = repairOrphanedTaskGroups(nextGroups, hierarchy.tasks);
+  if (!options?.preserveGroupHierarchy) {
+    nextTasks = assignZoneTasksToChildGroups(nextTasks, nextGroups, projects);
+    nextTasks = dedupeTasksByProjectTitle(nextTasks);
+  }
+  nextTasks = assignProjectCoordinationTasks(nextGroups, nextTasks);
+  nextTasks = assignUngroupedSectionTasks(nextGroups, nextTasks);
+  return { taskGroups: nextGroups, tasks: nextTasks };
+}
+
+function createMainSections(clientId: string, projectId: string): TaskGroup[] {
+  return buildEmptyProjectBoards(clientId, projectId);
+}
+
+
+
+function ensureMainSections(
+
+  groups: TaskGroup[],
+
+  clientId: string,
+
+  projectId: string
+
+): TaskGroup[] {
+
+  const existing = groups.filter(
+
+    (g) =>
+
+      g.clientId === clientId &&
+
+      g.projectId === projectId &&
+
+      g.boardType === 'main' &&
+
+      g.tier === 'section'
+
+  );
+
+  const existingTypes = new Set(existing.map((g) => g.sectionBoardType));
+
+  const missing = MAIN_SECTION_BOARDS.filter((t) => !existingTypes.has(t));
+
+  if (missing.length === 0) return groups;
+
+
+
+  const newSections = missing.map((sectionBoardType, i) => ({
+
+    id: uuid(),
+
+    name: defaultSectionName(sectionBoardType),
+
+    clientId,
+
+    projectId,
+
+    boardType: 'main' as ProjectBoardType,
+
+    tier: 'section' as GroupTier,
+
+    parentId: null,
+
+    sectionBoardType,
+
+    sortOrder: existing.length + i,
+
+  }));
+
+  return [...groups, ...newSections];
+
+}
+
+function ensureCustomBoardSections(
+  groups: TaskGroup[],
+  clientId: string,
+  projectId: string,
+  customBoards: CustomBoard[],
+  subBoardTabOrder: ProjectBoardType[]
+): TaskGroup[] {
+  const projectBoards = customBoards.filter(
+    (b) => b.clientId === clientId && b.projectId === projectId
+  );
+  if (projectBoards.length === 0) return groups;
+
+  const existingTypes = new Set(
+    groups
+      .filter(
+        (g) =>
+          g.clientId === clientId &&
+          g.projectId === projectId &&
+          g.boardType === 'main' &&
+          g.tier === 'section'
+      )
+      .map((g) => g.sectionBoardType)
+  );
+
+  const missing = projectBoards.filter((b) => !existingTypes.has(b.id));
+  let next = missing.length
+    ? [
+        ...groups,
+        ...missing.map((board) => ({
+          id: uuid(),
+          name: defaultSectionName(board.id, customBoards),
+          clientId,
+          projectId,
+          boardType: 'main' as ProjectBoardType,
+          tier: 'section' as const,
+          parentId: null,
+          sectionBoardType: board.id,
+          sortOrder: board.sortOrder,
+        })),
+      ]
+    : groups;
+
+  const order = getProjectSubBoardOrder(projectId, subBoardTabOrder, customBoards);
+  next = syncSectionDisplayNames(next, customBoards);
+  return syncSectionSortOrder(next, order, projectId);
+}
+
+
+
+function migrateBoardDefaultStatuses(tasks: Task[]): Task[] {
+  return tasks.map((t) => {
+    if (t.boardType === 'detailers' && t.status !== 'not-started') {
+      return { ...t, status: 'not-started' as TaskStatus };
+    }
+    if (t.boardType === 'deliverables') {
+      const status = migrateDeliverablesTaskStatus(t.status);
+      if (status !== t.status) return { ...t, status: status as TaskStatus };
+    }
+    if (t.boardType === 'project-managers' && t.status !== 'not-ready') {
+      return { ...t, status: 'not-ready' as TaskStatus };
+    }
+    return t;
+  });
+}
+
+/** Move assigned detailer/deliverable tasks off hidden statuses so they stay on the task board. */
+function restoreAssignedTasksForTaskBoard(tasks: Task[]): Task[] {
+  return tasks.map((task) => {
+    if (task.assigneeIds.length === 0) return task;
+    if (task.boardType !== 'detailers' && task.boardType !== 'deliverables') return task;
+    if (task.status !== 'not-started' && task.status !== 'not-ready') return task;
+    return { ...task, status: 'ready' as TaskStatus };
+  });
+}
+
+function migrateDeliverablesBoardStatuses(
+  tasks: Task[],
+  taskGroups: TaskGroup[]
+): Task[] {
+  return tasks.map((task) => {
+    const board = statusBoardForTask(task, taskGroups);
+    if (board !== 'deliverables') return task;
+    const status = migrateDeliverablesTaskStatus(task.status);
+    return status === task.status ? task : { ...task, status: status as TaskStatus };
+  });
+}
+
+function ensureProjectCoordinationGroups(
+  groups: TaskGroup[],
+  projects: Project[]
+): TaskGroup[] {
+  let next = [...groups];
+  for (const project of projects) {
+    if (isTemplateProject(project)) continue;
+
+    const pmSection = next.find(
+      (g) =>
+        g.projectId === project.id &&
+        g.tier === 'section' &&
+        g.sectionBoardType === 'project-managers'
+    );
+    if (!pmSection) continue;
+
+    const hasGroup = next.some(
+      (g) =>
+        g.projectId === project.id &&
+        g.parentId === pmSection.id &&
+        g.name === PROJECT_COORDINATION_GROUP_NAME
+    );
+    if (hasGroup) continue;
+
+    next.push({
+      id: uuid(),
+      name: PROJECT_COORDINATION_GROUP_NAME,
+      clientId: project.clientId,
+      projectId: project.id,
+      boardType: 'main',
+      tier: 'parent',
+      parentId: pmSection.id,
+      sectionBoardType: null,
+      sortOrder: 0,
+    });
+  }
+  return next;
+}
+
+function assignProjectCoordinationTasks(groups: TaskGroup[], tasks: Task[]): Task[] {
+  return tasks.map((task) => {
+    if (!isProjectCoordinationTask(task.title)) return task;
+
+    const pmGroup = groups.find(
+      (g) =>
+        g.projectId === task.projectId &&
+        g.name === PROJECT_COORDINATION_GROUP_NAME &&
+        g.tier === 'parent'
+    );
+    if (!pmGroup) return task;
+
+    return {
+      ...task,
+      boardType: 'project-managers',
+      groupId: pmGroup.id,
+    };
+  });
+}
+
+function commitBoardTaskStatusList(
+  state: Pick<AppState, 'boardTaskStatuses' | 'projectBoardTaskStatuses'>,
+  boardType: ProjectBoardType,
+  statuses: TaskStatusDefinition[],
+  projectId: string | null | undefined,
+  applyToAllDeliverables: boolean
+): Pick<AppState, 'boardTaskStatuses' | 'projectBoardTaskStatuses'> {
+  const copied = isRfiBoardStatusListLocked(boardType)
+    ? normalizeRfiBoardTaskStatuses(statuses)
+    : statuses.map((status) => ({ ...status }));
+  let boardTaskStatuses = state.boardTaskStatuses;
+  let projectBoardTaskStatuses = state.projectBoardTaskStatuses;
+
+  if (projectId) {
+    projectBoardTaskStatuses = {
+      ...projectBoardTaskStatuses,
+      [projectId]: {
+        ...projectBoardTaskStatuses[projectId],
+        [boardType]: copied,
+      },
+    };
+  } else {
+    boardTaskStatuses = {
+      ...boardTaskStatuses,
+      [boardType]: copied,
+    };
+  }
+
+  if (applyToAllDeliverables && boardType === 'deliverables') {
+    boardTaskStatuses = {
+      ...boardTaskStatuses,
+      deliverables: copied.map((status) => ({ ...status })),
+    };
+  }
+
+  return { boardTaskStatuses, projectBoardTaskStatuses };
+}
+
+function enrichTaskUpdates(
+  task: Task,
+  updates: Partial<Task>,
+  projects: Project[],
+  taskGroups: TaskGroup[],
+  boardTaskStatuses: BoardTaskStatusesMap,
+  projectBoardTaskStatuses: ProjectBoardTaskStatusesMap
+): Partial<Task> {
+  const withBranch = enrichTaskUpdatesWithBranchGroup(
+    task,
+    updates,
+    taskGroups,
+    PROJECT_COORDINATION_GROUP_NAME
+  );
+  return enrichTaskUpdatesWithAutoAssignees(
+    task,
+    withBranch,
+    projects,
+    taskGroups,
+    boardTaskStatuses,
+    projectBoardTaskStatuses
+  );
+}
+
+const RELOAD_NAV_SESSION_KEY = 'bim-task-board-reload-nav';
+
+function resolveTaskBoardVisibleStatusIds(
+  state: Pick<
+    AppState,
+    'taskBoardVisibleStatuses' | 'boardTaskStatuses' | 'projectBoardTaskStatuses' | 'tasks'
+  >
+): string[] {
+  const options = collectTaskBoardStatusOptions(
+    state.boardTaskStatuses,
+    state.projectBoardTaskStatuses,
+    state.tasks
+  );
+  return normalizeTaskBoardVisibleStatuses(state.taskBoardVisibleStatuses, options);
+}
+
+function taskIdsForActiveView(
+  state: Pick<
+    AppState,
+    | 'activeMainTab'
+    | 'activeClientId'
+    | 'activeProjectId'
+    | 'tasks'
+    | 'taskBoardVisibleStatuses'
+    | 'boardTaskStatuses'
+    | 'projectBoardTaskStatuses'
+  >
+): string[] {
+  if (state.activeMainTab === 'clients') {
+    if (!state.activeClientId || !state.activeProjectId) return [];
+    return state.tasks
+      .filter(
+        (task) =>
+          task.clientId === state.activeClientId && task.projectId === state.activeProjectId
+      )
+      .map((task) => task.id);
+  }
+
+  const visibleStatuses = taskBoardVisibleStatusSet(resolveTaskBoardVisibleStatusIds(state));
+  return state.tasks
+    .filter((task) =>
+      isTaskVisibleOnTaskBoard(
+        task,
+        visibleStatuses,
+        state.boardTaskStatuses,
+        state.projectBoardTaskStatuses,
+        state.tasks
+      )
+    )
+    .map((task) => task.id);
+}
+
+function readReloadNavigation(): Partial<AppState> | null {
+  try {
+    const raw = sessionStorage.getItem(RELOAD_NAV_SESSION_KEY);
+    if (!raw) return null;
+    sessionStorage.removeItem(RELOAD_NAV_SESSION_KEY);
+    return JSON.parse(raw) as Partial<AppState>;
+  } catch {
+    return null;
+  }
+}
+
+function resolvePersistedNavigation(
+  source: Partial<AppState>,
+  current: Pick<
+    AppState,
+    | 'activeMainTab'
+    | 'activeClientId'
+    | 'activeProjectId'
+    | 'activeBoardType'
+    | 'activeEmployeeBoard'
+    | 'clientsView'
+  >,
+  clients: Client[],
+  projects: Project[],
+  customBoards: CustomBoard[],
+  subBoardTabOrder: BuiltInProjectBoardType[]
+): Pick<
+  AppState,
+  | 'activeMainTab'
+  | 'activeClientId'
+  | 'activeProjectId'
+  | 'activeBoardType'
+  | 'activeEmployeeBoard'
+  | 'clientsView'
+> {
+  const rawMainTab = source.activeMainTab as MainTab | 'permissions' | undefined;
+  const activeMainTab: MainTab =
+    rawMainTab === 'task-board'
+      ? 'task-board'
+      : rawMainTab === 'time-tracking'
+        ? 'time-tracking'
+        : rawMainTab === 'employees'
+          ? 'employees'
+          : rawMainTab === 'owner-dashboard'
+          ? 'owner-dashboard'
+          : rawMainTab === 'pm-dashboard'
+            ? 'pm-dashboard'
+            : rawMainTab === 'field-dashboard'
+          ? 'field-dashboard'
+          : rawMainTab === 'fab-dashboard'
+            ? 'fab-dashboard'
+            : rawMainTab === 'shipping-dashboard'
+              ? 'shipping-dashboard'
+              : rawMainTab === 'activity-log'
+                ? 'activity-log'
+              : rawMainTab === 'org-chart' || rawMainTab === 'permissions'
+                ? 'org-chart'
+                : 'clients';
+
+  const clientsView: AppState['clientsView'] =
+    source.clientsView === 'dashboard' ? 'dashboard' : 'board';
+
+  let activeClientId = source.activeClientId ?? current.activeClientId;
+  if (clientsView === 'dashboard') {
+    if (activeClientId && !clients.some((client) => client.id === activeClientId)) {
+      activeClientId = null;
+    }
+  } else if (!activeClientId || !clients.some((client) => client.id === activeClientId)) {
+    activeClientId = clients[0]?.id ?? null;
+  }
+
+  const clientProjects = projects.filter((project) => project.clientId === activeClientId);
+  let activeProjectId = source.activeProjectId ?? current.activeProjectId;
+  if (clientsView === 'dashboard') {
+    activeProjectId = null;
+  } else if (!activeProjectId || !clientProjects.some((project) => project.id === activeProjectId)) {
+    activeProjectId = clientProjects[0]?.id ?? null;
+  }
+
+  let activeBoardType: ProjectBoardType = source.activeBoardType ?? current.activeBoardType ?? 'main';
+  if (activeProjectId) {
+    const validBoards = new Set<ProjectBoardType>([
+      'main',
+      ...getProjectSubBoardOrder(activeProjectId, subBoardTabOrder, customBoards),
+    ]);
+    if (!validBoards.has(activeBoardType)) {
+      activeBoardType = 'main';
+    }
+  } else {
+    activeBoardType = 'main';
+  }
+
+  const activeEmployeeBoard: EmployeeBoardTab =
+    source.activeEmployeeBoard === 'support-specialists' ? 'support-specialists' : 'detailers';
+
+  return { activeMainTab, activeClientId, activeProjectId, activeBoardType, activeEmployeeBoard, clientsView };
+}
+
+function normalizeTaskFields(task: Task & { assigneeId?: string | null }): Task {
+  return normalizeTaskAssignees({
+    ...task,
+    customFields: task.customFields ?? {},
+    durationFields: task.durationFields ?? {},
+    assigneesLocked: task.assigneesLocked ?? false,
+  });
+}
+
+function taskToClipboard(task: Task): TaskClipboardData {
+  return {
+    title: task.title,
+    description: task.description,
+    status: task.status,
+    assigneeIds: [...task.assigneeIds],
+    assigneesLocked: task.assigneesLocked ?? false,
+    boardType: task.boardType,
+    groupId: task.groupId,
+    parentTaskId: task.parentTaskId,
+    dueDate: task.dueDate,
+    customFields: { ...(task.customFields ?? {}) },
+    durationFields: { ...(task.durationFields ?? {}) },
+  };
+}
+
+function resolveGroupForProject(
+  groups: TaskGroup[],
+  projectId: string,
+  groupId: string | null
+): string | null {
+  if (!groupId) return null;
+  return groups.some((g) => g.id === groupId && g.projectId === projectId) ? groupId : null;
+}
+
+function insertTaskCopy(
+  tasks: Task[],
+  clip: TaskClipboardData,
+  clientId: string,
+  projectId: string,
+  groupId: string | null,
+  boardType: Task['boardType'],
+  insertAfterTaskId: string | null
+): { tasks: Task[]; newTaskId: string } {
+  const newId = uuid();
+  const bucket = tasks.filter(
+    (t) =>
+      t.projectId === projectId &&
+      t.groupId === groupId &&
+      t.boardType === boardType
+  );
+
+  let priority: number;
+  let updated = tasks;
+
+  if (insertAfterTaskId) {
+    const anchor = tasks.find((t) => t.id === insertAfterTaskId);
+    priority = anchor ? anchor.priority + 1 : bucket.reduce((max, t) => Math.max(max, t.priority), -1) + 1;
+    updated = updated.map((t) => {
+      if (
+        t.projectId === projectId &&
+        t.groupId === groupId &&
+        t.boardType === boardType &&
+        t.priority >= priority
+      ) {
+        return { ...t, priority: t.priority + 1 };
+      }
+      return t;
+    });
+  } else {
+    priority = bucket.reduce((max, t) => Math.max(max, t.priority), -1) + 1;
+  }
+
+  const copyTitle = clip.title.endsWith(' (Copy)') ? clip.title : `${clip.title} (Copy)`;
+  const copy: Task = {
+    ...clip,
+    id: newId,
+    clientId,
+    projectId,
+    groupId,
+    boardType,
+    parentTaskId: clip.parentTaskId ?? null,
+    title: copyTitle,
+    priority,
+    createdAt: new Date().toISOString(),
+  };
+
+  return { tasks: [...updated, copy], newTaskId: newId };
+}
+
+function syncSectionDisplayNames(
+  groups: TaskGroup[],
+  customBoards: CustomBoard[]
+): TaskGroup[] {
+  return groups.map((group) => {
+    if (group.tier !== 'section' || !group.sectionBoardType) return group;
+    return { ...group, name: defaultSectionName(group.sectionBoardType, customBoards) };
+  });
+}
+
+function removeSpoolingBoardSections(groups: TaskGroup[]): TaskGroup[] {
+  const spoolingSections = groups.filter(
+    (g) => g.tier === 'section' && (g.sectionBoardType as string) === 'spooling'
+  );
+  if (spoolingSections.length === 0) return groups;
+
+  const spoolingSectionIds = new Set(spoolingSections.map((g) => g.id));
+  let next = groups.filter((g) => !spoolingSectionIds.has(g.id));
+
+  for (const spoolSection of spoolingSections) {
+    const deliverablesSection = next.find(
+      (g) =>
+        g.projectId === spoolSection.projectId &&
+        g.clientId === spoolSection.clientId &&
+        g.tier === 'section' &&
+        g.sectionBoardType === 'deliverables'
+    );
+    if (!deliverablesSection) continue;
+    next = next.map((g) =>
+      g.parentId === spoolSection.id ? { ...g, parentId: deliverablesSection.id } : g
+    );
+  }
+
+  return next;
+}
+
+function syncSectionSortOrder(
+  groups: TaskGroup[],
+  order: ProjectBoardType[],
+  projectId?: string
+): TaskGroup[] {
+  return groups.map((group) => {
+    if (group.tier !== 'section' || !group.sectionBoardType) return group;
+    if (projectId && group.projectId !== projectId) return group;
+    const idx = order.indexOf(group.sectionBoardType);
+    return idx === -1 ? group : { ...group, sortOrder: idx };
+  });
+}
+
+function renameDocumentsSectionGroups(groups: TaskGroup[]): TaskGroup[] {
+  const documentsSectionName = defaultSectionName('documents');
+  return groups.map((g) => {
+    if (
+      g.tier === 'section' &&
+      g.sectionBoardType === 'documents' &&
+      g.name !== documentsSectionName
+    ) {
+      return { ...g, name: documentsSectionName };
+    }
+    return g;
+  });
+}
+
+function renameProjectManagementSectionGroups(groups: TaskGroup[]): TaskGroup[] {
+  const sectionName = defaultSectionName('project-managers');
+  return groups.map((g) => {
+    if (
+      g.tier === 'section' &&
+      g.sectionBoardType === 'project-managers' &&
+      g.name !== sectionName
+    ) {
+      return { ...g, name: sectionName };
+    }
+    return g;
+  });
+}
+
+
+
+function buildPortfolioSeed(employees: Employee[]) {
+
+  const clients = createSeedClients();
+
+  const projects = createSeedProjects(clients);
+
+  const employeeIds = getEmployeeIds(employees);
+
+  const { groups, tasks } = buildAllSeedData(projects, employeeIds);
+
+  const templateClient = clients.find((c) => c.name === TEMPLATE_CLIENT_NAME)!;
+
+  const templateProject = projects.find((p) => p.name === TEMPLATE_PROJECT_NAME)!;
+
+  return {
+
+    clients,
+
+    projects,
+
+    taskGroups: groups,
+
+    tasks,
+
+    activeClientId: templateClient.id,
+
+    activeProjectId: templateProject.id,
+
+    subBoardTabOrder: [...DEFAULT_SUB_BOARD_TAB_ORDER],
+
+    historyPast: [],
+    historyFuture: [],
+  };
+
+}
+
+
+
+function createRecoveryPersistedState(persisted: unknown, employees: Employee[]) {
+  const portfolio = buildPortfolioSeed(employees);
+  return {
+    ...(persisted as Record<string, unknown>),
+    ...portfolio,
+    employees,
+    currentUserId: null,
+    activeMainTab: 'clients' as MainTab,
+    activeBoardType: 'main' as ProjectBoardType,
+    activeEmployeeBoard: 'detailers' as EmployeeBoardTab,
+    clientsView: 'board' as const,
+    customBoards: [],
+    boardTaskStatuses: createDefaultBoardTaskStatuses(),
+    projectBoardTaskStatuses: {},
+    boardSheetColumns: createDefaultBoardSheetColumns(),
+    boardSheetColumnOrder: createDefaultBoardSheetColumnOrder(),
+    mainOverviewSectionColumnOrder: {},
+    mainOverviewSectionSheetColumns: {},
+    taskAttachments: [],
+    taskComments: [],
+    taskCommentReadAt: {},
+    taskBoardVisibleStatuses: buildDefaultTaskBoardVisibleStatuses([
+      ...DEFAULT_TASK_STATUSES,
+      ...DEFAULT_DELIVERABLES_TASK_STATUSES,
+    ]),
+    orgTeams: createDefaultOrgTeams(employees),
+    employeePermissions: createDefaultEmployeePermissions(employees),
+    activityLog: [],
+    deletedColumnArchive: [],
+    savedSheetColumnTemplates: [],
+    timeEntries: [],
+    employeeReportsTo: createBimOrgChartReportsTo(),
+    orgChartLevelSlots: createDefaultOrgChartLevelSlots(
+      employees.map((employee) => employee.id),
+      createBimOrgChartReportsTo()
+    ),
+    employeeAssigneeStyles: createDefaultEmployeeAssigneeStyles(employees.map((employee) => employee.id)),
+    employeeCredentials: createDefaultEmployeeCredentials(employees.map((employee) => employee.id)),
+    dashboardAssignments: createDefaultDashboardAssignments(),
+  };
+}
+
+
+
+function runStoreMigration(persisted: unknown, version: number) {
+  const state = persisted as Record<string, unknown> & {
+    clients?: Client[];
+    projects?: Project[];
+    employees?: Employee[];
+    tasks?: Task[];
+    taskGroups?: TaskGroup[];
+    subBoardTabOrder?: BuiltInProjectBoardType[];
+    customBoards?: CustomBoard[];
+    taskStatuses?: TaskStatusDefinition[];
+    boardTaskStatuses?: BoardTaskStatusesMap;
+    projectBoardTaskStatuses?: ProjectBoardTaskStatusesMap;
+    boardSheetColumns?: BoardSheetColumnsMap;
+    boardSheetColumnOrder?: BoardSheetColumnOrderMap;
+    taskAttachments?: TaskAttachment[];
+    taskComments?: TaskComment[];
+    taskCommentReadAt?: Record<string, string>;
+  };
+
+  let employees = state.employees ?? seedEmployees;
+
+        if (version < 7) {
+
+          const portfolio = buildPortfolioSeed(employees);
+
+          return {
+
+            ...state,
+
+            ...portfolio,
+
+            employees,
+
+            activeMainTab: (state.activeMainTab as MainTab | undefined) ?? 'clients',
+
+            activeClientId: (state.activeClientId as string | null | undefined) ?? null,
+
+            activeProjectId: (state.activeProjectId as string | null | undefined) ?? null,
+
+            activeBoardType: (state.activeBoardType as ProjectBoardType | undefined) ?? 'main',
+
+            activeEmployeeBoard: (state.activeEmployeeBoard as EmployeeBoardTab | undefined) ?? 'detailers',
+
+            taskBoardVisibleStatuses: buildDefaultTaskBoardVisibleStatuses([
+              ...DEFAULT_TASK_STATUSES,
+              ...DEFAULT_DELIVERABLES_TASK_STATUSES,
+            ]),
+
+            clientsView: 'board' as const,
+
+            customBoards: [],
+
+            boardTaskStatuses: createDefaultBoardTaskStatuses(),
+
+            projectBoardTaskStatuses: {},
+
+            boardSheetColumns: createDefaultBoardSheetColumns(),
+
+            boardSheetColumnOrder: createDefaultBoardSheetColumnOrder(),
+
+            taskAttachments: [],
+
+            taskComments: [],
+
+            taskCommentReadAt: {},
+
+            currentUserId: null,
+
+            orgTeams: createDefaultOrgTeams(employees),
+
+            employeePermissions: createDefaultEmployeePermissions(employees),
+
+            timeEntries: [],
+
+            employeeReportsTo: {},
+
+            orgChartLevelSlots: {},
+
+            employeeAssigneeStyles: createDefaultEmployeeAssigneeStyles(
+              employees.map((employee) => employee.id)
+            ),
+
+            employeeCredentials: createDefaultEmployeeCredentials(
+              employees.map((employee) => employee.id)
+            ),
+
+            dashboardAssignments: createDefaultDashboardAssignments(),
+
+          };
+
+        }
+
+
+
+        let clients = state.clients ?? createSeedClients();
+
+        let projects = (state.projects ?? createSeedProjects(clients)).map(normalizeProject);
+
+        let taskGroups = state.taskGroups ?? [];
+        if (version < 8) {
+          taskGroups = renameDocumentsSectionGroups(taskGroups);
+        }
+        if (version < 19) {
+          taskGroups = renameProjectManagementSectionGroups(taskGroups);
+        }
+        for (const project of projects) {
+
+          taskGroups = ensureMainSections(taskGroups, project.clientId, project.id);
+
+        }
+        if (version < 9) {
+          taskGroups = ensureProjectCoordinationGroups(taskGroups, projects);
+        }
+
+        let tasks = (state.tasks ?? []).map((t) => ({
+          ...t,
+          groupId: t.groupId ?? null,
+          parentTaskId: (t as Task).parentTaskId ?? null,
+        }));
+
+        if (version < 17) {
+          const ensured = ensureProjectTemplate(
+            clients,
+            projects,
+            taskGroups,
+            tasks,
+            getEmployeeIds(employees)
+          );
+          clients = ensured.clients;
+          projects = ensured.projects.map(normalizeProject);
+          taskGroups = ensured.taskGroups;
+          tasks = ensured.tasks;
+        }
+
+        if (version < 9) {
+          tasks = assignProjectCoordinationTasks(taskGroups, tasks);
+        }
+        for (const project of projects) {
+          taskGroups = ensureProjectCoordinationGroups(taskGroups, [project]);
+        }
+        tasks = assignProjectCoordinationTasks(taskGroups, tasks);
+        if (version < 26) {
+          tasks = restoreAssignedTaskBoardTypes(tasks, taskGroups);
+        }
+        if (version < 28) {
+          tasks = assignUngroupedSectionTasks(taskGroups, tasks);
+        }
+        if (version < 29) {
+          tasks = syncTaskBoardFromGroupPlacement(taskGroups, tasks);
+          tasks = tasks.map((task) => {
+            if (task.boardType === 'employee' || task.boardType !== 'main') return task;
+            if (!task.groupId) return task;
+            const branch = inferTaskBranchBoardType(task, taskGroups);
+            return branch !== 'main' ? { ...task, boardType: branch } : task;
+          });
+        }
+        if (version < 30) {
+          projects = applyDefaultProjectTeams(projects.map(normalizeProject));
+        }
+        if (version < 31) {
+          projects = applyDefaultProjectTeams(projects.map(normalizeProject));
+        }
+        if (version < 32) {
+          projects = applyDefaultProjectTeams(projects.map(normalizeProject));
+        }
+        if (version < 33) {
+          tasks = tasks.map((t) =>
+            normalizeTaskAssignees(t as Task & { assigneeId?: string | null })
+          );
+        }
+        projects = ensureDefaultProjectTeams(projects.map(normalizeProject));
+        tasks = assignUngroupedSectionTasks(taskGroups, tasks);
+        tasks = syncTaskBoardFromGroupPlacement(taskGroups, tasks);
+        if (version < 56) {
+          tasks = migrateDeliverablesBoardStatuses(tasks, taskGroups);
+          tasks = migrateBoardDefaultStatuses(tasks);
+        }
+        tasks = tasks.map(normalizeTaskFields);
+
+        if (version < 15) {
+          const normalized = normalizeEmployeesWithRemap(employees, tasks);
+          employees = normalized.employees;
+          tasks = normalized.tasks as Task[];
+          projects = projects.map((p) => {
+            const idMap = new Map<string, string>();
+            for (const emp of state.employees ?? []) {
+              const legacy = LEGACY_NAME_TO_ID[emp.name];
+              if (legacy) idMap.set(emp.id, legacy);
+            }
+            if (idMap.size === 0) return p;
+            return {
+              ...p,
+              detailerIds: p.detailerIds.map((id) => idMap.get(id) ?? id),
+              supportIds: p.supportIds.map((id) => idMap.get(id) ?? id),
+            };
+          });
+        }
+
+        let subBoardTabOrder = normalizeSubBoardTabOrder(
+          (state.subBoardTabOrder ?? []).filter(
+            (id): id is BuiltInProjectBoardType => !isCustomBoardId(id)
+          )
+        );
+        taskGroups = syncSectionSortOrder(taskGroups, subBoardTabOrder);
+
+        for (const project of projects) {
+          taskGroups = ensureCustomBoardSections(
+            taskGroups,
+            project.clientId,
+            project.id,
+            state.customBoards ?? [],
+            subBoardTabOrder
+          );
+        }
+
+        if (version < 35) {
+          taskGroups = syncSectionDisplayNames(taskGroups, state.customBoards ?? []);
+        }
+
+        const taskStatuses = normalizeTaskStatuses(state.taskStatuses);
+
+        let boardTaskStatuses = normalizeBoardTaskStatuses(
+          state.boardTaskStatuses,
+          taskStatuses
+        );
+
+        let projectBoardTaskStatuses = normalizeProjectBoardTaskStatuses(
+          state.projectBoardTaskStatuses as ProjectBoardTaskStatusesMap | undefined
+        );
+
+        if (version < 18) {
+          boardTaskStatuses = normalizeBoardTaskStatuses(undefined, taskStatuses);
+        }
+
+        for (const cb of state.customBoards ?? []) {
+          if (!boardTaskStatuses[cb.id]?.length) {
+            boardTaskStatuses = {
+              ...boardTaskStatuses,
+              [cb.id]: getBoardTaskStatuses('main', boardTaskStatuses).map((st) => ({ ...st })),
+            };
+          }
+        }
+
+        let boardSheetColumns = normalizeBoardSheetColumns(state.boardSheetColumns);
+
+        if (version < 20) {
+          boardSheetColumns = createDefaultBoardSheetColumns();
+        }
+
+        let boardSheetColumnOrder = normalizeBoardSheetColumnOrder(
+          state.boardSheetColumnOrder,
+          boardSheetColumns
+        );
+
+        if (version < 21) {
+          boardSheetColumnOrder = createDefaultBoardSheetColumnOrder();
+          for (const cb of state.customBoards ?? []) {
+            boardSheetColumnOrder = {
+              ...boardSheetColumnOrder,
+              [cb.id]: defaultBoardColumnOrder(
+                getBoardSheetColumns(cb.id, boardSheetColumns),
+                false
+              ),
+            };
+          }
+        }
+
+        for (const cb of state.customBoards ?? []) {
+          if (!boardSheetColumns[cb.id]?.length) {
+            boardSheetColumns = {
+              ...boardSheetColumns,
+              [cb.id]: getBoardSheetColumns('main', boardSheetColumns).map((c) => ({ ...c })),
+            };
+          }
+          if (!boardSheetColumnOrder[cb.id]?.length) {
+            boardSheetColumnOrder = {
+              ...boardSheetColumnOrder,
+              [cb.id]: defaultBoardColumnOrder(
+                getBoardSheetColumns(cb.id, boardSheetColumns),
+                false
+              ),
+            };
+          }
+        }
+
+        if (version < 34) {
+          tasks = tasks.map((task) =>
+            applyAutoAssigneesToTask(task, projects, taskGroups, boardTaskStatuses)
+          );
+          boardTaskStatuses = {
+            ...boardTaskStatuses,
+            deliverables: DEFAULT_DELIVERABLES_TASK_STATUSES.map((s) => ({ ...s })),
+          };
+        }
+
+        if (version < 36) {
+          boardTaskStatuses = {
+            ...boardTaskStatuses,
+            deliverables: applyDeliverablesAutoAssignTeams(
+              getBoardTaskStatuses('deliverables', boardTaskStatuses)
+            ),
+          };
+        }
+
+        if (version < 38) {
+          projects = projects.map((project) => normalizeProject(project as Project));
+        }
+
+        let orgTeams = (state.orgTeams as OrgTeam[] | undefined) ?? createDefaultOrgTeams(employees);
+        let employeePermissions =
+          (state.employeePermissions as EmployeePermissionsMap | undefined) ??
+          createDefaultEmployeePermissions(employees);
+        let timeEntries = (state.timeEntries as TimeEntry[] | undefined) ?? [];
+        let employeeReportsTo = normalizeEmployeeReportsTo(
+          state.employeeReportsTo as EmployeeReportsToMap | Record<string, string | null> | undefined
+        );
+
+        if (version < 40) {
+          orgTeams = createDefaultOrgTeams(employees);
+          employeePermissions = createDefaultEmployeePermissions(employees);
+          timeEntries = [];
+          employeeReportsTo = {};
+        }
+
+        if (version < 41) {
+          employeeReportsTo = employeeReportsTo ?? {};
+        }
+
+        if (version < 42) {
+          employeeReportsTo = normalizeEmployeeReportsTo(
+            state.employeeReportsTo as Record<string, string | null | string[]>
+          );
+        }
+
+        if (version < 43) {
+          const defaultById = new Map(seedEmployees.map((employee) => [employee.id, employee]));
+          employees = employees.map((employee) => ({
+            ...employee,
+            orgCategory:
+              employee.orgCategory ??
+              defaultById.get(employee.id)?.orgCategory ??
+              inferOrgCategory(employee),
+          }));
+          orgTeams = migrateOrgTeamsToCategories(orgTeams, employees);
+        }
+
+        const JESSE_VASQUEZ_ID = 'emp-support-4';
+
+        if (version < 44) {
+          employees = employees.map((employee) =>
+            employee.id === JESSE_VASQUEZ_ID
+              ? { ...employee, role: 'detailer', orgCategory: 'mechanical-detailer' }
+              : employee
+          );
+
+          orgTeams = orgTeams.map((team) => {
+            if (team.id === 'team-support-specialists') {
+              return {
+                ...team,
+                memberIds: team.memberIds.filter((memberId) => memberId !== JESSE_VASQUEZ_ID),
+              };
+            }
+            if (team.id === 'team-mechanical-detailers') {
+              return team.memberIds.includes(JESSE_VASQUEZ_ID)
+                ? team
+                : { ...team, memberIds: [...team.memberIds, JESSE_VASQUEZ_ID] };
+            }
+            return team;
+          });
+
+          employeePermissions = {
+            ...employeePermissions,
+            [JESSE_VASQUEZ_ID]: [
+              ...new Set<AppPermission>([
+                ...(employeePermissions[JESSE_VASQUEZ_ID] ?? []),
+                'view-org-chart',
+                'edit-budget-hours',
+              ]),
+            ],
+          };
+        }
+
+        if (version < 45) {
+          const defaultById = new Map(seedEmployees.map((employee) => [employee.id, employee]));
+          employees = employees.map((employee) => {
+            const defaults = defaultById.get(employee.id);
+            if (!defaults) return employee;
+            return {
+              ...employee,
+              role: defaults.role,
+              orgCategory: defaults.orgCategory,
+            };
+          });
+          employeeReportsTo = createDefaultEmployeeReportsTo();
+          orgTeams = createDefaultOrgTeams(employees);
+        }
+
+        let orgChartLevelSlots = normalizeOrgChartLevelSlots(
+          state.orgChartLevelSlots as Record<
+            string,
+            Record<string, number> | string[] | (string | null)[]
+          > | undefined
+        );
+        if (version < 46) {
+          orgChartLevelSlots = {};
+        }
+        if (version < 49) {
+          orgChartLevelSlots = normalizeOrgChartLevelSlots(orgChartLevelSlots);
+        }
+        if (version < 50) {
+          orgChartLevelSlots = createDefaultOrgChartLevelSlots(
+            employees.map((employee) => employee.id),
+            employeeReportsTo
+          );
+        }
+        if (version < 51) {
+          orgChartLevelSlots = createDefaultOrgChartLevelSlots(
+            employees.map((employee) => employee.id),
+            employeeReportsTo
+          );
+        }
+
+        const employeeIds = employees.map((employee) => employee.id);
+        let employeeAssigneeStyles =
+          (state.employeeAssigneeStyles as EmployeeAssigneeStylesMap | undefined) ??
+          createDefaultEmployeeAssigneeStyles(employeeIds);
+        let employeeCredentials =
+          (state.employeeCredentials as EmployeeCredentialsMap | undefined) ??
+          createDefaultEmployeeCredentials(employeeIds);
+
+        if (version < 53) {
+          const synced = syncEmployeeAuthAndColors(
+            employeeIds,
+            employeeAssigneeStyles,
+            employeeCredentials,
+            buildUniqueAssigneeStyles
+          );
+          employeeAssigneeStyles = synced.employeeAssigneeStyles;
+          employeeCredentials = synced.employeeCredentials;
+        }
+
+        if (version < 55) {
+          tasks = tasks.map((task) => {
+            const { assigneesLocked: _locked, ...rest } = task as Task & { assigneesLocked?: boolean };
+            return normalizeTaskFields(rest as Task);
+          });
+        }
+
+        if (version < 56) {
+          timeEntries = timeEntries.map((entry) => normalizeTimeEntry(entry as TimeEntry));
+        }
+
+        if (version < 57) {
+          tasks = restoreAssignedTasksForTaskBoard(tasks);
+        }
+
+        if (version < 58) {
+          tasks = injectSampleRfiAndDocumentTasks(tasks, projects, taskGroups);
+        }
+
+        for (const project of projects) {
+          taskGroups = dedupeProjectSections(taskGroups, project.id);
+        }
+        if (version < 59) {
+          const repaired = applyProjectStructureRepairs(projects, taskGroups, tasks, employees);
+          taskGroups = repaired.taskGroups;
+          tasks = repaired.tasks;
+        } else if (version >= 59) {
+          tasks = repairOrphanedTaskGroups(taskGroups, tasks);
+          tasks = assignUngroupedSectionTasks(taskGroups, tasks);
+        }
+
+        if (version < 60) {
+          const migrated = migrateBranchBoardTaskStructure(
+            projects,
+            taskGroups,
+            tasks,
+            getEmployeeIds(employees)
+          );
+          taskGroups = migrated.taskGroups;
+          tasks = repairOrphanedTaskGroups(taskGroups, migrated.tasks);
+          tasks = assignUngroupedSectionTasks(taskGroups, tasks);
+        }
+
+        if (version < 61) {
+          const migrated = migrateBranchBoardTaskStructure(
+            projects,
+            taskGroups,
+            tasks,
+            getEmployeeIds(employees)
+          );
+          taskGroups = migrated.taskGroups;
+          tasks = repairOrphanedTaskGroups(taskGroups, migrated.tasks);
+          tasks = assignUngroupedSectionTasks(taskGroups, tasks);
+        }
+
+        if (version < 62) {
+          const migrated = migrateBranchBoardTaskStructure(
+            projects,
+            taskGroups,
+            tasks,
+            getEmployeeIds(employees)
+          );
+          taskGroups = migrated.taskGroups;
+          tasks = repairOrphanedTaskGroups(taskGroups, migrated.tasks);
+          tasks = assignZoneTasksToChildGroups(tasks, taskGroups, projects);
+          tasks = dedupeTasksByProjectTitle(tasks);
+          tasks = assignUngroupedSectionTasks(taskGroups, tasks);
+        }
+
+        if (version < 63) {
+          taskGroups = repairGroupTiers(taskGroups);
+        }
+
+        if (version < 64) {
+          const tradeMigrated = migrateTradeBeforeLevelGroupStructure(
+            projects,
+            taskGroups,
+            tasks
+          );
+          taskGroups = repairGroupTiers(tradeMigrated.taskGroups);
+          tasks = assignZoneTasksToChildGroups(tradeMigrated.tasks, taskGroups, projects);
+        }
+
+        if (version < 65) {
+          for (const project of projects) {
+            taskGroups = dedupeProjectSections(taskGroups, project.id);
+          }
+          const tradeMigrated = migrateTradeBeforeLevelGroupStructure(
+            projects,
+            taskGroups,
+            tasks
+          );
+          taskGroups = repairGroupTiers(tradeMigrated.taskGroups);
+          tasks = repairOrphanedTaskGroups(taskGroups, tradeMigrated.tasks);
+          tasks = reassignOrphanedBranchTasksToLevels(taskGroups, tasks, projects);
+          tasks = assignZoneTasksToChildGroups(tasks, taskGroups, projects);
+        }
+
+        if (version < 66) {
+          const rebuilt = rebuildTradeLevelSectionHierarchy(projects, taskGroups, tasks, {
+            force: true,
+          });
+          taskGroups = repairGroupTiers(rebuilt.taskGroups);
+          tasks = repairOrphanedTaskGroups(taskGroups, rebuilt.tasks);
+          tasks = reassignOrphanedBranchTasksToLevels(taskGroups, tasks, projects);
+          tasks = assignZoneTasksToChildGroups(tasks, taskGroups, projects);
+        }
+
+        if (version < 67) {
+          const migrated = migrateTaskDurationsToLevelGroups(taskGroups, tasks);
+          taskGroups = migrated.taskGroups;
+          tasks = migrated.tasks;
+        }
+
+        if (version < 69) {
+          tasks = repairTasksOnWrongBoardSection(tasks, taskGroups);
+        }
+
+        if (version < 70) {
+          boardSheetColumnOrder = stripBoardColumnFromSubBoardOrders(boardSheetColumnOrder);
+          tasks = repairTasksOnWrongBoardSection(tasks, taskGroups);
+        }
+
+        let taskCommentReadAt =
+          (state.taskCommentReadAt as Record<string, string> | undefined) ?? {};
+
+        if (version < 71) {
+          taskCommentReadAt = {};
+        }
+
+        let taskBoardVisibleStatuses =
+          (state.taskBoardVisibleStatuses as string[] | undefined) ?? [];
+
+        if (version < 72 || taskBoardVisibleStatuses.length === 0) {
+          const options = collectTaskBoardStatusOptions(
+            boardTaskStatuses,
+            state.projectBoardTaskStatuses ?? {},
+            tasks
+          );
+          taskBoardVisibleStatuses = normalizeTaskBoardVisibleStatuses(
+            taskBoardVisibleStatuses,
+            options
+          );
+        }
+
+        if (version < 75) {
+          boardSheetColumnOrder = stripFlatBoardHiddenColumns(boardSheetColumnOrder);
+          boardSheetColumns = {
+            ...boardSheetColumns,
+            documents: filterBoardCustomColumns('documents', boardSheetColumns.documents ?? []),
+            rfi: filterBoardCustomColumns('rfi', boardSheetColumns.rfi ?? []),
+          };
+        }
+
+        if (version < 77) {
+          boardTaskStatuses = {
+            ...boardTaskStatuses,
+            rfi: normalizeRfiBoardTaskStatuses(boardTaskStatuses.rfi),
+          };
+          projectBoardTaskStatuses = normalizeProjectBoardTaskStatuses(
+            state.projectBoardTaskStatuses as ProjectBoardTaskStatusesMap | undefined
+          );
+          tasks = migrateRfiBoardTaskStatuses(tasks);
+        }
+
+        if (version < 78) {
+          const consolidated = consolidateDuplicateStatuses(
+            boardTaskStatuses,
+            projectBoardTaskStatuses,
+            tasks,
+            taskBoardVisibleStatuses
+          );
+          boardTaskStatuses = consolidated.boardTaskStatuses;
+          projectBoardTaskStatuses = consolidated.projectBoardTaskStatuses;
+          tasks = consolidated.tasks;
+          taskBoardVisibleStatuses = consolidated.taskBoardVisibleStatuses;
+          const synced = syncStatusColorMaps(boardTaskStatuses, projectBoardTaskStatuses);
+          boardTaskStatuses = synced.boardTaskStatuses;
+          projectBoardTaskStatuses = synced.projectBoardTaskStatuses;
+        }
+
+        let customBoards = (state.customBoards as CustomBoard[] | undefined) ?? [];
+        let taskAttachments = (state.taskAttachments as TaskAttachment[] | undefined) ?? [];
+        let taskComments = (state.taskComments as TaskComment[] | undefined) ?? [];
+        let portfolioResetNavigation: { activeClientId: string; activeProjectId: string } | null = null;
+
+        if (version < 79) {
+          const reset = resetPortfolioToTemplate(
+            clients,
+            projects,
+            taskGroups,
+            tasks,
+            customBoards,
+            projectBoardTaskStatuses,
+            timeEntries,
+            getEmployeeIds(employees)
+          );
+          clients = reset.clients;
+          projects = reset.projects.map(normalizeProject);
+          taskGroups = reset.taskGroups;
+          tasks = reset.tasks;
+          customBoards = reset.customBoards;
+          projectBoardTaskStatuses = reset.projectBoardTaskStatuses;
+          timeEntries = reset.timeEntries;
+          portfolioResetNavigation = {
+            activeClientId: reset.activeClientId,
+            activeProjectId: reset.activeProjectId,
+          };
+          const taskIds = new Set(tasks.map((task) => task.id));
+          taskAttachments = taskAttachments.filter((attachment) => taskIds.has(attachment.taskId));
+          taskComments = taskComments.filter((comment) => taskIds.has(comment.taskId));
+        }
+
+        if (version < 80) {
+          const reset = resetPortfolioToTemplate(
+            clients,
+            projects,
+            taskGroups,
+            tasks,
+            customBoards,
+            projectBoardTaskStatuses,
+            timeEntries,
+            getEmployeeIds(employees)
+          );
+          clients = reset.clients;
+          projects = reset.projects.map(normalizeProject);
+          taskGroups = reset.taskGroups;
+          tasks = reset.tasks;
+          customBoards = reset.customBoards;
+          projectBoardTaskStatuses = reset.projectBoardTaskStatuses;
+          timeEntries = reset.timeEntries;
+          portfolioResetNavigation = {
+            activeClientId: reset.activeClientId,
+            activeProjectId: reset.activeProjectId,
+          };
+          const taskIds = new Set(tasks.map((task) => task.id));
+          taskAttachments = taskAttachments.filter((attachment) => taskIds.has(attachment.taskId));
+          taskComments = taskComments.filter((comment) => taskIds.has(comment.taskId));
+        }
+
+        if (version < 81) {
+          const pruned = pruneToClientTemplateOnly(
+            clients,
+            projects,
+            taskGroups,
+            tasks,
+            customBoards,
+            projectBoardTaskStatuses,
+            timeEntries,
+            getEmployeeIds(employees)
+          );
+          clients = pruned.clients;
+          projects = pruned.projects.map(normalizeProject);
+          taskGroups = pruned.taskGroups;
+          tasks = pruned.tasks;
+          customBoards = pruned.customBoards;
+          projectBoardTaskStatuses = pruned.projectBoardTaskStatuses;
+          timeEntries = pruned.timeEntries;
+          portfolioResetNavigation = {
+            activeClientId: pruned.activeClientId,
+            activeProjectId: pruned.activeProjectId,
+          };
+          const taskIds = new Set(tasks.map((task) => task.id));
+          taskAttachments = taskAttachments.filter((attachment) => taskIds.has(attachment.taskId));
+          taskComments = taskComments.filter((comment) => taskIds.has(comment.taskId));
+        }
+
+        let dashboardAssignments =
+          (state.dashboardAssignments as DashboardAssignments | undefined) ??
+          createDefaultDashboardAssignments();
+
+        if (version < 96) {
+          employees = buildBimOrgRoster(employees);
+          employeeReportsTo = createBimOrgChartReportsTo();
+          orgTeams = createDefaultOrgTeams(employees);
+          employeePermissions = createDefaultEmployeePermissions(employees);
+          dashboardAssignments = mergeDashboardAssignments(
+            dashboardAssignments,
+            createSeededDashboardAssignments()
+          );
+          orgChartLevelSlots = createDefaultOrgChartLevelSlots(
+            employees.map((employee) => employee.id),
+            employeeReportsTo
+          );
+          const synced = syncEmployeeAuthAndColors(
+            employees.map((employee) => employee.id),
+            employeeAssigneeStyles,
+            employeeCredentials,
+            buildUniqueAssigneeStyles,
+            employees
+          );
+          employeeAssigneeStyles = synced.employeeAssigneeStyles;
+          employeeCredentials = synced.employeeCredentials;
+        }
+
+        if (version < 97) {
+          subBoardTabOrder = [...DEFAULT_SUB_BOARD_TAB_ORDER];
+          for (const project of projects) {
+            taskGroups = ensureMainSections(taskGroups, project.clientId, project.id);
+          }
+          taskGroups = syncSectionSortOrder(taskGroups, subBoardTabOrder);
+        }
+
+        if (version < 98) {
+          subBoardTabOrder = [...DEFAULT_SUB_BOARD_TAB_ORDER];
+
+          tasks = tasks.map((task) =>
+            (task.boardType as string) === 'spooling'
+              ? { ...task, boardType: 'deliverables' as ProjectBoardType }
+              : task
+          );
+
+          taskGroups = removeSpoolingBoardSections(taskGroups);
+
+          boardTaskStatuses = {
+            ...normalizeBoardTaskStatuses(boardTaskStatuses),
+            deliverables: applyDeliverablesAutoAssignTeams(
+              DEFAULT_DELIVERABLES_TASK_STATUSES.map((status) => ({ ...status }))
+            ),
+          };
+          if ('spooling' in boardTaskStatuses) {
+            const { spooling: _removed, ...rest } = boardTaskStatuses as BoardTaskStatusesMap & {
+              spooling?: unknown;
+            };
+            boardTaskStatuses = rest;
+          }
+
+          taskGroups = syncSectionSortOrder(taskGroups, subBoardTabOrder);
+
+          tasks = migrateTasksToBoardStatuses(
+            tasks,
+            boardTaskStatuses,
+            taskGroups,
+            projectBoardTaskStatuses
+          );
+          tasks = tasks.map((task) =>
+            applyAutoAssigneesToTask(task, projects, taskGroups, boardTaskStatuses, projectBoardTaskStatuses)
+          );
+
+          taskBoardVisibleStatuses = buildDefaultTaskBoardVisibleStatuses([
+            ...DEFAULT_TASK_STATUSES,
+            ...DEFAULT_DELIVERABLES_TASK_STATUSES,
+          ]);
+        }
+
+        if (version < 100) {
+          subBoardTabOrder = [...DEFAULT_SUB_BOARD_TAB_ORDER];
+          for (const project of projects) {
+            taskGroups = ensureMainSections(taskGroups, project.clientId, project.id);
+          }
+          taskGroups = syncSectionSortOrder(taskGroups, subBoardTabOrder);
+          boardTaskStatuses = {
+            ...boardTaskStatuses,
+            spooling: DEFAULT_SPOOLING_TASK_STATUSES.map((status) => ({ ...status })),
+          };
+        }
+
+        if (version < 101) {
+          const pmChecklist = applyTemplatePmBoardChecklist(projects, taskGroups, tasks);
+          taskGroups = pmChecklist.taskGroups;
+          tasks = pmChecklist.tasks;
+        }
+
+        if (version < 102) {
+          const pmChecklist = applyTemplatePmBoardChecklist(projects, taskGroups, tasks);
+          taskGroups = pmChecklist.taskGroups;
+          tasks = pmChecklist.tasks;
+        }
+
+        if (version < 103) {
+          const boardSamples = applyTemplateBoardSamples(projects, taskGroups, tasks);
+          taskGroups = boardSamples.taskGroups;
+          tasks = boardSamples.tasks;
+        }
+
+        if (version < 105) {
+          const template = projects.find(
+            (project) => project.name === TEMPLATE_PROJECT_NAME || project.isTemplate
+          );
+          if (template) {
+            const reverted = revertTemplateExpandedLevels(template.id, taskGroups, tasks);
+            taskGroups = reverted.taskGroups;
+            tasks = reverted.tasks;
+            projects = projects.map((project) =>
+              project.id === template.id
+                ? normalizeProject({
+                    ...project,
+                    buildingLevels: [],
+                    activeLevels: [],
+                  })
+                : project
+            );
+          }
+        }
+
+        if (version < 106) {
+          boardSheetColumns = syncMainOverviewColumnsToAllBoards(
+            boardSheetColumns,
+            getAllConfiguredBoardTypes(state.customBoards ?? [])
+          );
+        }
+
+        if (version < 107) {
+          subBoardTabOrder = normalizeSubBoardTabOrder(DEFAULT_SUB_BOARD_TAB_ORDER);
+          const workflowDueDates = applyWorkflowDueDateColumns(
+            boardSheetColumns,
+            boardSheetColumnOrder
+          );
+          boardSheetColumns = workflowDueDates.boardSheetColumns;
+          boardSheetColumnOrder = workflowDueDates.boardSheetColumnOrder;
+        }
+
+        if (version < 111) {
+          const premade = ensurePremadeSheetColumns(boardSheetColumns, boardSheetColumnOrder);
+          boardSheetColumns = premade.boardSheetColumns;
+          boardSheetColumnOrder = premade.boardSheetColumnOrder;
+        }
+
+        if (version < 110) {
+          const nextPermissions: EmployeePermissionsMap = { ...employeePermissions };
+          for (const employee of employees) {
+            const category = inferOrgCategory(employee);
+            if (
+              category === 'owner' ||
+              category === 'bim-manager' ||
+              category === 'operations-manager'
+            ) {
+              const granted = new Set(nextPermissions[employee.id] ?? []);
+              granted.add('manage-columns');
+              granted.add('view-activity-log');
+              nextPermissions[employee.id] = [...granted];
+            }
+          }
+          employeePermissions = nextPermissions;
+        }
+
+        if (version < 109) {
+          const materialColumn = applyTemplateMaterialColumn(
+            boardSheetColumns,
+            boardSheetColumnOrder
+          );
+          boardSheetColumns = materialColumn.boardSheetColumns;
+          boardSheetColumnOrder = materialColumn.boardSheetColumnOrder;
+        }
+
+        if (version < 95) {
+          boardTaskStatuses = createDefaultBoardTaskStatuses();
+          tasks = migrateTasksToBoardStatuses(
+            tasks,
+            boardTaskStatuses,
+            taskGroups,
+            projectBoardTaskStatuses
+          );
+          tasks = migrateRfiBoardTaskStatuses(tasks);
+          projects = projects.map((project) => normalizeProject({ ...project, pmIds: project.pmIds ?? [] }));
+          dashboardAssignments = mergeDashboardAssignments(
+            dashboardAssignments,
+            createSeededDashboardAssignments()
+          );
+          employeePermissions = createDefaultEmployeePermissions(employees);
+        }
+
+        if (version < 94) {
+          let customBoardsForReset = customBoards;
+          const reset = resetTemplateToEmptyBoards(projects, taskGroups, tasks);
+          projects = reset.projects.map(normalizeProject);
+          taskGroups = reset.taskGroups;
+          tasks = reset.tasks as Task[];
+
+          const templateProject = projects.find(
+            (project) => project.name === TEMPLATE_PROJECT_NAME || project.isTemplate
+          );
+          if (templateProject) {
+            customBoardsForReset = customBoards.filter(
+              (board) => board.projectId !== templateProject.id
+            );
+            const { [templateProject.id]: _removed, ...restStatuses } = projectBoardTaskStatuses;
+            projectBoardTaskStatuses = restStatuses;
+          }
+          customBoards = customBoardsForReset;
+
+          const taskIds = new Set(tasks.map((task) => task.id));
+          taskAttachments = taskAttachments.filter((attachment) => taskIds.has(attachment.taskId));
+          taskComments = taskComments.filter((comment) => taskIds.has(comment.taskId));
+        }
+
+        if (version < 92) {
+          employees = mergeDepartmentStaff(employees);
+          orgTeams = createDefaultOrgTeams(employees);
+          employeePermissions = createDefaultEmployeePermissions(employees);
+
+          dashboardAssignments = mergeDashboardAssignments(
+            dashboardAssignments,
+            createSeededDashboardAssignments()
+          );
+
+          const synced = syncEmployeeAuthAndColors(
+            employees.map((employee) => employee.id),
+            employeeAssigneeStyles,
+            employeeCredentials,
+            buildUniqueAssigneeStyles,
+            employees
+          );
+          employeeAssigneeStyles = synced.employeeAssigneeStyles;
+          employeeCredentials = synced.employeeCredentials;
+        }
+
+        if (version < 91) {
+          const normalized = normalizeEmployeesWithRemap(employees, tasks);
+          employees = normalized.employees;
+          tasks = normalized.tasks as Task[];
+          orgTeams = createDefaultOrgTeams(employees);
+          employeePermissions = createDefaultEmployeePermissions(employees);
+
+          employeeReportsTo = {
+            ...employeeReportsTo,
+            [JOE_VASQUEZ_ID]: [],
+            [TAYLOR_MORGAN_ID]: [JOE_VASQUEZ_ID],
+            'emp-support-2': [TAYLOR_MORGAN_ID],
+            'emp-support-3': [TAYLOR_MORGAN_ID],
+            'emp-support-4': [TAYLOR_MORGAN_ID],
+            'emp-support-5': [TAYLOR_MORGAN_ID],
+          };
+
+          const synced = syncEmployeeAuthAndColors(
+            employees.map((employee) => employee.id),
+            employeeAssigneeStyles,
+            employeeCredentials,
+            buildUniqueAssigneeStyles,
+            employees
+          );
+          employeeAssigneeStyles = synced.employeeAssigneeStyles;
+          employeeCredentials = synced.employeeCredentials;
+        }
+
+        if (version < 90) {
+          const normalized = normalizeEmployeesWithRemap(employees, tasks);
+          employees = normalized.employees;
+          tasks = normalized.tasks as Task[];
+          orgTeams = createDefaultOrgTeams(employees);
+          employeePermissions = createDefaultEmployeePermissions(employees);
+
+          employeeReportsTo = {
+            ...employeeReportsTo,
+            [JOE_VASQUEZ_ID]: [],
+            [TAYLOR_MORGAN_ID]: [JOE_VASQUEZ_ID],
+            'emp-support-2': [TAYLOR_MORGAN_ID],
+            'emp-support-3': [TAYLOR_MORGAN_ID],
+            'emp-support-4': [TAYLOR_MORGAN_ID],
+            'emp-support-5': [TAYLOR_MORGAN_ID],
+          };
+
+          projects = projects.map((project) =>
+            normalizeProject({
+              ...project,
+              jobCode: project.isTemplate ? null : project.jobCode ?? null,
+            })
+          );
+
+          const numbered = backfillTaskNumbers(tasks, projects);
+          tasks = numbered.tasks;
+          projects = numbered.projects;
+
+          boardTaskStatuses = normalizeBoardTaskStatuses(boardTaskStatuses);
+          subBoardTabOrder = normalizeSubBoardTabOrder([
+            ...subBoardTabOrder,
+            'field',
+            'fab',
+            'shipping',
+          ]);
+
+          dashboardAssignments = createDefaultDashboardAssignments();
+        }
+
+        if (version < 88) {
+          const normalized = normalizeEmployeesWithRemap(employees, tasks);
+          employees = normalized.employees;
+          tasks = normalized.tasks as Task[];
+          orgTeams = createDefaultOrgTeams(employees);
+          employeePermissions = createDefaultEmployeePermissions(employees);
+          const synced = syncEmployeeAuthAndColors(
+            employees.map((employee) => employee.id),
+            employeeAssigneeStyles,
+            employeeCredentials,
+            buildUniqueAssigneeStyles
+          );
+          employeeAssigneeStyles = synced.employeeAssigneeStyles;
+          employeeCredentials = synced.employeeCredentials;
+          projects = ensureDefaultProjectTeams(projects.map(normalizeProject));
+        }
+
+        if (version < 87) {
+          employeeCredentials = {
+            ...employeeCredentials,
+            [JOE_VASQUEZ_ID]: createJoeVasquezCredential(employeeCredentials[JOE_VASQUEZ_ID]),
+          };
+        }
+
+        if (version < 86) {
+          const normalized = normalizeEmployeesWithRemap(employees, tasks);
+          employees = normalized.employees;
+          tasks = normalized.tasks as Task[];
+        }
+
+        let migrationCurrentUserId = (state.currentUserId as string | undefined) ?? null;
+
+        if (version < 85) {
+          const rosterSource =
+            employees.length <= 1 ? [...DEFAULT_EMPLOYEES] : employees;
+          const normalized = normalizeEmployeesWithRemap(rosterSource, tasks);
+          employees = normalized.employees;
+          tasks = normalized.tasks as Task[];
+          orgTeams = createDefaultOrgTeams(employees);
+          employeePermissions = createDefaultEmployeePermissions(employees);
+          const synced = syncEmployeeAuthAndColors(
+            employees.map((employee) => employee.id),
+            employeeAssigneeStyles,
+            employeeCredentials,
+            buildUniqueAssigneeStyles
+          );
+          employeeAssigneeStyles = synced.employeeAssigneeStyles;
+          employeeCredentials = synced.employeeCredentials;
+          projects = ensureDefaultProjectTeams(projects.map(normalizeProject));
+          if (
+            migrationCurrentUserId &&
+            !employees.some((employee) => employee.id === migrationCurrentUserId)
+          ) {
+            migrationCurrentUserId = JOE_VASQUEZ_ID;
+          }
+        }
+
+        const currentUserId = migrationCurrentUserId;
+
+        const resolvedNavigation = resolvePersistedNavigation(
+          state as Partial<AppState>,
+          {
+            activeMainTab: 'clients',
+            activeClientId: clients[0]?.id ?? null,
+            activeProjectId: projects.find((project) => project.clientId === clients[0]?.id)?.id ?? null,
+            activeBoardType: 'main',
+            activeEmployeeBoard: 'detailers',
+            clientsView: 'board' as const,
+          },
+          clients,
+          projects,
+          customBoards,
+          subBoardTabOrder
+        );
+
+        if (
+          resolvedNavigation.activeMainTab === 'org-chart' &&
+          !canAccessOrgChart(currentUserId, employees, employeePermissions)
+        ) {
+          resolvedNavigation.activeMainTab = 'clients';
+        }
+
+        if (
+          resolvedNavigation.activeMainTab === 'owner-dashboard' &&
+          !canViewOwnerDashboard(currentUserId, employees, employeePermissions)
+        ) {
+          resolvedNavigation.activeMainTab = 'clients';
+        }
+
+        if (
+          resolvedNavigation.activeMainTab === 'pm-dashboard' &&
+          !canViewDashboard('pm', currentUserId, employees, employeePermissions)
+        ) {
+          resolvedNavigation.activeMainTab = 'clients';
+        }
+
+        if (
+          resolvedNavigation.activeMainTab === 'field-dashboard' &&
+          !canViewDashboard('field', currentUserId, employees, employeePermissions)
+        ) {
+          resolvedNavigation.activeMainTab = 'clients';
+        }
+
+        if (
+          resolvedNavigation.activeMainTab === 'fab-dashboard' &&
+          !canViewDashboard('fab', currentUserId, employees, employeePermissions)
+        ) {
+          resolvedNavigation.activeMainTab = 'clients';
+        }
+
+        if (
+          resolvedNavigation.activeMainTab === 'shipping-dashboard' &&
+          !canViewDashboard('shipping', currentUserId, employees, employeePermissions)
+        ) {
+          resolvedNavigation.activeMainTab = 'clients';
+        }
+
+        if (
+          resolvedNavigation.activeMainTab === 'activity-log' &&
+          !canViewActivityLog(currentUserId, employees, employeePermissions)
+        ) {
+          resolvedNavigation.activeMainTab = 'clients';
+        }
+
+        if (portfolioResetNavigation) {
+          resolvedNavigation.activeClientId = portfolioResetNavigation.activeClientId;
+          resolvedNavigation.activeProjectId = portfolioResetNavigation.activeProjectId;
+        }
+
+        const migratedMainOverviewSectionColumnOrder =
+          version < 111
+            ? ensurePremadeInMainOverviewSectionOrders(
+                normalizeMainOverviewSectionColumnOrder(
+                  (state.mainOverviewSectionColumnOrder as BoardSheetColumnOrderMap | undefined) ??
+                    {},
+                  (state.mainOverviewSectionSheetColumns as BoardSheetColumnsMap | undefined) ??
+                    {},
+                  boardSheetColumns
+                )
+              )
+            : null;
+
+        return {
+          ...state,
+          clients,
+          projects,
+          employees,
+          tasks,
+          taskGroups,
+          subBoardTabOrder,
+          customBoards,
+          boardTaskStatuses,
+          projectBoardTaskStatuses,
+          boardSheetColumns,
+          boardSheetColumnOrder,
+          taskAttachments,
+          taskComments,
+          taskCommentReadAt,
+          taskBoardVisibleStatuses,
+          historyPast: [],
+          historyFuture: [],
+          currentUserId,
+          orgTeams,
+          employeePermissions,
+          timeEntries,
+          employeeReportsTo,
+          orgChartLevelSlots,
+          employeeAssigneeStyles,
+          employeeCredentials,
+          dashboardAssignments,
+          activityLog: (state.activityLog as ActivityLogEntry[] | undefined) ?? [],
+          deletedColumnArchive:
+            (state.deletedColumnArchive as DeletedColumnArchive[] | undefined) ?? [],
+          ...(migratedMainOverviewSectionColumnOrder
+            ? { mainOverviewSectionColumnOrder: migratedMainOverviewSectionColumnOrder }
+            : {}),
+          ...resolvedNavigation,
+        };
+}
+
+export const useStore = create<AppState>()(
+
+  persist(
+
+    (set, get) => {
+
+      const { clients, projects, groups, tasks, templateClient, templateProject } = createInitialPortfolio();
+
+
+
+      return {
+
+        clients,
+
+        projects,
+
+        employees: seedEmployees,
+
+        tasks,
+
+        taskGroups: groups,
+
+        customBoards: [],
+
+        boardTaskStatuses: createDefaultBoardTaskStatuses(),
+
+        projectBoardTaskStatuses: {},
+
+        boardSheetColumns: createDefaultBoardSheetColumns(),
+
+        boardSheetColumnOrder: createDefaultBoardSheetColumnOrder(),
+
+        mainOverviewSectionColumnOrder: {},
+
+        mainOverviewSectionSheetColumns: {},
+
+        taskAttachments: [],
+
+        taskComments: [],
+
+        taskCommentReadAt: {},
+
+        subBoardTabOrder: [...DEFAULT_SUB_BOARD_TAB_ORDER],
+
+        taskClipboard: null,
+
+        sheetDragActive: false,
+
+        sheetDragHoverBoard: null,
+
+        historyPast: [],
+        historyFuture: [],
+
+        activityLog: [],
+        deletedColumnArchive: [],
+
+        savedSheetColumnTemplates: [],
+
+
+
+        activeMainTab: 'clients',
+
+        activeClientId: templateClient.id,
+
+        activeProjectId: templateProject.id,
+
+        activeBoardType: 'main',
+
+        activeEmployeeBoard: 'detailers',
+
+        taskBoardVisibleStatuses: buildDefaultTaskBoardVisibleStatuses([
+          ...DEFAULT_TASK_STATUSES,
+          ...DEFAULT_DELIVERABLES_TASK_STATUSES,
+        ]),
+
+        clientsView: 'board' as const,
+
+        currentUserId: null,
+
+        viewAsOriginalUserId: null,
+
+        orgTeams: createDefaultOrgTeams(seedEmployees),
+
+        employeePermissions: createDefaultEmployeePermissions(seedEmployees),
+
+        employeeReportsTo: createBimOrgChartReportsTo(),
+
+        orgChartLevelSlots: createDefaultOrgChartLevelSlots(
+          seedEmployees.map((employee) => employee.id),
+          createBimOrgChartReportsTo()
+        ),
+
+        timeEntries: [],
+
+        employeeAssigneeStyles: createDefaultEmployeeAssigneeStyles(
+          seedEmployees.map((employee) => employee.id)
+        ),
+
+        employeeCredentials: createDefaultEmployeeCredentials(
+          seedEmployees.map((employee) => employee.id)
+        ),
+
+        dashboardAssignments: createDefaultDashboardAssignments(),
+
+        setActiveMainTab: (tab) => {
+          const state = get();
+          if (
+            tab === 'owner-dashboard' &&
+            !canViewOwnerDashboard(state.currentUserId, state.employees, state.employeePermissions)
+          ) {
+            return;
+          }
+          if (
+            tab === 'pm-dashboard' &&
+            !canViewDashboard('pm', state.currentUserId, state.employees, state.employeePermissions)
+          ) {
+            return;
+          }
+          if (
+            tab === 'field-dashboard' &&
+            !canViewDashboard('field', state.currentUserId, state.employees, state.employeePermissions)
+          ) {
+            return;
+          }
+          if (
+            tab === 'fab-dashboard' &&
+            !canViewDashboard('fab', state.currentUserId, state.employees, state.employeePermissions)
+          ) {
+            return;
+          }
+          if (
+            tab === 'shipping-dashboard' &&
+            !canViewDashboard('shipping', state.currentUserId, state.employees, state.employeePermissions)
+          ) {
+            return;
+          }
+          if (
+            tab === 'org-chart' &&
+            !canAccessOrgChart(state.currentUserId, state.employees, state.employeePermissions)
+          ) {
+            return;
+          }
+          set({
+            activeMainTab: tab,
+            ...(tab === 'clients' ? { clientsView: 'board' as const } : {}),
+          });
+        },
+
+        setActiveClientId: (id) => {
+
+          const projectsForClient = get().projects.filter((p) => p.clientId === id);
+
+          set({
+
+            activeClientId: id,
+
+            activeProjectId: projectsForClient[0]?.id ?? null,
+
+            activeBoardType: 'main',
+
+            clientsView: 'board',
+
+          });
+
+        },
+
+        setActiveProjectId: (id) =>
+          set({ activeProjectId: id, activeBoardType: 'main', clientsView: 'board' }),
+
+        setActiveBoardType: (type) => set({ activeBoardType: type, clientsView: 'board' }),
+
+        setActiveEmployeeBoard: (board) => set({ activeEmployeeBoard: board }),
+
+        setTaskBoardVisibleStatuses: (statusIds) => set({ taskBoardVisibleStatuses: statusIds }),
+
+        setClientsView: (view) => set({ clientsView: view }),
+
+        login: (loginId, password) => {
+          const { employees, employeePermissions, employeeCredentials } = get();
+          const lookup = lookupEmployeeLogin(loginId, employees, employeeCredentials);
+          if (lookup.status === 'not-found') return 'not-found';
+          if (lookup.status === 'ambiguous') return 'ambiguous';
+
+          const employeeId = lookup.employee.id;
+          if (!verifyEmployeeLogin(employeeId, password, employees, employeeCredentials)) {
+            return 'invalid-password';
+          }
+
+          const tab = get().activeMainTab;
+          const restrictedTab =
+            (tab === 'org-chart' && !canAccessOrgChart(employeeId, employees, employeePermissions)) ||
+            (tab === 'owner-dashboard' &&
+              !canViewOwnerDashboard(employeeId, employees, employeePermissions)) ||
+            (tab === 'pm-dashboard' &&
+              !canViewDashboard('pm', employeeId, employees, employeePermissions)) ||
+            (tab === 'field-dashboard' &&
+              !canViewDashboard('field', employeeId, employees, employeePermissions)) ||
+            (tab === 'fab-dashboard' &&
+              !canViewDashboard('fab', employeeId, employees, employeePermissions)) ||
+            (tab === 'shipping-dashboard' &&
+              !canViewDashboard('shipping', employeeId, employees, employeePermissions)) ||
+            (tab === 'activity-log' &&
+              !canViewActivityLog(employeeId, employees, employeePermissions));
+          const nextTab = restrictedTab ? 'clients' : tab;
+
+          const credential = employeeCredentials[employeeId];
+          const nextCredentials =
+            credential?.invitePending
+              ? {
+                  ...employeeCredentials,
+                  [employeeId]: { ...credential, invitePending: false },
+                }
+              : employeeCredentials;
+
+          set({
+            currentUserId: employeeId,
+            viewAsOriginalUserId: null,
+            activeMainTab: nextTab,
+            employeeCredentials: nextCredentials,
+          });
+          return 'success';
+        },
+
+        ensureDevSession: () => {
+          if (!import.meta.env.DEV) return;
+          set((state) => ({
+            currentUserId: JOE_VASQUEZ_ID,
+            viewAsOriginalUserId: null,
+            employeeCredentials: {
+              ...state.employeeCredentials,
+              [JOE_VASQUEZ_ID]: createJoeVasquezCredential(),
+            },
+          }));
+        },
+
+        setViewAsEmployee: (employeeId) => {
+          const state = get();
+          const { employees, employeePermissions, activeMainTab, currentUserId, viewAsOriginalUserId } =
+            state;
+
+          if (employeeId === null) {
+            if (!viewAsOriginalUserId) return;
+            set({
+              currentUserId: viewAsOriginalUserId,
+              viewAsOriginalUserId: null,
+            });
+            return;
+          }
+
+          if (!employees.some((employee) => employee.id === employeeId)) return;
+
+          const originalUserId = viewAsOriginalUserId ?? currentUserId;
+          if (!originalUserId) return;
+
+          if (employeeId === originalUserId) {
+            set({
+              currentUserId: originalUserId,
+              viewAsOriginalUserId: null,
+            });
+            return;
+          }
+
+          const restrictedTab =
+            (activeMainTab === 'org-chart' &&
+              !canAccessOrgChart(employeeId, employees, employeePermissions)) ||
+            (activeMainTab === 'owner-dashboard' &&
+              !canViewOwnerDashboard(employeeId, employees, employeePermissions)) ||
+            (activeMainTab === 'pm-dashboard' &&
+              !canViewDashboard('pm', employeeId, employees, employeePermissions)) ||
+            (activeMainTab === 'field-dashboard' &&
+              !canViewDashboard('field', employeeId, employees, employeePermissions)) ||
+            (activeMainTab === 'fab-dashboard' &&
+              !canViewDashboard('fab', employeeId, employees, employeePermissions)) ||
+            (activeMainTab === 'shipping-dashboard' &&
+              !canViewDashboard('shipping', employeeId, employees, employeePermissions)) ||
+            (activeMainTab === 'activity-log' &&
+              !canViewActivityLog(employeeId, employees, employeePermissions));
+
+          set({
+            viewAsOriginalUserId: originalUserId,
+            currentUserId: employeeId,
+            activeMainTab: restrictedTab ? 'clients' : activeMainTab,
+          });
+        },
+
+        logout: () =>
+          set({
+            currentUserId: null,
+            viewAsOriginalUserId: null,
+            activeMainTab: 'clients',
+            clientsView: 'dashboard',
+            activeClientId: null,
+            activeProjectId: null,
+          }),
+
+        goToMainScreen: () =>
+          set({
+            activeMainTab: 'clients',
+            clientsView: 'dashboard',
+            activeClientId: null,
+            activeProjectId: null,
+          }),
+
+        openProjectBoard: (clientId, projectId, boardType) => {
+          set({
+            activeClientId: clientId,
+            activeProjectId: projectId,
+            activeBoardType: boardType,
+            clientsView: 'board',
+            activeMainTab: 'clients',
+          });
+        },
+
+
+
+        addClient: (name) => {
+
+          const client: Client = { id: uuid(), name };
+
+          set((s) => ({
+
+            clients: [...s.clients, client],
+
+            activeClientId: client.id,
+
+            activeProjectId: null,
+
+          }));
+
+        },
+
+
+
+        updateClient: (id, updates) => {
+          set((s) => ({
+            clients: s.clients.map((client) => {
+              if (client.id !== id) return client;
+              const next = { ...client, ...updates };
+              if (updates.name !== undefined) {
+                const trimmed = updates.name.trim();
+                if (!trimmed) return client;
+                next.name = trimmed;
+              }
+              return next;
+            }),
+          }));
+        },
+
+
+
+        removeClient: (id) => {
+
+          set((s) => {
+
+            const clients = s.clients.filter((c) => c.id !== id);
+
+            const projects = s.projects.filter((p) => p.clientId !== id);
+
+            const tasks = s.tasks.filter((t) => t.clientId !== id);
+
+            const taskGroups = s.taskGroups.filter((g) => g.clientId !== id);
+
+            const customBoards = s.customBoards.filter((b) => b.clientId !== id);
+
+            return {
+
+              clients,
+
+              projects,
+
+              tasks,
+
+              taskGroups,
+
+              customBoards,
+
+              activeClientId: clients[0]?.id ?? null,
+
+              activeProjectId: projects.find((p) => p.clientId === clients[0]?.id)?.id ?? null,
+
+            };
+
+          });
+
+        },
+
+
+
+        addProject: (clientId, name, options) => {
+          const trimmed = name.trim();
+          if (!trimmed) return;
+
+          const buildingLevels = options?.buildingLevels ?? [];
+          const activeLevels = options?.activeLevels ?? [];
+
+          set((s) => {
+            const projectId = uuid();
+            const project: Project = normalizeProject({
+              id: projectId,
+              name: trimmed,
+              clientId,
+              ...defaultProjectFields(),
+              buildingLevels: [...buildingLevels],
+              activeLevels: [...activeLevels],
+            });
+
+            let taskGroups = [...s.taskGroups];
+            let tasks = [...s.tasks];
+
+            if (activeLevels.length > 0) {
+              const seed = buildProjectSeed(
+                {
+                  projectName: trimmed,
+                  clientName: '',
+                  levels: activeLevels.map((levelName) => ({ name: levelName })),
+                  systems: ['Mechanical Piping', 'Duct'],
+                },
+                clientId,
+                projectId,
+                getEmployeeIds(s.employees)
+              );
+              taskGroups = [...taskGroups, ...seed.groups];
+              tasks = [...tasks, ...seed.tasks];
+            } else {
+              taskGroups = [...taskGroups, ...createMainSections(clientId, projectId)];
+            }
+
+            return {
+              projects: [...s.projects, project],
+              taskGroups,
+              tasks,
+              activeProjectId: projectId,
+              activeBoardType: 'main' as ProjectBoardType,
+            };
+          });
+        },
+
+        addProjectFromTemplate: (clientId, name, options) => {
+          const trimmed = name.trim();
+          if (!trimmed) return;
+
+          if (!options.useTemplate) {
+            get().addProject(clientId, trimmed, options);
+            return;
+          }
+
+          set((s) => {
+            let projects = s.projects;
+            let taskGroups = s.taskGroups;
+            let tasks = s.tasks;
+            let clients = s.clients;
+
+            if (!projects.some((p) => p.isTemplate)) {
+              const ensured = ensureProjectTemplate(
+                clients,
+                projects,
+                taskGroups,
+                tasks,
+                getEmployeeIds(s.employees)
+              );
+              clients = ensured.clients;
+              projects = ensured.projects;
+              taskGroups = ensured.taskGroups;
+              tasks = ensured.tasks;
+            }
+
+            const template = projects.find((p) => p.isTemplate);
+            if (!template) {
+              const projectId = uuid();
+              const project: Project = normalizeProject({
+                id: projectId,
+                name: trimmed,
+                clientId,
+                ...defaultProjectFields(),
+                buildingLevels: [...options.buildingLevels],
+                activeLevels: [...options.activeLevels],
+              });
+              let nextGroups = [...taskGroups];
+              let nextTasks = [...tasks];
+              if (options.activeLevels.length > 0) {
+                const seed = buildProjectSeed(
+                  {
+                    projectName: trimmed,
+                    clientName: '',
+                    levels: options.activeLevels.map((levelName) => ({ name: levelName })),
+                    systems: ['Mechanical Piping', 'Duct'],
+                  },
+                  clientId,
+                  projectId,
+                  getEmployeeIds(s.employees)
+                );
+                nextGroups = [...nextGroups, ...seed.groups];
+                nextTasks = [...nextTasks, ...seed.tasks];
+              } else {
+                nextGroups = [...nextGroups, ...createMainSections(clientId, projectId)];
+              }
+              return {
+                ...s,
+                clients,
+                projects: [...projects, project],
+                taskGroups: nextGroups,
+                tasks: nextTasks,
+                activeProjectId: projectId,
+                activeBoardType: 'main' as ProjectBoardType,
+              };
+            }
+
+            const newProjectId = uuid();
+            const cloned = cloneProjectFromTemplate(
+              template,
+              clientId,
+              newProjectId,
+              trimmed,
+              taskGroups,
+              tasks,
+              s.customBoards,
+              s.boardTaskStatuses,
+              options.buildingLevels,
+              options.activeLevels
+            );
+
+            return {
+              ...s,
+              clients,
+              projects: [...projects, cloned.project],
+              taskGroups: [...taskGroups, ...cloned.taskGroups],
+              tasks: [...tasks, ...cloned.tasks],
+              customBoards: [...s.customBoards, ...cloned.customBoards],
+              activeProjectId: newProjectId,
+              activeBoardType: 'main' as ProjectBoardType,
+            };
+          });
+        },
+
+        removeProject: (id) => {
+
+          const project = get().projects.find((p) => p.id === id);
+          if (project?.isTemplate) return;
+
+          set((s) => {
+
+            const projects = s.projects.filter((p) => p.id !== id);
+
+            const clientProjects = projects.filter((p) => p.clientId === s.activeClientId);
+
+            return {
+
+              projects,
+
+              tasks: s.tasks.filter((t) => t.projectId !== id),
+
+              taskGroups: s.taskGroups.filter((g) => g.projectId !== id),
+
+              customBoards: s.customBoards.filter((b) => b.projectId !== id),
+
+              activeProjectId: clientProjects[0]?.id ?? null,
+
+            };
+
+          });
+
+        },
+
+
+
+        updateProjectSettings: (projectId, updates) => {
+          const state = get();
+          const touchesBudget =
+            updates.budgetHours !== undefined || updates.totalHoursSpent !== undefined;
+          if (touchesBudget && !canEditBudgetHours(state.currentUserId, state.employees, state.employeePermissions)) {
+            return;
+          }
+          set((s) => ({
+            projects: s.projects.map((p) =>
+              p.id === projectId ? { ...p, ...updates } : p
+            ),
+          }));
+        },
+
+        assignProjectPm: (projectId, employeeId) => {
+          set((s) => ({
+            projects: s.projects.map((project) => {
+              if (project.id !== projectId) return project;
+              if (project.pmIds.includes(employeeId)) return project;
+              return { ...project, pmIds: [...project.pmIds, employeeId] };
+            }),
+          }));
+        },
+
+        unassignProjectPm: (projectId, employeeId) => {
+          set((s) => ({
+            projects: s.projects.map((project) =>
+              project.id === projectId
+                ? { ...project, pmIds: project.pmIds.filter((id) => id !== employeeId) }
+                : project
+            ),
+          }));
+        },
+
+        addEmployee: (name, role, orgCategory, email) => {
+          const trimmedEmail = email.trim();
+          if (!isValidEmail(trimmedEmail)) {
+            throw new Error('A valid email is required to send a login invite.');
+          }
+          const category = orgCategory ?? defaultOrgCategoryForRole(role);
+          const employee: Employee = { id: uuid(), name, role, orgCategory: category };
+          const invitePassword = generateInvitePassword();
+          const usedStyleKeys = new Set(
+            Object.values(get().employeeAssigneeStyles).map(assigneeStyleKey)
+          );
+          const badgeStyle = pickNextUniqueAssigneeStyle(usedStyleKeys);
+
+          set((s) => ({
+            employees: [...s.employees, employee],
+            employeePermissions: {
+              ...s.employeePermissions,
+              [employee.id]: ['view-org-chart'],
+            },
+            employeeAssigneeStyles: {
+              ...s.employeeAssigneeStyles,
+              [employee.id]: badgeStyle,
+            },
+            employeeCredentials: {
+              ...s.employeeCredentials,
+              [employee.id]: {
+                password: invitePassword,
+                invitePending: true,
+                invitedAt: new Date().toISOString(),
+                email: trimmedEmail,
+              },
+            },
+            orgTeams: s.orgTeams.map((team) =>
+              team.id === orgCategoryToTeamId(category)
+                ? { ...team, memberIds: [...team.memberIds, employee.id] }
+                : team
+            ),
+          }));
+
+          return {
+            employeeId: employee.id,
+            employeeName: name,
+            invitePassword,
+            email: trimmedEmail,
+          };
+        },
+
+        updateEmployee: (id, updates) => {
+          const existing = get().employees.find((employee) => employee.id === id);
+          if (!existing) return;
+
+          const normalized: Partial<Pick<Employee, 'name' | 'role' | 'orgCategory'>> = { ...updates };
+          if (isOwnerEmployee(existing)) {
+            delete normalized.orgCategory;
+            delete normalized.role;
+          } else if (isProtectedRosterEmployee(id)) {
+            delete normalized.orgCategory;
+          }
+
+          if (normalized.name !== undefined) {
+            const trimmedName = normalized.name.trim();
+            if (!trimmedName) return;
+            normalized.name = trimmedName;
+          }
+
+          set((s) => {
+            let orgTeams = s.orgTeams;
+
+            if (normalized.orgCategory) {
+              const teamId = orgCategoryToTeamId(normalized.orgCategory);
+              orgTeams = s.orgTeams.map((team) => {
+                const withoutEmployee = team.memberIds.filter((memberId) => memberId !== id);
+                if (team.id === teamId) {
+                  return { ...team, memberIds: [...withoutEmployee, id] };
+                }
+                return { ...team, memberIds: withoutEmployee };
+              });
+            }
+
+            return {
+              employees: s.employees.map((e) => (e.id === id ? { ...e, ...normalized } : e)),
+              orgTeams,
+              projects:
+                normalized.role === undefined
+                  ? s.projects
+                  : s.projects.map((p) => {
+                      if (normalized.role === 'detailer') {
+                        return {
+                          ...p,
+                          supportIds: p.supportIds.filter((sid) => sid !== id),
+                        };
+                      }
+                      if (normalized.role === 'support-specialist') {
+                        return {
+                          ...p,
+                          detailerIds: p.detailerIds.filter((did) => did !== id),
+                        };
+                      }
+                      return p;
+                    }),
+            };
+          });
+        },
+
+        updateEmployeeEmail: (id, email) => {
+          const trimmedEmail = email.trim();
+          if (!isValidEmail(trimmedEmail)) return;
+          if (!get().employees.some((employee) => employee.id === id)) return;
+
+          set((s) => ({
+            employeeCredentials: {
+              ...s.employeeCredentials,
+              [id]: {
+                ...(s.employeeCredentials[id] ?? {
+                  password: DEFAULT_LOGIN_PASSWORD,
+                  invitePending: false,
+                }),
+                email: trimmedEmail,
+              },
+            },
+          }));
+        },
+
+        removeEmployee: (id) => {
+          if (isProtectedRosterEmployee(id)) return;
+
+          set((s) => ({
+            employees: s.employees.filter((e) => e.id !== id),
+            tasks: s.tasks.map((t) =>
+              t.assigneeIds.includes(id)
+                ? { ...t, assigneeIds: t.assigneeIds.filter((aid) => aid !== id) }
+                : t
+            ),
+            projects: s.projects.map((p) => ({
+              ...p,
+              detailerIds: p.detailerIds.filter((did) => did !== id),
+              supportIds: p.supportIds.filter((sid) => sid !== id),
+              pmIds: p.pmIds.filter((pmId) => pmId !== id),
+            })),
+            orgTeams: s.orgTeams.map((team) => ({
+              ...team,
+              memberIds: team.memberIds.filter((memberId) => memberId !== id),
+            })),
+            employeePermissions: Object.fromEntries(
+              Object.entries(s.employeePermissions).filter(([employeeId]) => employeeId !== id)
+            ),
+            employeeReportsTo: Object.fromEntries(
+              Object.entries(s.employeeReportsTo)
+                .filter(([employeeId]) => employeeId !== id)
+                .map(([employeeId, managerIds]) => [
+                  employeeId,
+                  managerIds.filter((managerId) => managerId !== id),
+                ])
+            ),
+            orgChartLevelSlots: removeEmployeeFromOrgChartSlots(s.orgChartLevelSlots, id),
+            timeEntries: s.timeEntries.filter((entry) => entry.employeeId !== id),
+            employeeAssigneeStyles: Object.fromEntries(
+              Object.entries(s.employeeAssigneeStyles).filter(([employeeId]) => employeeId !== id)
+            ),
+            employeeCredentials: Object.fromEntries(
+              Object.entries(s.employeeCredentials).filter(([employeeId]) => employeeId !== id)
+            ),
+            currentUserId:
+              s.currentUserId === id ? null : s.currentUserId,
+          }));
+        },
+
+        addOrgTeam: (name) => {
+          const team: OrgTeam = {
+            id: `team-${uuid()}`,
+            name,
+            memberIds: [],
+            sortOrder: get().orgTeams.length,
+          };
+          set((s) => ({ orgTeams: [...s.orgTeams, team] }));
+        },
+
+        renameOrgTeam: (teamId, name) => {
+          set((s) => ({
+            orgTeams: s.orgTeams.map((team) => (team.id === teamId ? { ...team, name } : team)),
+          }));
+        },
+
+        removeOrgTeam: (teamId) => {
+          set((s) => ({ orgTeams: s.orgTeams.filter((team) => team.id !== teamId) }));
+        },
+
+        moveEmployeeToTeam: (employeeId, teamId) => {
+          set((s) => {
+            const orgTeams = s.orgTeams.map((team) => {
+              const withoutEmployee = team.memberIds.filter((id) => id !== employeeId);
+              if (teamId && team.id === teamId) {
+                return { ...team, memberIds: [...withoutEmployee, employeeId] };
+              }
+              return { ...team, memberIds: withoutEmployee };
+            });
+
+            const targetTeam = teamId ? orgTeams.find((team) => team.id === teamId) : null;
+            const nextManagers = (s.employeeReportsTo[employeeId] ?? []).filter((managerId) => {
+              const manager = s.employees.find((entry) => entry.id === managerId);
+              if (isOrgOwner(manager)) return true;
+              return targetTeam ? targetTeam.memberIds.includes(managerId) : false;
+            });
+
+            const category = teamId ? teamIdToOrgCategory(teamId) : null;
+            const employees =
+              category === null
+                ? s.employees
+                : s.employees.map((employee) => {
+                    if (employee.id !== employeeId) return employee;
+                    if (category === 'owner') {
+                      return { ...employee, orgCategory: category };
+                    }
+                    return {
+                      ...employee,
+                      orgCategory: category,
+                      role: roleForOrgCategory(category),
+                    };
+                  });
+
+            return {
+              orgTeams,
+              employees,
+              employeeReportsTo: {
+                ...s.employeeReportsTo,
+                [employeeId]: teamId ? nextManagers : [],
+              },
+            };
+          });
+        },
+
+        setEmployeeManagers: (employeeId, managerIds) => {
+          set((s) => {
+            const unique = [...new Set(managerIds.filter(Boolean))].filter((managerId) => {
+              if (wouldCreateReportingCycle(employeeId, managerId, s.employeeReportsTo)) return false;
+              return isValidReportingManager(employeeId, managerId, s.employees);
+            });
+
+            return {
+              employeeReportsTo: {
+                ...s.employeeReportsTo,
+                [employeeId]: unique,
+              },
+            };
+          });
+        },
+
+        addEmployeeManager: (employeeId, managerId) => {
+          set((s) => {
+            if (wouldCreateReportingCycle(employeeId, managerId, s.employeeReportsTo)) return s;
+            if (!isValidReportingManager(employeeId, managerId, s.employees)) return s;
+
+            const current = s.employeeReportsTo[employeeId] ?? [];
+            if (current.includes(managerId)) return s;
+
+            return {
+              employeeReportsTo: {
+                ...s.employeeReportsTo,
+                [employeeId]: [...current, managerId],
+              },
+            };
+          });
+        },
+
+        toggleEmployeeManager: (employeeId, managerId, enabled) => {
+          const state = get();
+          const current = state.employeeReportsTo[employeeId] ?? [];
+          if (enabled) {
+            get().addEmployeeManager(employeeId, managerId);
+          } else {
+            get().setEmployeeManagers(
+              employeeId,
+              current.filter((id) => id !== managerId)
+            );
+          }
+        },
+
+        moveOrgChartEmployeeToSlot: (depth, employeeId, halfSlotIndex) => {
+          get().placeEmployeeOnOrgChartSlot(depth, employeeId, halfSlotIndex);
+        },
+
+        placeEmployeeOnOrgChartSlot: (targetDepth, employeeId, halfSlotIndex) => {
+          set((s) => {
+            const memberIds = s.employees.map((employee) => employee.id);
+            const currentDepth = computeEmployeeDepth(employeeId, memberIds, s.employeeReportsTo);
+
+            let nextManagers = s.employeeReportsTo[employeeId] ?? [];
+            if (targetDepth !== currentDepth) {
+              nextManagers = managersForOrgChartDepth(
+                targetDepth,
+                halfSlotIndex,
+                memberIds,
+                s.employeeReportsTo,
+                s.orgChartLevelSlots
+              );
+              if (targetDepth > 0 && nextManagers.length === 0) return s;
+
+              for (const managerId of nextManagers) {
+                if (wouldCreateReportingCycle(employeeId, managerId, s.employeeReportsTo)) return s;
+                if (!isValidReportingManager(employeeId, managerId, s.employees)) {
+                  return s;
+                }
+              }
+            }
+
+            const nextReportsTo = {
+              ...s.employeeReportsTo,
+              [employeeId]: nextManagers,
+            };
+
+            const level = buildOrgChartLevels(memberIds, nextReportsTo).find(
+              (entry) => entry.depth === targetDepth
+            );
+            if (!level?.employeeIds.includes(employeeId)) return s;
+
+            const key = String(targetDepth);
+            const existing = s.orgChartLevelSlots[key] ?? {};
+            const merged = resolveOrgChartCardPositions(level.employeeIds, existing);
+            if (!canPlaceCardAtBodyIndex(merged, halfSlotIndex, employeeId)) return s;
+
+            return {
+              employeeReportsTo: nextReportsTo,
+              orgChartLevelSlots: {
+                ...s.orgChartLevelSlots,
+                [key]: {
+                  ...existing,
+                  [employeeId]: halfSlotIndex,
+                },
+              },
+            };
+          });
+        },
+
+        organizeOrgChartLayout: () => {
+          set((s) => ({
+            orgChartLevelSlots: createDefaultOrgChartLevelSlots(
+              s.employees.map((employee) => employee.id),
+              s.employeeReportsTo
+            ),
+          }));
+        },
+
+        setEmployeePermission: (employeeId, permission, enabled) => {
+          set((s) => {
+            const current = new Set(s.employeePermissions[employeeId] ?? []);
+            if (enabled) current.add(permission);
+            else current.delete(permission);
+            const employee = s.employees.find((entry) => entry.id === employeeId);
+            const activityLog = logActivity(
+              s.activityLog,
+              {
+                actorId: resolveActivityActorId(s.currentUserId, s.viewAsOriginalUserId),
+                action: 'updated',
+                entityType: 'permission',
+                entityId: employeeId,
+                summary: `${enabled ? 'Granted' : 'Revoked'} ${permission} for ${employee?.name ?? 'employee'}`,
+                details: { permission, enabled },
+              },
+              uuid
+            );
+            return {
+              employeePermissions: {
+                ...s.employeePermissions,
+                [employeeId]: [...current],
+              },
+              activityLog,
+            };
+          });
+        },
+
+        assignDashboardMember: (dashboard, roleId, employeeId) => {
+          set((s) => {
+            const assignments = s.dashboardAssignments ?? createDefaultDashboardAssignments();
+            const board = { ...assignments[dashboard] } as Record<string, string[]>;
+            const current = [...(board[roleId] ?? [])];
+            if (current.includes(employeeId)) return s;
+            board[roleId] = [...current, employeeId];
+            return {
+              dashboardAssignments: {
+                ...assignments,
+                [dashboard]: board,
+              } as DashboardAssignments,
+            };
+          });
+        },
+
+        unassignDashboardMember: (dashboard, roleId, employeeId) => {
+          set((s) => {
+            const assignments = s.dashboardAssignments ?? createDefaultDashboardAssignments();
+            const board = { ...assignments[dashboard] } as Record<string, string[]>;
+            board[roleId] = (board[roleId] ?? []).filter((id) => id !== employeeId);
+            return {
+              dashboardAssignments: {
+                ...assignments,
+                [dashboard]: board,
+              } as DashboardAssignments,
+            };
+          });
+        },
+
+        addTimeEntry: (entry) => {
+          const state = get();
+          const prepared = prepareTimeEntryPayload(entry);
+          if (
+            !prepared ||
+            !canViewEmployeeTime(
+              state.currentUserId,
+              prepared.employeeId,
+              state.employees,
+              state.employeeReportsTo
+            )
+          ) {
+            return;
+          }
+          const timeEntry: TimeEntry = {
+            ...prepared,
+            id: uuid(),
+            createdAt: new Date().toISOString(),
+          };
+          set((s) => {
+            const history = pushHistory(s);
+            return { ...history, timeEntries: [timeEntry, ...s.timeEntries] };
+          });
+        },
+
+        updateTimeEntry: (id, entry) => {
+          const state = get();
+          const existing = state.timeEntries.find((item) => item.id === id);
+          if (
+            !existing ||
+            !canViewEmployeeTime(
+              state.currentUserId,
+              existing.employeeId,
+              state.employees,
+              state.employeeReportsTo
+            )
+          ) {
+            return;
+          }
+          const prepared = prepareTimeEntryPayload(entry);
+          if (
+            !prepared ||
+            !canViewEmployeeTime(
+              state.currentUserId,
+              prepared.employeeId,
+              state.employees,
+              state.employeeReportsTo
+            )
+          ) {
+            return;
+          }
+          set((s) => {
+            const history = pushHistory(s);
+            return {
+              ...history,
+              timeEntries: s.timeEntries.map((item) =>
+                item.id === id ? { ...item, ...prepared } : item
+              ),
+            };
+          });
+        },
+
+        removeTimeEntry: (id) => {
+          const state = get();
+          const entry = state.timeEntries.find((item) => item.id === id);
+          if (
+            !entry ||
+            !canViewEmployeeTime(
+              state.currentUserId,
+              entry.employeeId,
+              state.employees,
+              state.employeeReportsTo
+            )
+          ) {
+            return;
+          }
+          set((s) => {
+            const history = pushHistory(s);
+            return {
+              ...history,
+              timeEntries: s.timeEntries.filter((item) => item.id !== id),
+            };
+          });
+        },
+
+
+
+        addTask: (task) => {
+          set((s) => {
+            const history = pushHistory(s);
+            let projects = s.projects;
+            let taskNumber = task.taskNumber ?? null;
+
+            if (task.projectId && !taskNumber) {
+              const projectIndex = projects.findIndex((project) => project.id === task.projectId);
+              if (projectIndex >= 0) {
+                const project = projects[projectIndex]!;
+                const next = nextTaskNumberForProject(project);
+                taskNumber = next.taskNumber;
+                projects = projects.map((entry, index) =>
+                  index === projectIndex ? { ...entry, nextTaskNumber: next.nextTaskNumber } : entry
+                );
+              }
+            }
+
+            const normalized = normalizeTaskFields({
+              ...task,
+              taskNumber,
+              parentTaskId: task.parentTaskId ?? null,
+              id: uuid(),
+              createdAt: new Date().toISOString(),
+            });
+            const newTask = applyAutoAssigneesToTask(
+              normalized,
+              projects,
+              s.taskGroups,
+              s.boardTaskStatuses,
+              s.projectBoardTaskStatuses
+            );
+            const activityLog = logActivity(
+              s.activityLog,
+              {
+                actorId: resolveActivityActorId(s.currentUserId, s.viewAsOriginalUserId),
+                action: 'created',
+                entityType: 'task',
+                entityId: newTask.id,
+                summary: `Created task "${newTask.title}"`,
+                details: { board: newTask.boardType ?? 'main' },
+              },
+              uuid
+            );
+            return { ...history, projects, tasks: [...s.tasks, newTask], activityLog };
+          });
+        },
+
+        updateTask: (id, updates) => {
+          set((s) => {
+            const actorId = resolveActivityActorId(s.currentUserId, s.viewAsOriginalUserId);
+            let activityLog = s.activityLog;
+            const tasks = s.tasks.map((t) => {
+              if (t.id !== id) return t;
+              const enriched = enrichTaskUpdates(
+                t,
+                updates,
+                s.projects,
+                s.taskGroups,
+                s.boardTaskStatuses,
+                s.projectBoardTaskStatuses
+              );
+              const next = { ...t, ...enriched };
+              if (updates.status && updates.status !== t.status) {
+                activityLog = logActivity(
+                  activityLog,
+                  {
+                    actorId,
+                    action: 'status_changed',
+                    entityType: 'task',
+                    entityId: id,
+                    summary: `Changed status on "${next.title}"`,
+                    details: { from: t.status, to: updates.status },
+                  },
+                  uuid
+                );
+              } else if (
+                updates.title !== undefined ||
+                updates.groupId !== undefined ||
+                updates.boardType !== undefined ||
+                updates.assigneeIds !== undefined
+              ) {
+                activityLog = logActivity(
+                  activityLog,
+                  {
+                    actorId,
+                    action: 'updated',
+                    entityType: 'task',
+                    entityId: id,
+                    summary: `Updated task "${next.title}"`,
+                  },
+                  uuid
+                );
+              }
+              return next;
+            });
+            return activityLog === s.activityLog ? { tasks } : { tasks, activityLog };
+          });
+        },
+
+        updateTasks: (ids, updates) => {
+          const idSet = new Set(ids);
+          if (idSet.size === 0) return;
+          set((s) => ({
+            tasks: s.tasks.map((t) => {
+              if (!idSet.has(t.id)) return t;
+              const enriched = enrichTaskUpdates(
+                t,
+                updates,
+                s.projects,
+                s.taskGroups,
+                s.boardTaskStatuses,
+                s.projectBoardTaskStatuses
+              );
+              return { ...t, ...enriched };
+            }),
+          }));
+        },
+
+        updateTasksWith: (ids, updater) => {
+          const idSet = new Set(ids);
+          if (idSet.size === 0) return;
+          set((s) => ({
+            tasks: s.tasks.map((t) => {
+              if (!idSet.has(t.id)) return t;
+              const rawUpdates = updater(t);
+              const enriched = enrichTaskUpdates(
+                t,
+                rawUpdates,
+                s.projects,
+                s.taskGroups,
+                s.boardTaskStatuses,
+                s.projectBoardTaskStatuses
+              );
+              return { ...t, ...enriched };
+            }),
+          }));
+        },
+
+        refreshTasksAutoAssign: (ids) => {
+          const idSet = new Set(ids);
+          if (idSet.size === 0) return;
+          set((s) => ({
+            tasks: s.tasks.map((t) => {
+              if (!idSet.has(t.id)) return t;
+              return applyAutoAssigneesToTask(
+                t,
+                s.projects,
+                s.taskGroups,
+                s.boardTaskStatuses,
+                s.projectBoardTaskStatuses,
+                { force: true }
+              );
+            }),
+          }));
+        },
+
+        refreshActiveView: () => {
+          set((s) => {
+            const ids = new Set(taskIdsForActiveView(s));
+            if (ids.size === 0) return s;
+            return {
+              tasks: s.tasks.map((t) => {
+                if (!ids.has(t.id)) return t;
+                const reconciled = reconcileTaskAssigneeLock(
+                  t,
+                  s.projects,
+                  s.taskGroups,
+                  s.boardTaskStatuses,
+                  s.projectBoardTaskStatuses
+                );
+                if (reconciled.assigneesLocked) return reconciled;
+                return applyAutoAssigneesToTask(
+                  reconciled,
+                  s.projects,
+                  s.taskGroups,
+                  s.boardTaskStatuses,
+                  s.projectBoardTaskStatuses
+                );
+              }),
+            };
+          });
+        },
+
+        removeTask: (id) => {
+          set((s) => {
+            const history = pushHistory(s);
+            const removedTask = s.tasks.find((task) => task.id === id);
+            const toRemove = new Set<string>();
+            const collect = (taskId: string) => {
+              toRemove.add(taskId);
+              s.tasks
+                .filter((t) => t.parentTaskId === taskId)
+                .forEach((t) => collect(t.id));
+            };
+            collect(id);
+            const activityLog = removedTask
+              ? logActivity(
+                  s.activityLog,
+                  {
+                    actorId: resolveActivityActorId(s.currentUserId, s.viewAsOriginalUserId),
+                    action: 'deleted',
+                    entityType: 'task',
+                    entityId: id,
+                    summary: `Deleted task "${removedTask.title}"`,
+                  },
+                  uuid
+                )
+              : s.activityLog;
+            return {
+              ...history,
+              tasks: s.tasks.filter((t) => !toRemove.has(t.id)),
+              taskAttachments: s.taskAttachments.filter((a) => !toRemove.has(a.taskId)),
+              taskComments: s.taskComments.filter((c) => !toRemove.has(c.taskId)),
+              activityLog,
+            };
+          });
+        },
+
+        removeTasks: (ids) => {
+          if (ids.length === 0) return;
+          set((s) => {
+            const history = pushHistory(s);
+            const toRemove = new Set<string>();
+            const collect = (taskId: string) => {
+              toRemove.add(taskId);
+              s.tasks
+                .filter((t) => t.parentTaskId === taskId)
+                .forEach((t) => collect(t.id));
+            };
+            for (const id of ids) collect(id);
+            return {
+              ...history,
+              tasks: s.tasks.filter((t) => !toRemove.has(t.id)),
+              taskAttachments: s.taskAttachments.filter((a) => !toRemove.has(a.taskId)),
+              taskComments: s.taskComments.filter((c) => !toRemove.has(c.taskId)),
+            };
+          });
+        },
+
+        moveTask: (taskId, updates) => {
+          set((s) => {
+            const history = pushHistory(s);
+            return {
+              ...history,
+              tasks: s.tasks.map((t) => {
+                if (t.id !== taskId) return t;
+                const enriched = enrichTaskUpdates(
+                  t,
+                  updates,
+                  s.projects,
+                  s.taskGroups,
+                  s.boardTaskStatuses,
+                  s.projectBoardTaskStatuses
+                );
+                return { ...t, ...enriched };
+              }),
+            };
+          });
+        },
+
+        reorderEmployeeTasks: (assigneeId, taskIds) => {
+          set((s) => {
+            const history = pushHistory(s);
+            const updated = [...s.tasks];
+            taskIds.forEach((taskId, index) => {
+              const idx = updated.findIndex((t) => t.id === taskId);
+              if (idx !== -1 && taskHasAssignee(updated[idx], assigneeId)) {
+                updated[idx] = { ...updated[idx], priority: index };
+              }
+            });
+            return { ...history, tasks: updated };
+          });
+        },
+
+        reorderSubBoardTabs: (order) => {
+          const normalized = normalizeSubBoardTabOrder(order);
+          set((s) => {
+            const history = pushHistory(s);
+            return {
+              ...history,
+              subBoardTabOrder: normalized,
+              taskGroups: syncSectionSortOrder(s.taskGroups, normalized),
+            };
+          });
+        },
+
+        reorderProjectBoardTabs: (projectId, order) => {
+          set((s) => {
+            const history = pushHistory(s);
+            const builtInOrder = order.filter(
+              (id): id is BuiltInProjectBoardType => !isCustomBoardId(id)
+            );
+            const normalized = normalizeSubBoardTabOrder(builtInOrder);
+            const customBoards = s.customBoards.map((board) => {
+              if (board.projectId !== projectId) return board;
+              const idx = order.indexOf(board.id);
+              if (idx === -1) return board;
+              return { ...board, sortOrder: idx };
+            });
+            return {
+              ...history,
+              subBoardTabOrder: normalized,
+              customBoards,
+              taskGroups: syncSectionSortOrder(s.taskGroups, order, projectId),
+            };
+          });
+        },
+
+        addCustomBoard: (clientId, projectId, name) => {
+          const trimmed = name.trim();
+          if (!trimmed) return null;
+          const boardId: CustomBoard['id'] = `cb-${uuid()}`;
+          set((s) => {
+            const history = pushHistory(s);
+            const projectCustom = s.customBoards.filter((b) => b.projectId === projectId);
+            const sortOrder = s.subBoardTabOrder.length + projectCustom.length;
+            const board: CustomBoard = {
+              id: boardId,
+              name: trimmed,
+              clientId,
+              projectId,
+              sortOrder,
+            };
+            const section: TaskGroup = {
+              id: uuid(),
+              name: defaultSectionName(boardId, [...s.customBoards, board]),
+              clientId,
+              projectId,
+              boardType: 'main',
+              tier: 'section',
+              parentId: null,
+              sectionBoardType: boardId,
+              sortOrder,
+            };
+            const fullOrder = getProjectSubBoardOrder(projectId, s.subBoardTabOrder, [
+              ...s.customBoards,
+              board,
+            ]);
+            return {
+              ...history,
+              customBoards: [...s.customBoards, board],
+              boardTaskStatuses: {
+                ...s.boardTaskStatuses,
+                [boardId]: getBoardTaskStatuses('main', s.boardTaskStatuses).map((st) => ({ ...st })),
+              },
+              boardSheetColumns: {
+                ...s.boardSheetColumns,
+                [boardId]: getBoardSheetColumns('main', s.boardSheetColumns).map((c) => ({ ...c })),
+              },
+              boardSheetColumnOrder: {
+                ...s.boardSheetColumnOrder,
+                [boardId]: defaultBoardColumnOrder(
+                  getBoardSheetColumns('main', s.boardSheetColumns),
+                  false,
+                  boardId
+                ),
+              },
+              taskGroups: syncSectionSortOrder([...s.taskGroups, section], fullOrder, projectId),
+              activeBoardType: boardId,
+            };
+          });
+          return boardId;
+        },
+
+        addBoardTaskStatus: (boardType, label, autoAssignTeam, projectId, applyToAllDeliverables) => {
+          if (isRfiBoardStatusListLocked(boardType)) return null;
+          const trimmed = label.trim();
+          if (!trimmed) return null;
+          const id = `status-${uuid()}`;
+          set((s) => {
+            const current = getBoardTaskStatuses(
+              boardType,
+              s.boardTaskStatuses,
+              projectId,
+              s.projectBoardTaskStatuses
+            );
+            const next = [
+              ...current,
+              {
+                id,
+                label: trimmed,
+                color: pickNewStatusColor(current.length),
+                countsAsComplete: false,
+                ...(autoAssignTeam !== undefined ? { autoAssignTeam } : {}),
+              },
+            ];
+            return commitBoardTaskStatusList(
+              s,
+              boardType,
+              next,
+              projectId,
+              applyToAllDeliverables
+            );
+          });
+          return id;
+        },
+
+        removeBoardTaskStatus: (boardType, id, projectId, applyToAllDeliverables) => {
+          if (isRfiBoardStatusListLocked(boardType)) return;
+          set((s) => {
+            const current = getBoardTaskStatuses(
+              boardType,
+              s.boardTaskStatuses,
+              projectId,
+              s.projectBoardTaskStatuses
+            );
+            if (current.length <= 1) return s;
+            const remaining = current.filter((st) => st.id !== id);
+            const fallback = remaining[0]?.id;
+            if (!fallback) return s;
+            const history = pushHistory(s);
+            return {
+              ...history,
+              ...commitBoardTaskStatusList(
+                s,
+                boardType,
+                remaining,
+                projectId,
+                applyToAllDeliverables
+              ),
+              tasks: s.tasks.map((t) =>
+                (!projectId || t.projectId === projectId) &&
+                statusBoardForTask(t, s.taskGroups) === boardType &&
+                t.status === id
+                  ? { ...t, status: fallback }
+                  : t
+              ),
+            };
+          });
+        },
+
+        updateBoardTaskStatus: (boardType, id, updates, projectId, applyToAllDeliverables) => {
+          set((s) => {
+            const current = getBoardTaskStatuses(
+              boardType,
+              s.boardTaskStatuses,
+              projectId,
+              s.projectBoardTaskStatuses
+            );
+            const next = current.map((st) => (st.id === id ? { ...st, ...updates } : st));
+            const committed = commitBoardTaskStatusList(
+              s,
+              boardType,
+              next,
+              projectId,
+              applyToAllDeliverables
+            );
+            if (!updates.color) return committed;
+            const globalColors = applyStatusColorGlobally(
+              id,
+              updates.color,
+              committed.boardTaskStatuses,
+              committed.projectBoardTaskStatuses
+            );
+            return {
+              ...committed,
+              boardTaskStatuses: globalColors.boardTaskStatuses,
+              projectBoardTaskStatuses: globalColors.projectBoardTaskStatuses,
+            };
+          });
+        },
+
+        reorderBoardTaskStatuses: (boardType, statusIds, projectId, applyToAllDeliverables) => {
+          set((s) => {
+            const current = getBoardTaskStatuses(
+              boardType,
+              s.boardTaskStatuses,
+              projectId,
+              s.projectBoardTaskStatuses
+            );
+            const byId = new Map(current.map((status) => [status.id, status]));
+            const reordered = statusIds
+              .map((statusId) => byId.get(statusId))
+              .filter((status): status is TaskStatusDefinition => Boolean(status));
+            if (reordered.length !== current.length) return s;
+            return commitBoardTaskStatusList(
+              s,
+              boardType,
+              reordered,
+              projectId,
+              applyToAllDeliverables
+            );
+          });
+        },
+
+        syncStatusColorsAcrossProjects: () => {
+          let syncedCount = 0;
+          set((s) => {
+            const consolidated = consolidateDuplicateStatuses(
+              s.boardTaskStatuses,
+              s.projectBoardTaskStatuses,
+              s.tasks,
+              s.taskBoardVisibleStatuses
+            );
+            const synced = syncStatusColorMaps(
+              consolidated.boardTaskStatuses,
+              consolidated.projectBoardTaskStatuses
+            );
+            if (consolidated.consolidatedCount === 0 && synced.syncedCount === 0) return s;
+            syncedCount = consolidated.consolidatedCount + synced.syncedCount;
+            const history = pushHistory(s);
+            return {
+              ...history,
+              boardTaskStatuses: synced.boardTaskStatuses,
+              projectBoardTaskStatuses: synced.projectBoardTaskStatuses,
+              tasks: consolidated.tasks,
+              taskBoardVisibleStatuses: consolidated.taskBoardVisibleStatuses,
+            };
+          });
+          return syncedCount;
+        },
+
+        addBoardSheetColumn: (boardType, label, type, options, headerAlignment, cellAlignment) => {
+          const trimmed = label.trim();
+          if (!trimmed) return null;
+          const id = `col-${uuid()}`;
+          const column: import('../types').SheetColumnDefinition = {
+            id,
+            label: trimmed,
+            type,
+            headerAlignment: headerAlignment ?? 'center',
+            cellAlignment: cellAlignment ?? 'center',
+          };
+          if (type === 'dropdown') {
+            column.options = (options ?? ['Option 1', 'Option 2'])
+              .map((o) => o.trim())
+              .filter(Boolean);
+          }
+          set((s) => {
+            const isOverview = boardType === 'main';
+            const order = getBoardSheetColumnOrder(
+              boardType,
+              s.boardSheetColumnOrder,
+              s.boardSheetColumns,
+              isOverview
+            );
+            const boardIdx = order.indexOf('board');
+            const nextOrder =
+              boardIdx >= 0
+                ? [...order.slice(0, boardIdx), id, ...order.slice(boardIdx)]
+                : [...order, id];
+            const allBoardTypes = getAllConfiguredBoardTypes(s.customBoards);
+            const nextBoardSheetColumns =
+              boardType === 'main'
+                ? propagateMainSheetColumnToAllBoards(
+                    appendSheetColumnDefinition(s.boardSheetColumns, 'main', column),
+                    column,
+                    allBoardTypes
+                  )
+                : {
+                    ...s.boardSheetColumns,
+                    [boardType]: [...getBoardLocalSheetColumns(boardType, s.boardSheetColumns), column],
+                  };
+            return {
+              boardSheetColumns: nextBoardSheetColumns,
+              boardSheetColumnOrder: {
+                ...s.boardSheetColumnOrder,
+                [boardType]: nextOrder,
+              },
+            };
+          });
+          return id;
+        },
+
+        removeBoardSheetColumn: (boardType, id) => {
+          set((s) => {
+            const actorId = resolveActivityActorId(s.currentUserId, s.viewAsOriginalUserId);
+            if (!canManageColumns(actorId, s.employees, s.employeePermissions)) return s;
+
+            const sharedFromMain = isMainOverviewSharedColumn(id, s.boardSheetColumns);
+            if (sharedFromMain && boardType !== 'main') return s;
+
+            const column = findColumnDefinition(
+              boardType,
+              id,
+              s.boardSheetColumns,
+              s.mainOverviewSectionSheetColumns
+            );
+            if (!column) return s;
+
+            const columnOrderBefore = getBoardSheetColumnOrder(
+              boardType,
+              s.boardSheetColumnOrder,
+              s.boardSheetColumns,
+              boardType === 'main'
+            );
+            const activityLogId = uuid();
+            const archiveId = uuid();
+            const archive = buildColumnDeleteArchive({
+              archiveId,
+              activityLogId,
+              actorId,
+              boardType,
+              sectionBoardType: null,
+              column,
+              columnOrderBefore,
+              wasMainOverviewShared: sharedFromMain,
+              tasks: s.tasks,
+              taskGroups: s.taskGroups,
+            });
+            const stripped = stripColumnFromState(boardType, id, s);
+            const history = pushHistory(s);
+            const activityLog = logActivity(
+              s.activityLog,
+              {
+                actorId,
+                action: 'deleted',
+                entityType: 'column',
+                entityId: id,
+                summary: columnActivitySummary(
+                  'deleted',
+                  column,
+                  boardType,
+                  null,
+                  s.customBoards
+                ),
+                archiveId,
+                details: { column: column.label, board: boardType },
+              },
+              uuid
+            );
+
+            return {
+              ...history,
+              ...stripped,
+              activityLog,
+              deletedColumnArchive: [archive, ...s.deletedColumnArchive],
+            };
+          });
+        },
+
+        updateBoardSheetColumn: (boardType, id, updates) => {
+          set((s) => {
+            const sharedFromMain = isMainOverviewSharedColumn(id, s.boardSheetColumns);
+            const allBoardTypes = getAllConfiguredBoardTypes(s.customBoards);
+            const nextBoardSheetColumns = sharedFromMain
+              ? syncMainSheetColumnUpdateToAllBoards(
+                  s.boardSheetColumns,
+                  id,
+                  updates,
+                  allBoardTypes
+                )
+              : {
+                  ...s.boardSheetColumns,
+                  [boardType]: getBoardLocalSheetColumns(boardType, s.boardSheetColumns).map((col) => {
+                    if (col.id !== id) return col;
+                    const next = { ...col, ...updates };
+                    if (next.type === 'dropdown') {
+                      next.options = (next.options ?? [])
+                        .map((o) => o.trim())
+                        .filter(Boolean);
+                    } else {
+                      delete next.options;
+                    }
+                    return next;
+                  }),
+                };
+            return {
+              boardSheetColumns: nextBoardSheetColumns,
+            };
+          });
+        },
+
+        reorderBoardSheetColumns: (boardType, columnOrder) => {
+          set((s) => {
+            const isOverview = boardType === 'main';
+            const normalized = getBoardSheetColumnOrder(
+              boardType,
+              { [boardType]: columnOrder },
+              s.boardSheetColumns,
+              isOverview
+            );
+            return {
+              boardSheetColumnOrder: {
+                ...s.boardSheetColumnOrder,
+                [boardType]: normalized,
+              },
+            };
+          });
+        },
+
+        reorderMainOverviewSectionColumns: (sectionBoardType, columnOrder) => {
+          set((s) => {
+            const normalized = resolveStoredMainOverviewSectionColumnOrder(
+              sectionBoardType,
+              columnOrder,
+              s.mainOverviewSectionSheetColumns,
+              s.boardSheetColumns
+            );
+            return {
+              mainOverviewSectionColumnOrder: {
+                ...s.mainOverviewSectionColumnOrder,
+                [sectionBoardType]: normalized,
+              },
+            };
+          });
+        },
+
+        addMainOverviewSectionColumn: (
+          sectionBoardType,
+          label,
+          type,
+          options,
+          headerAlignment,
+          cellAlignment
+        ) => {
+          const trimmed = label.trim();
+          if (!trimmed) return null;
+          const id = `col-${uuid()}`;
+          const column: import('../types').SheetColumnDefinition = {
+            id,
+            label: trimmed,
+            type,
+            headerAlignment: headerAlignment ?? 'center',
+            cellAlignment: cellAlignment ?? 'center',
+          };
+          if (type === 'dropdown') {
+            column.options = (options ?? ['Option 1', 'Option 2'])
+              .map((option) => option.trim())
+              .filter(Boolean);
+          }
+          set((s) => {
+            const currentExtras =
+              s.mainOverviewSectionSheetColumns[sectionBoardType] ?? [];
+            const nextSectionColumns = [...currentExtras, column];
+            const nextSectionSheetColumns = {
+              ...s.mainOverviewSectionSheetColumns,
+              [sectionBoardType]: nextSectionColumns,
+            };
+            const order = getMainOverviewSectionColumnOrder(
+              sectionBoardType,
+              s.mainOverviewSectionColumnOrder,
+              nextSectionSheetColumns,
+              s.boardSheetColumnOrder,
+              s.boardSheetColumns
+            );
+            const boardIdx = order.indexOf('board');
+            const nextOrder =
+              boardIdx >= 0
+                ? [...order.slice(0, boardIdx), id, ...order.slice(boardIdx)]
+                : [...order, id];
+            return {
+              mainOverviewSectionSheetColumns: nextSectionSheetColumns,
+              mainOverviewSectionColumnOrder: {
+                ...s.mainOverviewSectionColumnOrder,
+                [sectionBoardType]: nextOrder,
+              },
+            };
+          });
+          return id;
+        },
+
+        addPremadeBoardColumn: (boardType, premadeId) => {
+          let added = false;
+          set((s) => {
+            const next = appendPremadeColumnToBoardState(
+              boardType,
+              premadeId,
+              s.boardSheetColumns,
+              s.boardSheetColumnOrder
+            );
+            if (!next) return s;
+            added = true;
+            return {
+              boardSheetColumns: next.boardSheetColumns,
+              boardSheetColumnOrder: next.boardSheetColumnOrder,
+            };
+          });
+          return added;
+        },
+
+        addPremadeOverviewSectionColumn: (sectionBoardType, premadeId) => {
+          let added = false;
+          set((s) => {
+            const next = appendPremadeColumnToOverviewSectionState(
+              sectionBoardType,
+              premadeId,
+              s.boardSheetColumns,
+              s.boardSheetColumnOrder,
+              s.mainOverviewSectionColumnOrder,
+              s.mainOverviewSectionSheetColumns
+            );
+            if (!next) return s;
+            added = true;
+            return {
+              boardSheetColumns: next.boardSheetColumns,
+              boardSheetColumnOrder: next.boardSheetColumnOrder,
+              mainOverviewSectionColumnOrder: next.mainOverviewSectionColumnOrder,
+            };
+          });
+          return added;
+        },
+
+        addPremadeColumnsToTargets: (targets, premadeIds, mode) => {
+          if (!targets.length || !premadeIds.length) return 0;
+          let addedCount = 0;
+          set((s) => {
+            const result = applyPremadeColumnsToTargets(
+              targets,
+              premadeIds,
+              mode,
+              s.boardSheetColumns,
+              s.boardSheetColumnOrder,
+              s.mainOverviewSectionColumnOrder,
+              s.mainOverviewSectionSheetColumns
+            );
+            addedCount = result.addedCount;
+            if (addedCount === 0) return s;
+            return {
+              boardSheetColumns: result.boardSheetColumns,
+              boardSheetColumnOrder: result.boardSheetColumnOrder,
+              mainOverviewSectionColumnOrder: result.mainOverviewSectionColumnOrder,
+            };
+          });
+          return addedCount;
+        },
+
+        addCustomColumnToTargets: (
+          targets,
+          mode,
+          label,
+          type,
+          options,
+          headerAlignment,
+          cellAlignment,
+          saveToLibrary
+        ) => {
+          const trimmed = label.trim();
+          if (!trimmed || !targets.length) return null;
+          const columnId = `col-${uuid()}`;
+          const column = buildSheetColumnDefinition(
+            columnId,
+            trimmed,
+            type,
+            options,
+            headerAlignment,
+            cellAlignment
+          );
+          set((s) => {
+            const applied = applyCustomColumnToTargets(
+              targets,
+              column,
+              mode,
+              s.boardSheetColumns,
+              s.boardSheetColumnOrder,
+              s.mainOverviewSectionColumnOrder,
+              s.mainOverviewSectionSheetColumns,
+              s.customBoards
+            );
+            let savedSheetColumnTemplates = s.savedSheetColumnTemplates;
+            if (saveToLibrary) {
+              const templateId = `saved-col-${uuid()}`;
+              savedSheetColumnTemplates = [
+                ...savedSheetColumnTemplates,
+                savedTemplateFromColumn(column, templateId, new Date().toISOString()),
+              ];
+            }
+            return {
+              ...applied,
+              savedSheetColumnTemplates,
+            };
+          });
+          return columnId;
+        },
+
+        saveSheetColumnTemplate: (label, type, options, headerAlignment, cellAlignment) => {
+          const trimmed = label.trim();
+          if (!trimmed) return '';
+          const templateId = `saved-col-${uuid()}`;
+          const column = buildSheetColumnDefinition(
+            templateId,
+            trimmed,
+            type,
+            options,
+            headerAlignment,
+            cellAlignment
+          );
+          set((s) => ({
+            savedSheetColumnTemplates: [
+              ...s.savedSheetColumnTemplates,
+              savedTemplateFromColumn(column, templateId, new Date().toISOString()),
+            ],
+          }));
+          return templateId;
+        },
+
+        removeSavedSheetColumnTemplate: (id) => {
+          set((s) => ({
+            savedSheetColumnTemplates: s.savedSheetColumnTemplates.filter(
+              (template) => template.id !== id
+            ),
+          }));
+        },
+
+        removeMainOverviewSectionColumn: (sectionBoardType, id) => {
+          set((s) => {
+            const actorId = resolveActivityActorId(s.currentUserId, s.viewAsOriginalUserId);
+            if (!canManageColumns(actorId, s.employees, s.employeePermissions)) return s;
+
+            const extras = s.mainOverviewSectionSheetColumns[sectionBoardType] ?? [];
+            const sectionColumn = extras.find((column) => column.id === id);
+            const boardColumn = getBoardSheetColumns(sectionBoardType, s.boardSheetColumns).find(
+              (column) => column.id === id
+            );
+            const column = sectionColumn ?? boardColumn;
+            if (!column) return s;
+
+            const columnOrderBefore = getBoardSheetColumnOrder(
+              sectionBoardType,
+              s.mainOverviewSectionColumnOrder,
+              {
+                ...s.boardSheetColumns,
+                ...s.mainOverviewSectionSheetColumns,
+              },
+              false
+            );
+            const activityLogId = uuid();
+            const archiveId = uuid();
+            const archive = buildColumnDeleteArchive({
+              archiveId,
+              activityLogId,
+              actorId,
+              boardType: 'main',
+              sectionBoardType,
+              column,
+              columnOrderBefore,
+              wasMainOverviewShared: false,
+              tasks: s.tasks,
+              taskGroups: s.taskGroups,
+            });
+            const stripped = stripColumnFromState('main', id, s, sectionBoardType);
+            const history = pushHistory(s);
+            const activityLog = logActivity(
+              s.activityLog,
+              {
+                actorId,
+                action: 'deleted',
+                entityType: 'column',
+                entityId: id,
+                summary: columnActivitySummary(
+                  'deleted',
+                  column,
+                  'main',
+                  sectionBoardType,
+                  s.customBoards
+                ),
+                archiveId,
+                details: { column: column.label, section: sectionBoardType },
+              },
+              uuid
+            );
+
+            return {
+              ...history,
+              ...stripped,
+              activityLog,
+              deletedColumnArchive: [archive, ...s.deletedColumnArchive],
+            };
+          });
+        },
+
+        restoreDeletedColumn: (archiveId) => {
+          let restored = false;
+          set((s) => {
+            const actorId = resolveActivityActorId(s.currentUserId, s.viewAsOriginalUserId);
+            if (!canManageColumns(actorId, s.employees, s.employeePermissions)) return s;
+
+            const archive = s.deletedColumnArchive.find((entry) => entry.id === archiveId);
+            if (!archive || archive.restoredAt) return s;
+
+            const restoredState = applyColumnArchiveRestore(archive, s);
+            const history = pushHistory(s);
+            const restoredAt = new Date().toISOString();
+            const activityLog = logActivity(
+              s.activityLog,
+              {
+                actorId,
+                action: 'restored',
+                entityType: 'column',
+                entityId: archive.column.id,
+                summary: columnActivitySummary(
+                  'restored',
+                  archive.column,
+                  archive.boardType,
+                  archive.sectionBoardType,
+                  s.customBoards
+                ),
+                archiveId,
+              },
+              uuid
+            );
+            restored = true;
+            return {
+              ...history,
+              ...restoredState,
+              activityLog,
+              deletedColumnArchive: s.deletedColumnArchive.map((entry) =>
+                entry.id === archiveId
+                  ? { ...entry, restoredAt, restoredById: actorId }
+                  : entry
+              ),
+            };
+          });
+          return restored;
+        },
+
+        updateMainOverviewSectionColumn: (sectionBoardType, id, updates) => {
+          set((s) => {
+            const extras = s.mainOverviewSectionSheetColumns[sectionBoardType];
+            if (!extras?.some((column) => column.id === id)) return s;
+            return {
+              mainOverviewSectionSheetColumns: {
+                ...s.mainOverviewSectionSheetColumns,
+                [sectionBoardType]: extras.map((column) => {
+                  if (column.id !== id) return column;
+                  const next = { ...column, ...updates };
+                  if (next.type === 'dropdown') {
+                    next.options = (next.options ?? [])
+                      .map((option) => option.trim())
+                      .filter(Boolean);
+                  } else {
+                    delete next.options;
+                  }
+                  return next;
+                }),
+              },
+            };
+          });
+        },
+
+        duplicateTask: (taskId) => {
+          const newIds = get().duplicateTasks([taskId]);
+          return newIds[0] ?? null;
+        },
+
+        duplicateTasks: (taskIds) => {
+          const newTaskIds: string[] = [];
+          set((s) => {
+            const sources = taskIds
+              .map((id) => s.tasks.find((task) => task.id === id))
+              .filter((task): task is Task => task != null);
+            if (sources.length === 0) return s;
+
+            const history = pushHistory(s);
+            let tasks = s.tasks;
+            for (const source of sources) {
+              const { tasks: nextTasks, newTaskId } = insertTaskCopy(
+                tasks,
+                taskToClipboard({ ...source, parentTaskId: null }),
+                source.clientId!,
+                source.projectId!,
+                source.groupId,
+                source.boardType,
+                source.id
+              );
+              tasks = nextTasks;
+              newTaskIds.push(newTaskId);
+            }
+            return { ...history, tasks };
+          });
+          return newTaskIds;
+        },
+
+        duplicateGroup: (groupId) => {
+          const newIds = get().duplicateGroups([groupId]);
+          return newIds[0] ?? null;
+        },
+
+        duplicateGroups: (groupIds) => {
+          const newGroupIds: string[] = [];
+          set((s) => {
+            const result = duplicateGroupSubtrees(groupIds, s.taskGroups, s.tasks);
+            if (result.newRootGroupIds.length === 0) return s;
+            const history = pushHistory(s);
+            newGroupIds.push(...result.newRootGroupIds);
+            return {
+              ...history,
+              taskGroups: result.taskGroups,
+              tasks: result.tasks,
+            };
+          });
+          return newGroupIds;
+        },
+
+        copyTask: (taskId) => {
+          const source = get().tasks.find((t) => t.id === taskId);
+          if (source) set({ taskClipboard: taskToClipboard(source) });
+        },
+
+        pasteTask: ({ clientId, projectId, insertAfterTaskId }) => {
+          const clip = get().taskClipboard;
+          if (!clip) return null;
+
+          let newTaskId: string | null = null;
+          set((s) => {
+            const history = pushHistory(s);
+            const anchor = insertAfterTaskId
+              ? s.tasks.find((t) => t.id === insertAfterTaskId)
+              : null;
+
+            const groupId = anchor
+              ? anchor.groupId
+              : resolveGroupForProject(s.taskGroups, projectId, clip.groupId);
+            const boardType = anchor?.boardType ?? clip.boardType;
+
+            const { tasks, newTaskId: id } = insertTaskCopy(
+              s.tasks,
+              clip,
+              clientId,
+              projectId,
+              groupId,
+              boardType,
+              insertAfterTaskId ?? null
+            );
+            newTaskId = id;
+            return { ...history, tasks };
+          });
+          return newTaskId;
+        },
+
+        undo: () => {
+          set((s) => {
+            if (s.historyPast.length === 0) return s;
+            const previous = s.historyPast[s.historyPast.length - 1];
+            const current = cloneSnapshot(s.tasks, s.taskGroups, s.timeEntries);
+            return {
+              tasks: previous.tasks,
+              taskGroups: previous.taskGroups,
+              timeEntries: previous.timeEntries ?? s.timeEntries,
+              historyPast: s.historyPast.slice(0, -1),
+              historyFuture: [current, ...s.historyFuture].slice(0, 50),
+            };
+          });
+        },
+
+        redo: () => {
+          set((s) => {
+            if (s.historyFuture.length === 0) return s;
+            const next = s.historyFuture[0];
+            const current = cloneSnapshot(s.tasks, s.taskGroups, s.timeEntries);
+            return {
+              tasks: next.tasks,
+              taskGroups: next.taskGroups,
+              timeEntries: next.timeEntries ?? s.timeEntries,
+              historyPast: [...s.historyPast, current].slice(-50),
+              historyFuture: s.historyFuture.slice(1),
+            };
+          });
+        },
+
+        createTaskInGroup: ({ clientId, projectId, groupId, boardType: boardOverride }) => {
+          let newTaskId: string | null = null;
+          set((s) => {
+            const history = pushHistory(s);
+            const branchBoard =
+              boardOverride ??
+              (groupId ? findSectionBoardType(s.taskGroups, groupId) ?? 'main' : 'main');
+            const siblings = s.tasks.filter(
+              (t) =>
+                t.projectId === projectId &&
+                t.groupId === groupId &&
+                !t.parentTaskId &&
+                t.boardType === branchBoard
+            );
+            newTaskId = uuid();
+            const task: Task = {
+              id: newTaskId,
+              title: 'New task',
+              description: '',
+              status: defaultStatusForBoard(
+                branchBoard,
+                getBoardTaskStatuses(branchBoard, s.boardTaskStatuses)
+              ),
+              assigneeIds: [],
+              clientId,
+              projectId,
+              boardType: branchBoard,
+              groupId,
+              parentTaskId: null,
+              priority: siblings.reduce((max, t) => Math.max(max, t.priority), -1) + 1,
+              dueDate: null,
+              customFields: {},
+              durationFields: {},
+              createdAt: new Date().toISOString(),
+            };
+            const newTask = applyAutoAssigneesToTask(
+              normalizeTaskFields(task),
+              s.projects,
+              s.taskGroups,
+              s.boardTaskStatuses,
+              s.projectBoardTaskStatuses
+            );
+            return { ...history, tasks: [...s.tasks, newTask] };
+          });
+          return newTaskId;
+        },
+
+        createSubtask: (parentTaskId) => {
+          let newTaskId: string | null = null;
+          set((s) => {
+            const parent = s.tasks.find((t) => t.id === parentTaskId);
+            if (!parent) return s;
+            const history = pushHistory(s);
+            const siblings = s.tasks.filter((t) => t.parentTaskId === parentTaskId);
+            newTaskId = uuid();
+            const task: Task = {
+              id: newTaskId,
+              title: 'New subtask',
+              description: '',
+              status: parent.status,
+              assigneeIds: [],
+              clientId: parent.clientId,
+              projectId: parent.projectId,
+              boardType: parent.boardType,
+              groupId: parent.groupId,
+              parentTaskId,
+              priority: siblings.reduce((max, t) => Math.max(max, t.priority), -1) + 1,
+              dueDate: null,
+              createdAt: new Date().toISOString(),
+            };
+            const newTask = applyAutoAssigneesToTask(
+              normalizeTaskFields(task),
+              s.projects,
+              s.taskGroups,
+              s.boardTaskStatuses,
+              s.projectBoardTaskStatuses
+            );
+            return { ...history, tasks: [...s.tasks, newTask] };
+          });
+          return newTaskId;
+        },
+
+        applySheetTaskUpdates: (updates) => {
+          if (updates.length === 0) return;
+          set((s) => {
+            const history = pushHistory(s);
+            const byId = new Map(updates.map((u) => [u.id, u]));
+            return {
+              ...history,
+              tasks: s.tasks.map((task) => {
+                const update = byId.get(task.id);
+                if (!update) return task;
+                return {
+                  ...task,
+                  groupId: update.groupId,
+                  priority: update.priority,
+                  ...(update.boardType !== undefined ? { boardType: update.boardType } : {}),
+                };
+              }),
+            };
+          });
+        },
+
+        applySheetGroupUpdates: (updates) => {
+          if (updates.length === 0) return;
+          set((s) => {
+            const history = pushHistory(s);
+            const byId = new Map(updates.map((u) => [u.id, u]));
+            const taskGroups = repairGroupTiers(
+              s.taskGroups.map((group) => {
+                const update = byId.get(group.id);
+                if (!update) return group;
+                return {
+                  ...group,
+                  parentId: update.parentId,
+                  sortOrder: update.sortOrder,
+                  ...(update.tier !== undefined ? { tier: update.tier } : {}),
+                };
+              })
+            );
+            return {
+              ...history,
+              taskGroups,
+            };
+          });
+        },
+
+        moveSheetItemsToBoard: ({
+          clientId,
+          projectId,
+          groupIds,
+          taskIds,
+          targetBoardType,
+        }) => {
+          if (groupIds.length === 0 && taskIds.length === 0) return;
+
+          set((s) => {
+            const groupUpdates =
+              groupIds.length > 0
+                ? computeMoveGroupsToBoard(
+                    s.taskGroups,
+                    projectId,
+                    clientId,
+                    groupIds,
+                    targetBoardType
+                  )
+                : null;
+            if (groupIds.length > 0 && (!groupUpdates || groupUpdates.length === 0)) {
+              return s;
+            }
+
+            const history = pushHistory(s);
+            const groupUpdateById = new Map(
+              (groupUpdates ?? []).map((update) => [update.id, update])
+            );
+
+            let taskGroups = s.taskGroups;
+            if (groupUpdateById.size > 0) {
+              taskGroups = repairGroupTiers(
+                taskGroups.map((group) => {
+                  const update = groupUpdateById.get(group.id);
+                  if (!update) return group;
+                  return {
+                    ...group,
+                    parentId: update.parentId,
+                    sortOrder: update.sortOrder,
+                    ...(update.tier !== undefined ? { tier: update.tier } : {}),
+                  };
+                })
+              );
+            }
+
+            const subtreeTaskIds =
+              groupIds.length > 0
+                ? collectTaskIdsInGroupSubtrees(s.taskGroups, groupIds, s.tasks)
+                : [];
+            const directTaskIds = new Set(taskIds);
+            const affectedTaskIds = new Set([...subtreeTaskIds, ...taskIds]);
+            if (affectedTaskIds.size === 0) {
+              return { ...history, taskGroups };
+            }
+
+            const tasks = s.tasks.map((task) => {
+              if (!affectedTaskIds.has(task.id)) return task;
+              return {
+                ...task,
+                boardType: targetBoardType,
+                ...(directTaskIds.has(task.id) && !subtreeTaskIds.includes(task.id)
+                  ? { groupId: null }
+                  : {}),
+              };
+            });
+
+            return { ...history, taskGroups, tasks };
+          });
+        },
+
+        setSheetDragActive: (active) => set({ sheetDragActive: active }),
+
+        setSheetDragHoverBoard: (board) => set({ sheetDragHoverBoard: board }),
+
+        applySheetGroupMerge: (merge) => {
+          set((s) => {
+            const history = pushHistory(s);
+            const taskById = new Map(merge.taskUpdates.map((update) => [update.id, update]));
+            const siblingById = new Map(
+              merge.siblingGroupUpdates.map((update) => [update.id, update])
+            );
+            return {
+              ...history,
+              taskGroups: s.taskGroups
+                .filter((group) => group.id !== merge.removeGroupId)
+                .map((group) => {
+                  const siblingUpdate = siblingById.get(group.id);
+                  if (!siblingUpdate) return group;
+                  return {
+                    ...group,
+                    parentId: siblingUpdate.parentId,
+                    sortOrder: siblingUpdate.sortOrder,
+                  };
+                }),
+              tasks: s.tasks.map((task) => {
+                const update = taskById.get(task.id);
+                if (!update) return task;
+                return {
+                  ...task,
+                  groupId: update.groupId,
+                  priority: update.priority,
+                };
+              }),
+            };
+          });
+        },
+
+
+
+        addGroup: (group) => {
+          const id = uuid();
+          set((s) => {
+            const history = pushHistory(s);
+            const siblings = s.taskGroups.filter(
+              (g) =>
+                g.clientId === group.clientId &&
+                g.projectId === group.projectId &&
+                g.parentId === group.parentId
+            );
+            const sortOrder = group.sortOrder ?? siblings.length;
+            const created = { ...group, id, sortOrder };
+            const activityLog = logActivity(
+              s.activityLog,
+              {
+                actorId: resolveActivityActorId(s.currentUserId, s.viewAsOriginalUserId),
+                action: 'created',
+                entityType: 'group',
+                entityId: id,
+                summary: `Created group "${created.name}"`,
+                details: { board: created.boardType },
+              },
+              uuid
+            );
+            return {
+              ...history,
+              taskGroups: [...s.taskGroups, created],
+              activityLog,
+            };
+          });
+          return id;
+        },
+
+        updateGroup: (id, updates) => {
+          set((s) => {
+            const history = pushHistory(s);
+            return {
+              ...history,
+              taskGroups: s.taskGroups.map((g) => (g.id === id ? { ...g, ...updates } : g)),
+            };
+          });
+        },
+
+        removeGroup: (id) => {
+          set((s) => {
+            const history = pushHistory(s);
+            const removedGroup = s.taskGroups.find((group) => group.id === id);
+            const descendantIds = collectDescendantGroupIds(s.taskGroups, id);
+            const removeIds = new Set([id, ...descendantIds]);
+            const activityLog = removedGroup
+              ? logActivity(
+                  s.activityLog,
+                  {
+                    actorId: resolveActivityActorId(s.currentUserId, s.viewAsOriginalUserId),
+                    action: 'deleted',
+                    entityType: 'group',
+                    entityId: id,
+                    summary: `Deleted group "${removedGroup.name}"`,
+                  },
+                  uuid
+                )
+              : s.activityLog;
+            return {
+              ...history,
+              taskGroups: s.taskGroups.filter((g) => !removeIds.has(g.id)),
+              tasks: s.tasks.map((t) =>
+                t.groupId && removeIds.has(t.groupId) ? { ...t, groupId: null } : t
+              ),
+              activityLog,
+            };
+          });
+        },
+
+        removeGroups: (ids) => {
+          if (ids.length === 0) return;
+          set((s) => {
+            const history = pushHistory(s);
+            const removeIds = new Set<string>();
+            for (const id of ids) {
+              removeIds.add(id);
+              for (const descendantId of collectDescendantGroupIds(s.taskGroups, id)) {
+                removeIds.add(descendantId);
+              }
+            }
+            return {
+              ...history,
+              taskGroups: s.taskGroups.filter((g) => !removeIds.has(g.id)),
+              tasks: s.tasks.map((t) =>
+                t.groupId && removeIds.has(t.groupId) ? { ...t, groupId: null } : t
+              ),
+            };
+          });
+        },
+
+
+
+        addFlatBoardHeader: (clientId, projectId, boardType, name = 'New Header') => {
+          const id = uuid();
+          set((s) => {
+            const history = pushHistory(s);
+            const siblings = s.taskGroups.filter(
+              (g) =>
+                g.clientId === clientId &&
+                g.projectId === projectId &&
+                g.boardType === boardType &&
+                g.parentId === null
+            );
+            return {
+              ...history,
+              taskGroups: [
+                ...s.taskGroups,
+                {
+                  id,
+                  name,
+                  clientId,
+                  projectId,
+                  boardType,
+                  tier: 'parent',
+                  parentId: null,
+                  sectionBoardType: null,
+                  sortOrder: siblings.length,
+                },
+              ],
+            };
+          });
+          return id;
+        },
+
+        upsertTaskAttachment: ({
+          taskId,
+          fileName,
+          mimeType,
+          sizeBytes,
+          storageId,
+          uploadedById,
+          mode,
+        }) => {
+          set((s) => {
+            const now = new Date().toISOString();
+            const existing = s.taskAttachments.find(
+              (a) => a.taskId === taskId && a.fileName.toLowerCase() === fileName.toLowerCase()
+            );
+
+            if (!existing || mode === 'new') {
+              const versionId = uuid();
+              const attachmentId = uuid();
+              const attachment: TaskAttachment = {
+                id: attachmentId,
+                taskId,
+                fileName,
+                currentVersionId: versionId,
+                versions: [
+                  {
+                    id: versionId,
+                    version: 1,
+                    fileName,
+                    mimeType,
+                    sizeBytes,
+                    storageId,
+                    uploadedAt: now,
+                    uploadedById,
+                  },
+                ],
+              };
+              return { taskAttachments: [...s.taskAttachments, attachment] };
+            }
+
+            const nextVersionNumber =
+              mode === 'replace'
+                ? existing.versions.find((v) => v.id === existing.currentVersionId)?.version ??
+                  existing.versions.length
+                : existing.versions.reduce((max, v) => Math.max(max, v.version), 0) + 1;
+
+            const versionId = uuid();
+            const version = {
+              id: versionId,
+              version: nextVersionNumber,
+              fileName,
+              mimeType,
+              sizeBytes,
+              storageId,
+              uploadedAt: now,
+              uploadedById,
+            };
+
+            const nextAttachment: TaskAttachment = {
+              ...existing,
+              fileName,
+              currentVersionId: versionId,
+              versions:
+                mode === 'replace'
+                  ? existing.versions.map((v) =>
+                      v.id === existing.currentVersionId ? { ...version, version: v.version } : v
+                    )
+                  : [...existing.versions, version],
+            };
+
+            return {
+              taskAttachments: s.taskAttachments.map((a) =>
+                a.id === existing.id ? nextAttachment : a
+              ),
+            };
+          });
+        },
+
+        removeTaskAttachment: (attachmentId) => {
+          let storageIds: string[] = [];
+          set((s) => {
+            const attachment = s.taskAttachments.find((a) => a.id === attachmentId);
+            if (!attachment) return s;
+            storageIds = attachment.versions.map((v) => v.storageId);
+            return {
+              taskAttachments: s.taskAttachments.filter((a) => a.id !== attachmentId),
+            };
+          });
+          return storageIds;
+        },
+
+        addTaskComment: (taskId, authorId, body) => {
+          set((s) => ({
+            taskComments: [
+              ...s.taskComments,
+              {
+                id: uuid(),
+                taskId,
+                authorId,
+                body: body.trim(),
+                createdAt: new Date().toISOString(),
+              },
+            ],
+          }));
+        },
+
+        removeTaskComment: (commentId) => {
+          set((s) => ({
+            taskComments: s.taskComments.filter((comment) => comment.id !== commentId),
+          }));
+        },
+
+        markTaskCommentsRead: (taskId) => {
+          set((s) => ({
+            taskCommentReadAt: {
+              ...s.taskCommentReadAt,
+              [taskId]: new Date().toISOString(),
+            },
+          }));
+        },
+
+        ensureProjectGroups: (clientId, projectId) => {
+          set((s) => {
+            let taskGroups = ensureMainSections(s.taskGroups, clientId, projectId);
+            taskGroups = ensureCustomBoardSections(
+              taskGroups,
+              clientId,
+              projectId,
+              s.customBoards,
+              s.subBoardTabOrder
+            );
+            let tasks = repairTasksOnWrongBoardSection(s.tasks, taskGroups);
+            const project = s.projects.find((p) => p.id === projectId);
+            if (!project || project.isTemplate) {
+              return { taskGroups, tasks };
+            }
+            const seedInput = resolveProjectSeedInput(project);
+            if (!seedInput) {
+              return { taskGroups, tasks };
+            }
+
+            const needsRepair = (['detailers', 'deliverables'] as const).some((sectionType) => {
+              const section = taskGroups.find(
+                (g) =>
+                  g.projectId === projectId &&
+                  g.tier === 'section' &&
+                  g.sectionBoardType === sectionType
+              );
+              if (!section) return false;
+              return isTradeLevelSectionBroken(
+                taskGroups,
+                projectId,
+                section.id,
+                seedInput.systems,
+                seedInput.levels
+              );
+            });
+
+            if (!needsRepair) {
+              return { taskGroups, tasks };
+            }
+
+            const fixed = rebuildTradeLevelSectionHierarchy([project], taskGroups, tasks);
+            taskGroups = repairGroupTiers(fixed.taskGroups);
+            tasks = repairOrphanedTaskGroups(taskGroups, fixed.tasks);
+            tasks = reassignOrphanedBranchTasksToLevels(taskGroups, tasks, s.projects);
+            tasks = assignZoneTasksToChildGroups(tasks, taskGroups, s.projects);
+            tasks = repairTasksOnWrongBoardSection(tasks, taskGroups);
+
+            return { taskGroups, tasks };
+          });
+        },
+
+      };
+
+    },
+
+    {
+
+      name: 'bim-task-board-storage',
+
+      version: 112,
+
+      migrate: (persisted, version) => {
+        try {
+          return runStoreMigration(persisted, version);
+        } catch (error) {
+          console.error('Store migration failed', error);
+          return createRecoveryPersistedState(persisted, seedEmployees);
+        }
+      },
+
+      partialize: (state) => ({
+
+        clients: state.clients,
+
+        projects: state.projects,
+
+        employees: state.employees,
+
+        tasks: state.tasks.map(({ assigneesLocked: _locked, ...task }) => task),
+
+        taskGroups: state.taskGroups,
+
+        customBoards: state.customBoards,
+
+        subBoardTabOrder: state.subBoardTabOrder,
+
+        boardTaskStatuses: state.boardTaskStatuses,
+
+        projectBoardTaskStatuses: state.projectBoardTaskStatuses,
+
+        boardSheetColumns: state.boardSheetColumns,
+
+        boardSheetColumnOrder: state.boardSheetColumnOrder,
+
+        mainOverviewSectionColumnOrder: state.mainOverviewSectionColumnOrder,
+
+        mainOverviewSectionSheetColumns: state.mainOverviewSectionSheetColumns,
+
+        taskAttachments: state.taskAttachments,
+
+        taskComments: state.taskComments,
+
+        taskCommentReadAt: state.taskCommentReadAt,
+
+        activeMainTab: state.activeMainTab,
+
+        activeClientId: state.activeClientId,
+
+        activeProjectId: state.activeProjectId,
+
+        activeBoardType: state.activeBoardType,
+
+        activeEmployeeBoard: state.activeEmployeeBoard,
+
+        taskBoardVisibleStatuses: state.taskBoardVisibleStatuses,
+
+        clientsView: state.clientsView,
+
+        currentUserId: state.currentUserId,
+
+        orgTeams: state.orgTeams,
+
+        employeePermissions: state.employeePermissions,
+
+        timeEntries: state.timeEntries,
+
+        employeeReportsTo: state.employeeReportsTo,
+
+        orgChartLevelSlots: state.orgChartLevelSlots,
+
+        employeeAssigneeStyles: state.employeeAssigneeStyles,
+
+        employeeCredentials: state.employeeCredentials,
+
+        dashboardAssignments: state.dashboardAssignments,
+
+        activityLog: state.activityLog,
+
+        deletedColumnArchive: state.deletedColumnArchive,
+
+        savedSheetColumnTemplates: state.savedSheetColumnTemplates,
+
+      }),
+
+      merge: (persisted, current) => {
+        try {
+          return mergePersistedState(persisted as Partial<AppState>, current);
+        } catch (error) {
+          console.error('Failed to merge persisted store state', error);
+          return {
+            ...current,
+            ...createRecoveryPersistedState(persisted, current.employees),
+          } as AppState;
+        }
+      },
+
+      storage: createJSONStorage(() =>
+        import.meta.env.DEV ? devStoreSyncStorage : localStorage
+      ),
+
+    }
+
+  )
+
+  );
+
+export function saveNavigationForReload(): void {
+  const state = useStore.getState();
+  sessionStorage.setItem(
+    RELOAD_NAV_SESSION_KEY,
+    JSON.stringify({
+      activeMainTab: state.activeMainTab,
+      activeClientId: state.activeClientId,
+      activeProjectId: state.activeProjectId,
+      activeBoardType: state.activeBoardType,
+      activeEmployeeBoard: state.activeEmployeeBoard,
+      clientsView: state.clientsView,
+    })
+  );
+}
+
+export function sortEmployeeTasks(tasks: Task[]): Task[] {
+
+  return [...tasks].sort((a, b) => {
+
+    if (a.priority !== b.priority) return a.priority - b.priority;
+
+    if (a.dueDate && b.dueDate) return a.dueDate.localeCompare(b.dueDate);
+
+    if (a.dueDate) return -1;
+
+    if (b.dueDate) return 1;
+
+    return a.createdAt.localeCompare(b.createdAt);
+
+  });
+
+}
+
+

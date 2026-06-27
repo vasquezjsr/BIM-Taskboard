@@ -1,0 +1,136 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Level 2 — Board switcher tabs */
+.tabRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.settingsBtn {
+  margin-left: auto;
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid transparent;
+  transition: all var(--transition);
+  flex-shrink: 0;
+}
+
+.detailerSettingsBtn {
+  color: var(--detailer-board-accent);
+}
+
+.detailerSettingsBtn:hover {
+  background: var(--detailer-board-bg-active);
+  color: var(--detailer-board-text);
+  border-color: var(--detailer-board-border);
+}
+
+.supportSettingsBtn {
+  color: var(--support-board-accent);
+}
+
+.supportSettingsBtn:hover {
+  background: var(--support-board-bg-active);
+  color: var(--support-board-text);
+  border-color: var(--support-board-border);
+}
+
+.detailersTabRow {
+  background: var(--detailer-board-bg);
+}
+
+.supportTabRow {
+  background: var(--support-board-bg);
+}
+
+.tabLabel {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  min-width: 40px;
+  flex-shrink: 0;
+}
+
+.tabs {
+  display: flex;
+  gap: 6px;
+}
+
+.boardTab {
+  padding: 6px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid transparent;
+  transition: all var(--transition);
+}
+
+.detailerTab {
+  color: var(--detailer-board-accent);
+}
+
+.detailerTab:hover,
+.detailerTab.active {
+  background: var(--detailer-board-bg-active);
+  color: var(--detailer-board-text);
+  border-color: var(--detailer-board-border);
+}
+
+.supportTab {
+  color: var(--support-board-accent);
+}
+
+.supportTab:hover,
+.supportTab.active {
+  background: var(--support-board-bg-active);
+  color: var(--support-board-text);
+  border-color: var(--support-board-border);
+}
+
+.board {
+  flex: 1;
+  display: flex;
+  gap: 12px;
+  padding: 16px 20px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.detailersBoard {
+  background: var(--bg-primary);
+}
+
+.supportBoard {
+  background: var(--bg-primary);
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 260px;
+  color: var(--text-secondary);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  padding: 32px;
+}
+
+.emptyHint {
+  font-size: 13px;
+  color: var(--text-muted);
+}

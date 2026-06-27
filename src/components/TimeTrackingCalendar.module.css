@@ -1,0 +1,393 @@
+.calendarCard {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  padding: 16px 18px;
+  min-width: 0;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.viewTabs {
+  display: flex;
+  gap: 6px;
+}
+
+.viewTab {
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--level1-accent);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  transition: all var(--transition);
+}
+
+.viewTab:hover {
+  color: var(--level1-text);
+  background: rgba(124, 111, 201, 0.08);
+}
+
+.viewTabActive {
+  color: var(--level1-text);
+  background: var(--level1-bg-active);
+  border-color: var(--level1-border);
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.navBtn,
+.todayBtn {
+  padding: 6px 10px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  transition: all var(--transition);
+}
+
+.navBtn {
+  min-width: 32px;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.navBtn:hover,
+.todayBtn:hover {
+  color: var(--text-primary);
+  border-color: var(--level1-border);
+}
+
+.periodHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.periodTitle {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.periodSummary {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.restrictedNote {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.dayView {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.daySummary {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid rgba(124, 111, 201, 0.25);
+  border-radius: var(--radius-sm);
+  background: rgba(61, 53, 96, 0.22);
+}
+
+.daySummaryLabel {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--level1-accent);
+}
+
+.daySummaryHours {
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--level1-text);
+}
+
+.weekView,
+.monthView {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.weekdayRow {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.weekdayLabel {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.weekGrid,
+.monthGrid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.dayCell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-height: 96px;
+  padding: 8px;
+  text-align: left;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  transition: all var(--transition);
+}
+
+.monthGrid .dayCell {
+  min-height: 108px;
+}
+
+.dayCell:hover {
+  border-color: var(--level1-border);
+  background: var(--card-hover);
+}
+
+.dayCellOutside {
+  opacity: 0.45;
+}
+
+.dayCellToday {
+  border-color: var(--level1-border);
+  box-shadow: inset 0 0 0 1px rgba(124, 111, 201, 0.18);
+}
+
+.dayCellSelected {
+  background: var(--level1-bg-active);
+  border-color: var(--level1-border);
+}
+
+.dayCellHasHours {
+  background: rgba(61, 53, 96, 0.28);
+}
+
+.dayNumberBtn {
+  padding: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  text-align: left;
+}
+
+.dayNumberBtn:hover {
+  color: var(--level1-text);
+}
+
+.dayEntryList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+}
+
+.dayEntryChip {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 1px;
+  width: 100%;
+  min-width: 0;
+  padding: 4px 6px;
+  border-radius: 4px;
+  background: rgba(124, 111, 201, 0.14);
+  border: 1px solid rgba(124, 111, 201, 0.22);
+  text-align: left;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.dayEntryChip:hover {
+  background: rgba(124, 111, 201, 0.24);
+  border-color: var(--level1-border);
+}
+
+.dayEntryChipActive {
+  background: var(--level1-bg-active);
+  border-color: var(--level1-border);
+  box-shadow: inset 0 0 0 1px rgba(124, 111, 201, 0.25);
+}
+
+.dayEntryTask {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dayEntryTime {
+  font-size: 10px;
+  color: var(--level1-accent);
+  white-space: nowrap;
+}
+
+.dayEntryMore {
+  font-size: 10px;
+  color: var(--text-muted);
+  padding: 0;
+  background: transparent;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dayEntryMore:hover {
+  color: var(--level1-text);
+}
+
+.dayHoursTotal {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-top: auto;
+}
+
+.dayEntryCount {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.tableWrap {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table th,
+.table td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 13px;
+}
+
+.table th {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.table td {
+  color: var(--text-primary);
+}
+
+.hoursCell {
+  font-weight: 600;
+}
+
+.entryRow {
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.entryRow:hover {
+  background: rgba(124, 111, 201, 0.08);
+}
+
+.entryRowActive {
+  background: rgba(124, 111, 201, 0.14);
+}
+
+.deleteBtn {
+  padding: 4px 8px;
+  font-size: 12px;
+  color: #fca5a5;
+  border-radius: var(--radius-sm);
+}
+
+.deleteBtn:hover {
+  background: rgba(248, 113, 113, 0.12);
+}
+
+.emptyDay {
+  padding: 24px 0;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.contextMenu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 160px;
+  padding: 4px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.contextMenu button {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--text-primary);
+  border-radius: var(--radius-sm);
+  text-align: left;
+}
+
+.contextMenu button:hover {
+  background: var(--level4-bg);
+  color: var(--level4-text);
+}
+
+.contextMenuDelete {
+  color: #fca5a5 !important;
+}
+
+.contextMenuDelete:hover {
+  background: rgba(248, 113, 113, 0.12) !important;
+  color: #fecaca !important;
+}
