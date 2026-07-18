@@ -1,0 +1,75 @@
+<Window x:Class="SpoolingSavantV3Exports.Workers.SpoolingManager.Views.OperationProgressWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="SS Manager V3"
+        Height="170"
+        Width="520"
+        MinHeight="150"
+        MinWidth="420"
+        MaxHeight="640"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False"
+        Topmost="True"
+        Background="{DynamicResource SsSavantChromeBackground}">
+    <Border Background="{DynamicResource SsSavantChromeBackground}"
+            BorderThickness="0"
+            Padding="16">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*" MinHeight="24"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <TextBlock x:Name="txtStatus"
+                       Grid.Row="0"
+                       Text="Working…"
+                       FontSize="14"
+                       FontWeight="SemiBold"
+                       TextWrapping="Wrap"
+                       Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+
+            <ScrollViewer x:Name="detailScroll"
+                          Grid.Row="1"
+                          Margin="0,8,0,0"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled"
+                          CanContentScroll="False">
+                <TextBlock x:Name="txtDetail"
+                           Text=""
+                           FontSize="12"
+                           TextWrapping="Wrap"
+                           Foreground="{DynamicResource SsSavantForegroundMuted}"/>
+            </ScrollViewer>
+
+            <ProgressBar x:Name="barProgress"
+                         Grid.Row="2"
+                         Margin="0,16,0,0"
+                         Height="18"
+                         Minimum="0"
+                         Maximum="100"
+                         Value="0"/>
+
+            <TextBlock x:Name="txtPercent"
+                       Grid.Row="3"
+                       Margin="0,8,0,0"
+                       HorizontalAlignment="Right"
+                       FontSize="12"
+                       Foreground="{DynamicResource SsSavantForegroundMuted}"
+                       Text="0%"/>
+
+            <Button x:Name="btnClose"
+                    Grid.Row="3"
+                    Content="Close"
+                    Width="88"
+                    Height="28"
+                    HorizontalAlignment="Right"
+                    Margin="0,16,0,0"
+                    Visibility="Collapsed"
+                    IsDefault="True"
+                    IsCancel="True"/>
+        </Grid>
+    </Border>
+</Window>

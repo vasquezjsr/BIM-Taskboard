@@ -12,6 +12,48 @@ import {
 import { WORKFLOW_DUE_DATE_BOARDS } from './workflowDueDateColumns';
 
 export const PREMADE_MATERIAL_COLUMN_ID = 'col-material';
+export const PREMADE_TRADE_COLUMN_ID = 'col-trade';
+
+/** Dropdown columns always shown as tabs in Column Settings. */
+export const DEFAULT_COLUMN_SETTINGS_DROPDOWN_IDS = [
+  PREMADE_MATERIAL_COLUMN_ID,
+  PREMADE_TRADE_COLUMN_ID,
+] as const;
+
+export function normalizeColumnSettingsDropdownIds(
+  ids?: readonly string[] | null
+): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const id of [...DEFAULT_COLUMN_SETTINGS_DROPDOWN_IDS, ...(ids ?? [])]) {
+    const trimmed = id?.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    out.push(trimmed);
+  }
+  return out;
+}
+
+export function tabLabelForDropdownColumn(columnId: string, label?: string): string {
+  if (columnId === PREMADE_MATERIAL_COLUMN_ID) return 'Materials';
+  if (columnId === PREMADE_TRADE_COLUMN_ID) return 'Trade';
+  const trimmed = label?.trim();
+  return trimmed || 'Dropdown';
+}
+
+export function catalogOptionsForDropdownColumn(columnId: string): readonly string[] {
+  if (columnId === PREMADE_MATERIAL_COLUMN_ID) return PREMADE_MATERIAL_OPTIONS;
+  if (columnId === PREMADE_TRADE_COLUMN_ID) return PREMADE_TRADE_OPTIONS;
+  return [];
+}
+
+export const PREMADE_TRADE_OPTIONS = [
+  'FP',
+  'MEC',
+  'PLMB',
+  'HVAC',
+  'ELEC',
+] as const;
 
 export const PREMADE_MATERIAL_OPTIONS = [
   'PVC',
@@ -45,6 +87,8 @@ export const PREMADE_MATERIAL_OPTIONS = [
   'SS SCH40 GRV',
   'SS SCH10 SW',
   'SS SCH40 SW',
+  'Hangers',
+  'Sleeves',
 ] as const;
 
 export interface PremadeSheetColumnTemplate {
@@ -58,9 +102,17 @@ export interface PremadeSheetColumnTemplate {
 
 export const PREMADE_SHEET_COLUMNS: PremadeSheetColumnTemplate[] = [
   {
+    id: PREMADE_TRADE_COLUMN_ID,
+    label: 'Trade',
+    description: 'Trade code — FP, MEC, PLMB, HVAC, ELEC',
+    type: 'dropdown',
+    options: PREMADE_TRADE_OPTIONS,
+    boardTypes: WORKFLOW_DUE_DATE_BOARDS,
+  },
+  {
     id: PREMADE_MATERIAL_COLUMN_ID,
     label: 'Material',
-    description: 'Piping and fabrication material — 31 standard options',
+    description: 'Piping and fabrication material — includes Hangers and Sleeves',
     type: 'dropdown',
     options: PREMADE_MATERIAL_OPTIONS,
     boardTypes: WORKFLOW_DUE_DATE_BOARDS,
@@ -107,10 +159,44 @@ function isLegacyMaterialColumn(column: SheetColumnDefinition): boolean {
 }
 
 function insertColumnIdInOrder(order: string[], columnId: string): string[] {
+  // Trade always sits immediately after Title (reposition if misplaced).
+  if (columnId === PREMADE_TRADE_COLUMN_ID) {
+    const without = order.filter((id) => id !== columnId);
+    const titleIndex = without.indexOf('title');
+    const insertAt = titleIndex >= 0 ? titleIndex + 1 : 0;
+    return [...without.slice(0, insertAt), columnId, ...without.slice(insertAt)];
+  }
+
   if (order.includes(columnId)) return order;
+
+  // Material sits right after Trade when present, otherwise after Title.
+  if (columnId === PREMADE_MATERIAL_COLUMN_ID) {
+    const tradeIndex = order.indexOf(PREMADE_TRADE_COLUMN_ID);
+    if (tradeIndex >= 0) {
+      return [...order.slice(0, tradeIndex + 1), columnId, ...order.slice(tradeIndex + 1)];
+    }
+    const titleIndex = order.indexOf('title');
+    if (titleIndex >= 0) {
+      return [...order.slice(0, titleIndex + 1), columnId, ...order.slice(titleIndex + 1)];
+    }
+  }
+
   const assigneeIndex = order.indexOf('assignee');
   const insertAt = assigneeIndex >= 0 ? assigneeIndex + 1 : order.length;
   return [...order.slice(0, insertAt), columnId, ...order.slice(insertAt)];
+}
+
+function mergePremadeDropdownOptions(
+  column: SheetColumnDefinition,
+  template: PremadeSheetColumnTemplate
+): SheetColumnDefinition {
+  if (template.type !== 'dropdown' || column.id !== template.id) return column;
+  const catalog = template.options ?? [];
+  if (!catalog.length) return column;
+  const existing = column.options ?? [];
+  // Saved option lists are authoritative so Column Settings edits/removes stick.
+  if (existing.length > 0) return column;
+  return { ...column, options: [...catalog] };
 }
 
 /** Idempotently add all premade columns to workflow boards and strip duplicate Material columns. */
@@ -154,24 +240,44 @@ export function ensurePremadeSheetColumns(
       const local = getBoardLocalSheetColumns(boardType, nextColumns).filter(
         (column) => !isLegacyMaterialColumn(column)
       );
-      const hasColumn = local.some((column) => column.id === template.id);
+      const existing = local.find((column) => column.id === template.id);
+      const hasColumn = Boolean(existing);
+      const nextLocal = hasColumn
+        ? local.map((column) =>
+            column.id === template.id ? mergePremadeDropdownOptions(column, template) : column
+          )
+        : [...local, premadeColumnToDefinition(template)];
       nextColumns = {
         ...nextColumns,
-        [boardType]: hasColumn
-          ? local
-          : [...local, premadeColumnToDefinition(template)],
+        [boardType]: nextLocal,
       };
 
+      const stored = nextOrder[boardType];
       const order = getBoardSheetColumnOrder(
         boardType,
         nextOrder,
         nextColumns,
         boardType === 'main'
       ).filter((id) => !removedIds.has(id));
-      nextOrder = {
-        ...nextOrder,
-        [boardType]: insertColumnIdInOrder(order, template.id),
-      };
+
+      // Respect intentional removals from a stored order. Only seed into order when
+      // there is no stored order yet, or the column definition is being added for the first time.
+      if (!stored?.length || !hasColumn) {
+        nextOrder = {
+          ...nextOrder,
+          [boardType]: insertColumnIdInOrder(order, template.id),
+        };
+      } else if (!stored.includes(template.id)) {
+        nextOrder = {
+          ...nextOrder,
+          [boardType]: order.filter((id) => id !== template.id),
+        };
+      } else {
+        nextOrder = {
+          ...nextOrder,
+          [boardType]: insertColumnIdInOrder(order, template.id),
+        };
+      }
     }
   }
 
@@ -338,6 +444,7 @@ export function listAvailablePremadeForTargets(
   });
 }
 
+/** Seed/place Trade in stored Main Overview section orders (Title → Trade → Material). */
 export function ensurePremadeInMainOverviewSectionOrders(
   mainOverviewSectionColumnOrder: BoardSheetColumnOrderMap
 ): BoardSheetColumnOrderMap {
@@ -346,10 +453,9 @@ export function ensurePremadeInMainOverviewSectionOrders(
   for (const boardType of WORKFLOW_DUE_DATE_BOARDS) {
     const stored = nextOrder[boardType];
     if (!stored?.length) continue;
-    if (stored.includes(PREMADE_MATERIAL_COLUMN_ID)) continue;
     nextOrder = {
       ...nextOrder,
-      [boardType]: insertColumnIdInOrder(stored, PREMADE_MATERIAL_COLUMN_ID),
+      [boardType]: insertColumnIdInOrder(stored, PREMADE_TRADE_COLUMN_ID),
     };
   }
 

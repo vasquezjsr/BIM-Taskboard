@@ -1,0 +1,102 @@
+<Window x:Class="SpoolingSavantV3Exports.Workers.SpoolingManager.Views.RenameSheetsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Rename Sheets"
+        Height="560"
+        Width="760"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource SsSavantChromeBackground}">
+    <Window.Resources>
+        <Style TargetType="DataGridColumnHeader">
+            <Setter Property="Background" Value="{DynamicResource SsSavantInputBackground}"/>
+            <Setter Property="Foreground" Value="{DynamicResource SsSavantForegroundPrimary}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource SsSavantBorderOuter}"/>
+            <Setter Property="BorderThickness" Value="0,0,0,1"/>
+            <Setter Property="Padding" Value="8,6"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+        <Style TargetType="DataGridCell">
+            <Setter Property="Background" Value="{DynamicResource SsSavantListWellBackground}"/>
+            <Setter Property="Foreground" Value="{DynamicResource SsSavantForegroundPrimary}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource SsSavantListBorder}"/>
+            <Setter Property="BorderThickness" Value="0,0,0,1"/>
+            <Setter Property="Padding" Value="8,4"/>
+        </Style>
+        <Style TargetType="DataGridRow">
+            <Setter Property="Background" Value="{DynamicResource SsSavantListWellBackground}"/>
+            <Setter Property="Foreground" Value="{DynamicResource SsSavantForegroundPrimary}"/>
+            <Setter Property="MinHeight" Value="28"/>
+        </Style>
+    </Window.Resources>
+    <Border Background="{DynamicResource SsSavantChromeBackground}"
+            BorderThickness="0"
+            Padding="12">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <StackPanel Grid.Row="0" Margin="0,0,0,12">
+                <TextBlock Text="Rename Selected Sheets"
+                           FontSize="18"
+                           FontWeight="SemiBold"
+                           Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+                <TextBlock Text="Enter a starting name in any New Name row. Blank rows below it will auto-sequence until the next filled row."
+                           Margin="0,6,0,0"
+                           Foreground="{DynamicResource SsSavantForegroundMuted}"
+                           TextWrapping="Wrap"/>
+            </StackPanel>
+
+            <DataGrid x:Name="gridRename"
+                      Grid.Row="1"
+                      Margin="0,4,0,0"
+                      AutoGenerateColumns="False"
+                      CanUserAddRows="False"
+                      CanUserDeleteRows="False"
+                      CanUserResizeRows="False"
+                      HeadersVisibility="Column"
+                      Background="{DynamicResource SsSavantListWellBackground}"
+                      Foreground="{DynamicResource SsSavantForegroundPrimary}"
+                      BorderBrush="{DynamicResource SsSavantBorderOuter}"
+                      BorderThickness="1"
+                      RowHeaderWidth="0"
+                      ColumnHeaderHeight="34"
+                      RowBackground="{DynamicResource SsSavantListWellBackground}"
+                      AlternatingRowBackground="{DynamicResource SsSavantHighlightBrush}"
+                      GridLinesVisibility="All"
+                      HorizontalGridLinesBrush="{DynamicResource SsSavantListBorder}"
+                      VerticalGridLinesBrush="{DynamicResource SsSavantListBorder}"
+                      SelectionMode="Extended"
+                      SelectionUnit="FullRow">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="Current Name"
+                                        Binding="{Binding CurrentName}"
+                                        IsReadOnly="True"
+                                        Width="*"/>
+                    <DataGridTextColumn Header="New Name"
+                                        Binding="{Binding NewName, UpdateSourceTrigger=PropertyChanged}"
+                                        Width="*"/>
+                </DataGrid.Columns>
+            </DataGrid>
+
+            <StackPanel Grid.Row="2"
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Right"
+                        Margin="0,12,0,0">
+                <Button Content="Cancel"
+                        Width="110"
+                        Height="34"
+                        Margin="0,0,8,0"
+                        Click="BtnCancel_Click"/>
+                <Button Content="Rename"
+                        Width="110"
+                        Height="34"
+                        Click="BtnRename_Click"/>
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>
+
+

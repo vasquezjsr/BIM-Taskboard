@@ -48,6 +48,15 @@ interface ElectronAPI {
   ) => () => void;
   publishBoardroomApiSnapshot?: (snapshot: unknown) => Promise<{ ok: true }>;
   getBoardroomApiStatus?: () => Promise<{ port: number; host: string }>;
+  savePersistedStore?: (payload: {
+    state: string;
+    updatedAt: number;
+  }) => Promise<{ ok: true; path: string } | { ok: false; error: string }>;
+  loadPersistedStore?: () => Promise<
+    | { ok: true; state: string; updatedAt: number; path: string }
+    | { ok: false; error?: string }
+  >;
+  clearPersistedStore?: () => Promise<{ ok: true } | { ok: false; error: string }>;
 }
 
 declare global {

@@ -1,0 +1,45 @@
+<Window x:Class="SpoolingSavantV3Exports.Workers.SpoolingManager.Views.OperationMessageWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="SS Manager V3"
+        SizeToContent="WidthAndHeight"
+        MinHeight="120"
+        MinWidth="360"
+        MaxHeight="720"
+        MaxWidth="720"
+        ResizeMode="CanResize"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource SsSavantChromeBackground}">
+    <Border Background="{DynamicResource SsSavantChromeBackground}"
+            BorderThickness="0"
+            Padding="12">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <ScrollViewer Grid.Row="0"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled"
+                          MaxHeight="560">
+                <TextBlock x:Name="txtMessage"
+                           TextWrapping="Wrap"
+                           Foreground="{DynamicResource SsSavantForegroundPrimary}"
+                           FontSize="12"
+                           VerticalAlignment="Top"
+                           HorizontalAlignment="Left"
+                           TextAlignment="Left"
+                           MaxWidth="680"/>
+            </ScrollViewer>
+
+            <Button Grid.Row="1"
+                    Content="Close"
+                    Width="88"
+                    Height="23"
+                    HorizontalAlignment="Right"
+                    Margin="0,16,0,0"
+                    Click="BtnOk_Click"/>
+        </Grid>
+    </Border>
+</Window>

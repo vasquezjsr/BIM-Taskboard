@@ -33,24 +33,14 @@ import { ReportsDialog } from './components/ReportsDialog';
 
 import { ViewAsPicker } from './components/ViewAsPicker';
 
-import { canAccessOrgChart } from './utils/permissions';
 import { useBoardroomExportWatcher } from './hooks/useBoardroomExportWatcher';
+import {
+  BoardColumnSettingsHub,
+  OPEN_COLUMN_SETTINGS_EVENT,
+  type OpenColumnSettingsDetail,
+} from './components/BoardColumnSettingsHub';
 
 import styles from './App.module.css';
-
-
-
-function syncPermissionsMenu() {
-
-  const { currentUserId, employees, employeePermissions } = useStore.getState();
-
-  window.electronAPI?.setPermissionsMenuVisible(
-
-    canAccessOrgChart(currentUserId, employees, employeePermissions)
-
-  );
-
-}
 
 
 
@@ -61,10 +51,6 @@ function App() {
   const clientsView = useStore((s) => s.clientsView);
 
   const currentUserId = useStore((s) => s.currentUserId);
-
-  const employees = useStore((s) => s.employees);
-
-  const employeePermissions = useStore((s) => s.employeePermissions);
 
   const setActiveMainTab = useStore((s) => s.setActiveMainTab);
 
@@ -79,23 +65,27 @@ function App() {
   const [storeReady, setStoreReady] = useState(() => useStore.persist.hasHydrated());
   const [hydrationTimedOut, setHydrationTimedOut] = useState(false);
   const [showReports, setShowReports] = useState(false);
+  const [showColumnSettingsHub, setShowColumnSettingsHub] = useState(false);
+  const [columnSettingsFocus, setColumnSettingsFocus] = useState<OpenColumnSettingsDetail>({});
 
   useBoardroomExportWatcher();
 
 
 
   useEffect(() => {
-
     if (storeReady) return;
 
     const unsub = useStore.persist.onFinishHydration(() => setStoreReady(true));
-    const timeoutId = window.setTimeout(() => setHydrationTimedOut(true), 12000);
+    const timeoutId = window.setTimeout(() => {
+      setHydrationTimedOut(true);
+      // Never leave the user on a blank loading screen if hydrate stalls.
+      setStoreReady(true);
+    }, 8000);
 
     return () => {
       unsub();
       window.clearTimeout(timeoutId);
     };
-
   }, [storeReady]);
 
 
@@ -158,40 +148,29 @@ function App() {
     const unsubscribeElectron = window.electronAPI?.onRefreshView(refresh);
 
     const unsubscribeNavigate = window.electronAPI?.onNavigateTo((tab) => {
-
+      if (tab === 'column-settings') {
+        setColumnSettingsFocus({});
+        setShowColumnSettingsHub(true);
+        return;
+      }
       if (tab === 'org-chart' || tab === 'permissions') setActiveMainTab('org-chart');
-
     });
 
-    const unsubscribeMenuSync = window.electronAPI?.onRequestPermissionsMenuSync(syncPermissionsMenu);
-
-
+    const onOpenColumnSettings = (event: Event) => {
+      const detail = (event as CustomEvent<OpenColumnSettingsDetail>).detail ?? {};
+      setColumnSettingsFocus(detail);
+      setShowColumnSettingsHub(true);
+    };
+    window.addEventListener(OPEN_COLUMN_SETTINGS_EVENT, onOpenColumnSettings);
 
     return () => {
-
       window.removeEventListener('keydown', onKeyDown, true);
-
+      window.removeEventListener(OPEN_COLUMN_SETTINGS_EVENT, onOpenColumnSettings);
       unsubscribeElectron?.();
-
       unsubscribeNavigate?.();
-
-      unsubscribeMenuSync?.();
-
     };
 
   }, [setActiveMainTab]);
-
-
-
-  useEffect(() => {
-
-    syncPermissionsMenu();
-
-    const unsubHydrate = useStore.persist.onFinishHydration(syncPermissionsMenu);
-
-    return () => unsubHydrate();
-
-  }, [currentUserId, employees, employeePermissions]);
 
 
 
@@ -290,6 +269,17 @@ function App() {
 
       {showReports && (
         <ReportsDialog activeTab={activeMainTab} onClose={() => setShowReports(false)} />
+      )}
+
+      {showColumnSettingsHub && (
+        <BoardColumnSettingsHub
+          initialTab={columnSettingsFocus.tab}
+          initialDropdownColumnId={columnSettingsFocus.dropdownColumnId}
+          onClose={() => {
+            setShowColumnSettingsHub(false);
+            setColumnSettingsFocus({});
+          }}
+        />
       )}
 
 

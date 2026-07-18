@@ -38,7 +38,13 @@ import {
   canEditWeldLog,
   canFabClock,
 } from '../utils/permissions';
-import { getBoardTaskStatuses, isAssemblyCompleteStatus, isFabInFabStatus, isFabShippedStatus } from '../utils/taskStatuses';
+import {
+  getBoardTaskStatuses,
+  isAssemblyCompleteStatus,
+  isAssemblyReleasedFromFabStatus,
+  isFabInFabStatus,
+  isFabShippedStatus,
+} from '../utils/taskStatuses';
 import {
   formatTimeLabel,
   isOpenTimeEntry,
@@ -575,16 +581,47 @@ export function FabWorkstationView() {
     [updateTask]
   );
 
-  /** If any assembly is In Fab, parent package must be In Progress. */
+  /**
+   * If any assembly is In Fab, parent package must be In Progress.
+   * Ready for Shipping locks the assembly; when every assembly is ready, promote the package.
+   */
   const setAssemblyStatus = useCallback(
     (assemblyId: string, packageId: string, status: string) => {
+      if (isAssemblyReleasedFromFabStatus(status)) {
+        const assembly = tasks.find((task) => task.id === assemblyId);
+        updateTask(assemblyId, {
+          status,
+          customFields: {
+            ...(assembly?.customFields ?? {}),
+            [SSV3_FIELD.shippingStatus]:
+              assembly?.customFields?.[SSV3_FIELD.shippingStatus] ?? 'staging',
+          },
+        });
+        if (viewer?.kind === 'assembly' && viewer.taskId === assemblyId) {
+          setViewer(null);
+        }
+        const siblings = tasks.filter(
+          (task) => isSsv3AssemblyTask(task) && task.parentTaskId === packageId
+        );
+        const allReleased = siblings.every((task) =>
+          task.id === assemblyId ? true : isAssemblyReleasedFromFabStatus(task.status)
+        );
+        if (allReleased) {
+          const pkg = tasks.find((task) => task.id === packageId);
+          if (pkg && !isFabShippedStatus(pkg.status)) {
+            updateTask(packageId, { status: 'ready-to-ship' });
+          }
+        }
+        return;
+      }
+
       updateTask(assemblyId, { status });
       if (!isFabInFabStatus(status)) return;
       const pkg = tasks.find((task) => task.id === packageId);
       if (!pkg || pkg.status === 'in-progress') return;
       updateTask(packageId, { status: 'in-progress' });
     },
-    [tasks, updateTask]
+    [tasks, updateTask, viewer]
   );
 
   const clearPreview = useCallback(() => {
@@ -1285,8 +1322,11 @@ export function FabWorkstationView() {
                     {assemblies.map((task) => {
                       const meta = statusMeta(task);
                       const statuses = fabStatusesFor(task);
+                      const released = isAssemblyReleasedFromFabStatus(task.status);
                       const active =
-                        viewer?.kind === 'assembly' && viewer.taskId === task.id;
+                        !released &&
+                        viewer?.kind === 'assembly' &&
+                        viewer.taskId === task.id;
                       const sheetLabel = [
                         task.customFields?.[SSV3_FIELD.sheetName],
                         task.customFields?.[SSV3_FIELD.sheetNumber],
@@ -1295,17 +1335,25 @@ export function FabWorkstationView() {
                         .filter(Boolean)
                         .join(' · ');
                       const assemblyWorkerId = task.assigneeIds?.[0] ?? '';
+                      const rowClass = released
+                        ? styles.assemblyRowReleased
+                        : active
+                          ? styles.assemblyRowActive
+                          : styles.assemblyRow;
                       return (
                         <li key={task.id}>
-                          <div
-                            className={
-                              active ? styles.assemblyRowActive : styles.assemblyRow
-                            }
-                          >
+                          <div className={rowClass}>
                             <button
                               type="button"
                               className={styles.rowSelectBtn}
-                              onClick={() =>
+                              disabled={released}
+                              title={
+                                released
+                                  ? 'Released for Shipping — locked on Fabrication Dashboard'
+                                  : undefined
+                              }
+                              onClick={() => {
+                                if (released) return;
                                 setViewer({
                                   kind: 'assembly',
                                   taskId: task.id,
@@ -1314,8 +1362,8 @@ export function FabWorkstationView() {
                                     exportFiles,
                                     task
                                   ),
-                                })
-                              }
+                                });
+                              }}
                             >
                               <span className={styles.assemblyTitle}>{task.title}</span>
                               {sheetLabel ? (
@@ -1326,6 +1374,7 @@ export function FabWorkstationView() {
                               <select
                                 className={styles.assignSelect}
                                 value={assemblyWorkerId}
+                                disabled={released}
                                 onChange={(e) =>
                                   assignAssemblyWorker(
                                     task.id,
@@ -1334,7 +1383,11 @@ export function FabWorkstationView() {
                                   )
                                 }
                                 onClick={(e) => e.stopPropagation()}
-                                title="Assign this assembly only — independent of package owner"
+                                title={
+                                  released
+                                    ? 'Released for Shipping — assignment locked'
+                                    : 'Assign this assembly only — independent of package owner'
+                                }
                               >
                                 <option value="">Worker…</option>
                                 {workerOptions.map((option) => (
@@ -1356,23 +1409,21 @@ export function FabWorkstationView() {
                                 className={styles.statusSelect}
                                 value={task.status}
                                 style={{ borderColor: meta.color, color: meta.color }}
-                                disabled={!allowFabStatusEdit}
+                                disabled={!allowFabStatusEdit || released}
                                 onChange={(e) =>
                                   setAssemblyStatus(task.id, selectedPackage.id, e.target.value)
                                 }
                                 onClick={(e) => e.stopPropagation()}
-                                title="Change assembly status"
+                                title={
+                                  released
+                                    ? 'Ready for Shipping — locked on Fabrication Dashboard'
+                                    : 'Change assembly status. Ready for Shipping releases it for Shipping.'
+                                }
                               >
                                 {statuses
                                   .filter((status) => {
-                                    // Assemblies use fab shop statuses; omit package-only handoffs.
+                                    // Assemblies use fab shop statuses; Spooling is package-only.
                                     if (status.id === 'spooling' && status.id !== task.status) {
-                                      return false;
-                                    }
-                                    if (
-                                      status.id === 'ready-to-ship' &&
-                                      status.id !== task.status
-                                    ) {
                                       return false;
                                     }
                                     return true;

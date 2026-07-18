@@ -361,6 +361,13 @@ export function taskCountsAsUngroupedInSection(
   return !isGroupUnderSection(groups, task.groupId, section.id);
 }
 
+/** Top-level task with no valid group — show "(Ungrouped)" on the title instead of an Ungrouped row. */
+export function taskShowsUngroupedTitleSuffix(task: Task, groups: TaskGroup[]): boolean {
+  if (task.parentTaskId) return false;
+  if (!task.groupId) return true;
+  return !groups.some((g) => g.id === task.groupId);
+}
+
 /** Place branch-assigned tasks with no group into the section's default parent group. */
 export function assignUngroupedSectionTasks(
   groups: TaskGroup[],
@@ -710,26 +717,9 @@ export function buildSheetRows(
       const ungroupedInSection = sortTasksByPriority(
         ghostTasks.filter((t) => !t.groupId && !t.parentTaskId)
       );
-      rows.push({
-        type: 'group',
-        group: {
-          id: `__ghost-ungrouped-${boardType}__`,
-          name: 'Ungrouped',
-          clientId,
-          projectId,
-          boardType: 'main',
-          tier: 'parent',
-          parentId: section.id,
-          sectionBoardType: null,
-          sortOrder: 999,
-        },
-        depth: 0,
-        isGhost: true,
-      });
-      if (!collapsedIds.has(`__ghost-ungrouped-${boardType}__`)) {
-        for (const task of ungroupedInSection) {
-          pushTaskTree([task], true, 0);
-        }
+      // No dedicated Ungrouped group row — list ungrouped tasks at the end with a title suffix.
+      for (const task of ungroupedInSection) {
+        pushTaskTree([task], true, 0);
       }
     } else if (ghostTasks.length > 0) {
       for (const task of sortTasksByPriority(ghostTasks.filter((t) => !t.parentTaskId))) {
@@ -745,27 +735,11 @@ export function buildSheetRows(
     sections.map((section) => [section.sectionBoardType!, section] as const)
   );
 
-  const pushSectionUngrouped = (section: TaskGroup, ungroupedTasks: Task[]) => {
-    const bucketId = sectionUngroupedGroupId(section.sectionBoardType!);
-    rows.push({
-      type: 'group',
-      group: {
-        id: bucketId,
-        name: 'Ungrouped',
-        clientId,
-        projectId,
-        boardType: 'main',
-        tier: 'parent',
-        parentId: section.id,
-        sectionBoardType: null,
-        sortOrder: 999,
-      },
-      depth: 1,
-    });
-    if (!collapsedIds.has(bucketId)) {
-      for (const task of ungroupedTasks) {
-        pushTaskTree([task], false, 1);
-      }
+  const pushSectionUngroupedTasks = (ungroupedTasks: Task[]) => {
+    if (ungroupedTasks.length === 0) return;
+    // No Ungrouped group header — tasks render with an "(Ungrouped)" title suffix.
+    for (const task of ungroupedTasks) {
+      pushTaskTree([task], false, 1);
     }
   };
 
@@ -799,9 +773,14 @@ export function buildSheetRows(
     const ungroupedInSection = sortTasksByPriority(
       boardTasks.filter((t) => taskCountsAsUngroupedInSection(t, section, groups))
     );
+    // Tasks under a collapsed trade/level still "belong" to this section — do NOT spill them
+    // out as flat ungrouped rows when their parent group is collapsed.
     const supplementalBoardTasks = sortTasksByPriority(
       projectTasks.filter((t) => {
         if (t.parentTaskId || includedTaskIds.has(t.id)) return false;
+        if (t.groupId && isGroupUnderSection(groups, t.groupId, section.id)) {
+          return false;
+        }
         return taskBelongsToGhostBoard(
           t,
           section.sectionBoardType!,
@@ -818,7 +797,7 @@ export function buildSheetRows(
         (task) => !ungroupedInSection.some((existing) => existing.id === task.id)
       ),
     ]);
-    pushSectionUngrouped(section, mergedUngrouped);
+    pushSectionUngroupedTasks(mergedUngrouped);
   }
 
   return rows;

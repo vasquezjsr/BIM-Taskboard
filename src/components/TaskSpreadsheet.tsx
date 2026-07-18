@@ -39,6 +39,7 @@ import {
   sectionBoardTypeFromUngroupedBucketId,
   shouldShowGroupProgressBar,
   taskCountsAsUngroupedInSection,
+  taskShowsUngroupedTitleSuffix,
   isSubBoard,
   sheetRowPaddingLeft,
   resolveGroupVisualRole,
@@ -57,9 +58,16 @@ import {
   canAssignTasks,
   canEditTasks,
   canManageColumns,
+  canManageMaterialOptions,
   canManageStatuses,
 } from '../utils/permissions';
 import { getContrastingTextColor } from '../utils/colorContrast';
+import {
+  normalizeColumnSettingsDropdownIds,
+} from '../data/premadeSheetColumns';
+import {
+  openColumnSettingsHub,
+} from './BoardColumnSettingsHub';
 import {
   buildSheetColumnSlots,
   customColumnWidthKey,
@@ -68,7 +76,8 @@ import {
   FIXED_SHEET_COLUMN_LABELS,
   normalizeSheetColumnAlignments,
   getBoardSheetColumns,
-  isMainOverviewSharedColumn,
+  isFixedSheetColumnId,
+  isProtectedBoardColumnId,
   getBoardSheetColumnOrder,
   parseSheetColDragId,
   sheetColDragId,
@@ -142,6 +151,16 @@ type SheetContextMenu =
   | { kind: 'group'; group: TaskGroup; x: number; y: number }
   | { kind: 'workspace'; x: number; y: number };
 
+/** Pixels near a row edge that count as before/after insert (not center/inside). */
+const SHEET_ROW_EDGE_HIT_PX = 10;
+
+/** Live pointer while a sheet drag is active — drop lines track the cursor, not the ghost. */
+const sheetLivePointer: { current: { x: number; y: number } | null } = { current: null };
+
+function setSheetLivePointer(point: { x: number; y: number } | null) {
+  sheetLivePointer.current = point;
+}
+
 function dragPointerCoordinates(
   event: DragOverEvent | DragEndEvent
 ): { x: number; y: number } | null {
@@ -167,14 +186,7 @@ function dragPointerCoordinates(
 function dragFeedbackPoint(
   event: DragOverEvent | DragEndEvent
 ): { x: number; y: number } | null {
-  const overlay = document.querySelector('[data-drag-overlay]');
-  if (overlay instanceof HTMLElement) {
-    const rect = overlay.getBoundingClientRect();
-    return {
-      x: rect.left + rect.width / 2,
-      y: rect.top + rect.height / 2,
-    };
-  }
+  if (sheetLivePointer.current) return sheetLivePointer.current;
   const pointer = dragPointerCoordinates(event);
   if (pointer) return pointer;
   const translated = event.active.rect.current.translated;
@@ -192,37 +204,71 @@ function resolveSheetDropAtPoint(
   x: number,
   y: number,
   excludeDropId?: string | null
-): { droppableId: string; rect: DOMRect } | null {
-  const rows = root.querySelectorAll<HTMLTableRowElement>('tr[data-sheet-drop-id]');
-  let containing: { droppableId: string; rect: DOMRect; area: number } | null = null;
-
-  for (const row of rows) {
+): { droppableId: string; rect: DOMRect; placement?: DropPlacement } | null {
+  const measured: { droppableId: string; rect: DOMRect }[] = [];
+  for (const row of root.querySelectorAll<HTMLTableRowElement>('tr[data-sheet-drop-id]')) {
     const droppableId = row.dataset.sheetDropId;
     if (!droppableId || droppableId === excludeDropId) continue;
-    const rect = row.getBoundingClientRect();
+    measured.push({ droppableId, rect: row.getBoundingClientRect() });
+  }
+  measured.sort((a, b) => a.rect.top - b.rect.top || a.rect.left - b.rect.left);
+
+  let containing: { droppableId: string; rect: DOMRect; area: number } | null = null;
+  for (const entry of measured) {
+    const { droppableId, rect } = entry;
     if (y < rect.top || y > rect.bottom || x < rect.left || x > rect.right) continue;
     const area = rect.width * rect.height;
     if (!containing || area < containing.area) {
       containing = { droppableId, rect, area };
     }
   }
+
   if (containing) {
-    return { droppableId: containing.droppableId, rect: containing.rect };
+    const { droppableId, rect } = containing;
+    const fromTop = y - rect.top;
+    const fromBottom = rect.bottom - y;
+    if (fromTop <= SHEET_ROW_EDGE_HIT_PX && fromTop <= fromBottom) {
+      return { droppableId, rect, placement: 'before' };
+    }
+    if (fromBottom <= SHEET_ROW_EDGE_HIT_PX) {
+      return { droppableId, rect, placement: 'after' };
+    }
+    return { droppableId, rect };
+  }
+
+  // True gap between consecutive rows (cursor not inside either).
+  for (let i = 0; i < measured.length - 1; i++) {
+    const upper = measured[i]!;
+    const lower = measured[i + 1]!;
+    if (
+      x < Math.min(upper.rect.left, lower.rect.left) ||
+      x > Math.max(upper.rect.right, lower.rect.right)
+    ) {
+      continue;
+    }
+    const gapTop = Math.min(upper.rect.bottom, lower.rect.top);
+    const gapBottom = Math.max(upper.rect.bottom, lower.rect.top);
+    if (y < gapTop - 1 || y > gapBottom + 1) continue;
+    return { droppableId: upper.droppableId, rect: upper.rect, placement: 'after' };
   }
 
   let nearest: { droppableId: string; rect: DOMRect; dist: number } | null = null;
-  for (const row of rows) {
-    const droppableId = row.dataset.sheetDropId;
-    if (!droppableId || droppableId === excludeDropId) continue;
-    const rect = row.getBoundingClientRect();
+  for (const entry of measured) {
+    const { droppableId, rect } = entry;
     const dist =
       y < rect.top ? rect.top - y : y > rect.bottom ? y - rect.bottom : 0;
-    if (dist > 16) continue;
+    if (dist > 20) continue;
     if (!nearest || dist < nearest.dist) {
       nearest = { droppableId, rect, dist };
     }
   }
-  return nearest ? { droppableId: nearest.droppableId, rect: nearest.rect } : null;
+  if (!nearest) return null;
+  const midY = nearest.rect.top + nearest.rect.height / 2;
+  return {
+    droppableId: nearest.droppableId,
+    rect: nearest.rect,
+    placement: y < midY ? 'before' : 'after',
+  };
 }
 
 function dropPlacementFromEvent(
@@ -239,7 +285,8 @@ function dropPlacementFromEvent(
 }
 
 function groupOnGroupEdgeRatio(activeId: string, overId: string): number {
-  return parseGroupDropId(activeId) && parseGroupDropId(overId) ? 0.2 : 0.35;
+  // Slightly larger edges so insert lines are easier to hit than "move inside".
+  return parseGroupDropId(activeId) && parseGroupDropId(overId) ? 0.28 : 0.35;
 }
 
 function resolveDragOverTarget(
@@ -260,7 +307,8 @@ function resolveDragOverTarget(
     const edgeRatio = groupOnGroupEdgeRatio(activeId, rowHit.droppableId);
     return {
       overId: rowHit.droppableId,
-      placement: dropPlacementFromEvent(event, rowHit.rect, edgeRatio),
+      placement:
+        rowHit.placement ?? dropPlacementFromEvent(event, rowHit.rect, edgeRatio),
       rowRect: rowHit.rect,
     };
   }
@@ -290,6 +338,7 @@ function groupDropHintPlacement(
   action: GroupDropAction,
   pointerPlacement: DropPlacement
 ): DropPlacement {
+  if (action.hintPlacement) return action.hintPlacement;
   if (action.mode === 'nest') return 'inside';
   return pointerPlacement === 'before' ? 'before' : 'after';
 }
@@ -1266,8 +1315,8 @@ function CustomColumnCell({
           onChange={(e) =>
             !readOnly &&
             onUpdate(task.id, {
+              // Patch only this column — bulk apply must not copy sibling fields.
               customFields: {
-                ...(task.customFields ?? {}),
                 [column.id]: e.target.value || null,
               },
             })
@@ -1289,8 +1338,8 @@ function CustomColumnCell({
           disabled={readOnly || options.length === 0}
           onChange={(e) =>
             onUpdate(task.id, {
+              // Patch only this column — bulk apply must not copy sibling fields.
               customFields: {
-                ...(task.customFields ?? {}),
                 [column.id]: e.target.value || null,
               },
             })
@@ -1320,7 +1369,6 @@ function CustomColumnCell({
             task.id,
             {
               customFields: {
-                ...(task.customFields ?? {}),
                 [column.id]: e.target.value || null,
               },
             },
@@ -1398,6 +1446,11 @@ function renderFixedColumnCell(
                 }
               }}
             />
+            {taskShowsUngroupedTitleSuffix(task, taskGroups) && (
+              <span className={styles.ungroupedSuffix} title="Not in a group">
+                (Ungrouped)
+              </span>
+            )}
           </div>
         </div>
       );
@@ -1728,6 +1781,17 @@ export function TaskSpreadsheet({ clientId, projectId, boardType }: TaskSpreadsh
   const isOverview = boardType === 'main';
   const columnAdminId = viewAsOriginalUserId ?? currentUserId;
   const canDeleteColumns = canManageColumns(columnAdminId, employees, employeePermissions);
+  const canEditMaterialOptions = canManageMaterialOptions(
+    columnAdminId,
+    employees,
+    employeePermissions
+  );
+  const columnSettingsDropdownIds = useStore((s) => s.columnSettingsDropdownIds);
+  const addColumnSettingsDropdown = useStore((s) => s.addColumnSettingsDropdown);
+  const managedDropdownIds = useMemo(
+    () => new Set(normalizeColumnSettingsDropdownIds(columnSettingsDropdownIds)),
+    [columnSettingsDropdownIds]
+  );
   const allowEditTasks = canEditTasks(columnAdminId, employees, employeePermissions);
   const allowAssignTasks = canAssignTasks(columnAdminId, employees, employeePermissions);
   const allowManageStatuses = canManageStatuses(columnAdminId, employees, employeePermissions);
@@ -1974,6 +2038,22 @@ export function TaskSpreadsheet({ clientId, projectId, boardType }: TaskSpreadsh
     if (isOverview) return;
     saveLockedColumns(boardType, lockedColumns);
   }, [boardType, lockedColumns, isOverview]);
+
+  useEffect(() => {
+    const dragging = Boolean(activeDragTask || activeDragGroup);
+    if (!dragging) {
+      setSheetLivePointer(null);
+      return;
+    }
+    const onMove = (event: PointerEvent) => {
+      setSheetLivePointer({ x: event.clientX, y: event.clientY });
+    };
+    window.addEventListener('pointermove', onMove, true);
+    return () => {
+      window.removeEventListener('pointermove', onMove, true);
+      setSheetLivePointer(null);
+    };
+  }, [activeDragTask, activeDragGroup]);
 
   const resolveSizing = useCallback(
     (sectionBoardType?: ProjectBoardType): OverviewSectionSizingState => {
@@ -2876,26 +2956,21 @@ export function TaskSpreadsheet({ clientId, projectId, boardType }: TaskSpreadsh
     [resolveSizing]
   );
 
-  const canRemoveCustomColumn = useCallback(
+  const canRemoveColumn = useCallback(
     (columnId: string, sectionBoardType?: ProjectBoardType) => {
       if (!canDeleteColumns) return false;
+      if (isProtectedBoardColumnId(columnId)) return false;
       const slots =
         sectionBoardType && isOverview
           ? (overviewSectionLayouts.get(sectionBoardType)?.columnSlots ?? columnSlots)
           : columnSlots;
-      if (!slots.some((slot) => slot.kind === 'custom' && slot.column.id === columnId)) {
-        return false;
-      }
-      if (
-        !sectionBoardType &&
-        boardType !== 'main' &&
-        isMainOverviewSharedColumn(columnId, boardSheetColumns)
-      ) {
-        return false;
-      }
-      return true;
+      return slots.some(
+        (slot) =>
+          (slot.kind === 'custom' && slot.column.id === columnId) ||
+          (slot.kind === 'fixed' && slot.id === columnId)
+      );
     },
-    [boardType, boardSheetColumns, canDeleteColumns, columnSlots, isOverview, overviewSectionLayouts]
+    [canDeleteColumns, columnSlots, isOverview, overviewSectionLayouts]
   );
 
   const handleRemoveOverviewSectionColumn = useCallback(
@@ -3075,7 +3150,7 @@ export function TaskSpreadsheet({ clientId, projectId, boardType }: TaskSpreadsh
     return rows.length === 0 ? (
       <tr>
         <td colSpan={3 + slots.length + 1} className={styles.empty}>
-          No tasks yet. Use the Ungrouped row, "+ New" on a group, or add a group to get started.
+          No tasks yet. Use "+ New" on a group, add a group, or create an ungrouped task to get started.
         </td>
       </tr>
     ) : (
@@ -3562,7 +3637,7 @@ export function TaskSpreadsheet({ clientId, projectId, boardType }: TaskSpreadsh
             ? taskGroups.find((group) => group.id === hoveredGroupId)
             : undefined;
           setSheetDropHint({
-            targetId: hoveredGroupId ?? targetGroupId,
+            targetId: action.hintTargetGroupId ?? hoveredGroupId ?? targetGroupId,
             targetKind: 'group',
             intent: action.mode === 'nest' ? 'regroup' : 'reorder',
             placement: groupDropHintPlacement(
@@ -3598,21 +3673,23 @@ export function TaskSpreadsheet({ clientId, projectId, boardType }: TaskSpreadsh
       lastValidTaskDropRef.current = dropTarget;
       const overGroupId = parseGroupDropId(overId);
       const overTaskId = parseTaskDragId(overId);
+      const linePlacement: DropPlacement = dropTarget.insertBeforeTaskId
+        ? 'before'
+        : dropTarget.insertAfterTaskId
+          ? 'after'
+          : overGroupId &&
+              isSheetGroupContainer(
+                taskGroups,
+                taskGroups.find((group) => group.id === overGroupId)
+              ) &&
+              placement !== 'after'
+            ? 'after'
+            : 'inside';
       setSheetDropHint({
         targetId: overGroupId ?? overTaskId ?? '',
         targetKind: overGroupId ? 'group' : 'task',
         intent: dropTarget.intent,
-        placement:
-          dropTarget.intent === 'reorder'
-            ? dropTarget.insertBeforeTaskId
-              ? 'before'
-              : 'after'
-            : overGroupId && isSheetGroupContainer(
-                  taskGroups,
-                  taskGroups.find((group) => group.id === overGroupId)
-                ) && placement !== 'after'
-              ? 'after'
-              : 'inside',
+        placement: linePlacement,
       });
       return;
     }
@@ -3633,6 +3710,7 @@ export function TaskSpreadsheet({ clientId, projectId, boardType }: TaskSpreadsh
   };
 
   const clearSheetDragState = () => {
+    setSheetLivePointer(null);
     setActiveDragTask(null);
     setActiveDragTaskIds([]);
     setActiveDragGroup(null);
@@ -4243,7 +4321,7 @@ export function TaskSpreadsheet({ clientId, projectId, boardType }: TaskSpreadsh
                         ? 'No rows yet. Click "+ New row" to get started.'
                         : isGhostBoard
                           ? 'No tasks for this board yet. Assign tasks on Main Overview using the Board column or by placing them under this board’s section.'
-                          : 'No tasks yet. Use the Ungrouped row, "+ New" on a group, or add a group to get started.'}
+                          : 'No tasks yet. Use "+ New" on a group, add a group, or create an ungrouped task to get started.'}
                     </td>
                   </tr>
                 ) : (
@@ -4667,6 +4745,61 @@ export function TaskSpreadsheet({ clientId, projectId, boardType }: TaskSpreadsh
           className={styles.contextMenu}
           onClick={(e) => e.stopPropagation()}
         >
+          {columnHeaderMenu.columnKey === 'title' &&
+            !isFlatBoardView &&
+            ((columnHeaderMenu.sectionBoardType
+              ? getSectionForBoard(
+                  taskGroups,
+                  clientId,
+                  projectId,
+                  columnHeaderMenu.sectionBoardType
+                )
+              : null) ??
+              activeBoardSection) && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const section =
+                      (columnHeaderMenu.sectionBoardType
+                        ? getSectionForBoard(
+                            taskGroups,
+                            clientId,
+                            projectId,
+                            columnHeaderMenu.sectionBoardType
+                          )
+                        : null) ?? activeBoardSection;
+                    if (section) handleAddGroupUnder(section);
+                    setColumnHeaderMenu(null);
+                  }}
+                >
+                  New group
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const section =
+                      (columnHeaderMenu.sectionBoardType
+                        ? getSectionForBoard(
+                            taskGroups,
+                            clientId,
+                            projectId,
+                            columnHeaderMenu.sectionBoardType
+                          )
+                        : null) ?? activeBoardSection;
+                    if (section?.sectionBoardType) {
+                      handleCreateUngroupedTask(section.sectionBoardType);
+                    } else {
+                      handleCreateUngroupedTask();
+                    }
+                    setColumnHeaderMenu(null);
+                  }}
+                >
+                  New ungrouped task
+                </button>
+                <div className={styles.contextMenuDivider} />
+              </>
+            )}
           <button
             type="button"
             onClick={() => {
@@ -4684,7 +4817,8 @@ export function TaskSpreadsheet({ clientId, projectId, boardType }: TaskSpreadsh
               ? 'Unlock column width'
               : 'Lock column width'}
           </button>
-          {columnHeaderMenu.customColumn && canDeleteColumns && (
+          {columnHeaderMenu.customColumn &&
+            (canDeleteColumns || canEditMaterialOptions) && (
             <>
               <div className={styles.contextMenuDivider} />
               <button
@@ -4708,46 +4842,59 @@ export function TaskSpreadsheet({ clientId, projectId, boardType }: TaskSpreadsh
               >
                 Edit column
               </button>
-              <button
-                type="button"
-                className={styles.contextMenuDelete}
-                disabled={
-                  !canRemoveCustomColumn(
-                    columnHeaderMenu.customColumn!.id,
-                    columnHeaderMenu.sectionBoardType
-                  )
-                }
-                title={
-                  !canRemoveCustomColumn(
-                    columnHeaderMenu.customColumn!.id,
-                    columnHeaderMenu.sectionBoardType
-                  ) &&
-                  !columnHeaderMenu.sectionBoardType &&
-                  boardType !== 'main' &&
-                  isMainOverviewSharedColumn(
-                    columnHeaderMenu.customColumn!.id,
-                    boardSheetColumns
-                  )
-                    ? 'Main Overview shared columns must be removed from Main Overview'
-                    : undefined
-                }
-                onClick={() => {
-                  const columnId = columnHeaderMenu.customColumn!.id;
-                  const sectionBoardType = columnHeaderMenu.sectionBoardType;
-                  if (isOverview && sectionBoardType) {
-                    if (canRemoveCustomColumn(columnId, sectionBoardType)) {
-                      handleRemoveOverviewSectionColumn(sectionBoardType, columnId);
-                    }
-                  } else if (canRemoveCustomColumn(columnId)) {
-                    removeBoardSheetColumn(boardType, columnId);
-                  }
-                  setColumnHeaderMenu(null);
-                }}
-              >
-                Remove column
-              </button>
+              {canEditMaterialOptions &&
+                columnHeaderMenu.customColumn.type === 'dropdown' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const column = columnHeaderMenu.customColumn!;
+                      const alreadyManaged = managedDropdownIds.has(column.id);
+                      if (!alreadyManaged) {
+                        addColumnSettingsDropdown(column.id);
+                      }
+                      openColumnSettingsHub({ dropdownColumnId: column.id });
+                      setColumnHeaderMenu(null);
+                    }}
+                  >
+                    {managedDropdownIds.has(columnHeaderMenu.customColumn.id)
+                      ? 'Manage options in Column Settings…'
+                      : 'Add to Column Settings…'}
+                  </button>
+                )}
             </>
           )}
+          {canDeleteColumns &&
+            (() => {
+              const columnId =
+                columnHeaderMenu.customColumn?.id ??
+                (isFixedSheetColumnId(columnHeaderMenu.columnKey)
+                  ? columnHeaderMenu.columnKey
+                  : null);
+              if (!columnId || !canRemoveColumn(columnId, columnHeaderMenu.sectionBoardType)) {
+                return null;
+              }
+              const needsDivider = !columnHeaderMenu.customColumn;
+              return (
+                <>
+                  {needsDivider && <div className={styles.contextMenuDivider} />}
+                  <button
+                    type="button"
+                    className={styles.contextMenuDelete}
+                    onClick={() => {
+                      const sectionBoardType = columnHeaderMenu.sectionBoardType;
+                      if (isOverview && sectionBoardType) {
+                        handleRemoveOverviewSectionColumn(sectionBoardType, columnId);
+                      } else {
+                        removeBoardSheetColumn(boardType, columnId);
+                      }
+                      setColumnHeaderMenu(null);
+                    }}
+                  >
+                    Remove column
+                  </button>
+                </>
+              );
+            })()}
         </ContextMenuPanel>
       )}
       {showStatusSettings && allowManageStatuses && (

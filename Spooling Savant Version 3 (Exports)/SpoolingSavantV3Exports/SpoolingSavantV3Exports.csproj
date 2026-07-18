@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{B0D2E3F4-A5B6-7890-CDEF-012345678901}</ProjectGuid>
+    <OutputType>Library</OutputType>
+    <RootNamespace>SpoolingSavantV3Exports</RootNamespace>
+    <AssemblyName>SpoolingSavantV3Exports</AssemblyName>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+    <Deterministic>true</Deterministic>
+    <LangVersion>latest</LangVersion>
+    <PlatformTarget>x64</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="PresentationCore" />
+    <Reference Include="PresentationFramework" />
+    <Reference Include="AdWindows"><HintPath>C:\Program Files\Autodesk\Revit 2024\AdWindows.dll</HintPath><Private>False</Private></Reference>
+    <Reference Include="RevitAPI"><HintPath>C:\Program Files\Autodesk\Revit 2024\RevitAPI.dll</HintPath><Private>False</Private></Reference>
+    <Reference Include="RevitAPIUI"><HintPath>C:\Program Files\Autodesk\Revit 2024\RevitAPIUI.dll</HintPath><Private>False</Private></Reference>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Xaml" />
+    <Reference Include="WindowsBase" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SpoolingSavantV3Exports.Workers\SpoolingSavantV3Exports.Workers.csproj">
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+    </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="SsSavantRibbonVisibility.cs" />
+    <Compile Include="App.cs" />
+    <Compile Include="SsSavantCollectibleAssemblyLoadContext.cs" />
+    <Compile Include="SsSavantDocumentSharedParameters.cs" />
+    <Compile Include="SsSavantAssemblyMemberSync.cs" />
+    <Compile Include="SsSavantHotloadAssemblyResolver.cs" />
+    <Compile Include="SsSavantHotloadWorkerAssemblyLoad.cs" />
+    <Compile Include="SsSavantInstallOptions.cs" />
+    <Compile Include="SsSavantWorkerHotloadResolve.cs" />
+    <Compile Include="Properties\AssemblyInfo.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Icons\SS Manager32.png"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></None>
+    <None Include="Icons\SpoolingSavantLogo.png"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></None>
+    <None Include="Addins\2024\SpoolingSavantV3Exports.addin" />
+    <None Include="Addins\2025\SpoolingSavantV3Exports.addin" />
+    <None Include="Addins\2026\SpoolingSavantV3Exports.addin" />
+    <None Include="Addins\2027\SpoolingSavantV3Exports.addin" />
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <Target Name="DeployStableAddin" AfterTargets="Build" Condition="'$(DeployRevitAddin)' == 'true'">
+    <PropertyGroup>
+      <RevitAddinsRoot>C:\ProgramData\Autodesk\Revit\Addins</RevitAddinsRoot>
+      <_TargetDirTrim>$([System.IO.Path]::GetFullPath('$(TargetDir)').TrimEnd('\'))</_TargetDirTrim>
+      <_WsWorkersBin>$(MSBuildProjectDirectory)\..\SpoolingSavantV3Exports.Workers\bin\$(Configuration)</_WsWorkersBin>
+      <_WorkersHotloadSource>$([System.IO.Path]::GetFullPath('$(_WsWorkersBin)').TrimEnd('\'))</_WorkersHotloadSource>
+    </PropertyGroup>
+    <Exec Condition="'$(DeployRevitAddin)' == 'true'" Command="powershell.exe -NoLogo -NonInteractive -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\Properties\DeployStableAddin.ps1&quot; -TargetDir &quot;$(_TargetDirTrim)&quot; -RevitAddinsRoot &quot;$(RevitAddinsRoot)&quot; -ProjectDir &quot;$(MSBuildProjectDirectory)&quot; -AssemblyBaseName &quot;$(TargetName)&quot;" IgnoreExitCode="false" />
+    <Exec Command="powershell.exe -NoLogo -NonInteractive -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\SpoolingSavantV3Exports.Workers\Properties\DeployWorkersHotload.ps1&quot; -SourceDir &quot;$(_WorkersHotloadSource)&quot; -AddinsRoot &quot;$(RevitAddinsRoot)&quot;" IgnoreExitCode="false" />
+  </Target>
+</Project>

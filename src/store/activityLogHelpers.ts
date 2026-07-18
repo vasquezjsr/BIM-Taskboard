@@ -5,6 +5,7 @@ import {
   getBoardSheetColumnOrder,
   getBoardSheetColumns,
   appendSheetColumnDefinition,
+  isFixedSheetColumnId,
   isMainOverviewSharedColumn,
   propagateMainSheetColumnToAllBoards,
   removeMainSheetColumnFromAllBoards,
@@ -182,12 +183,19 @@ export function applyColumnArchiveRestore(
       };
     }
   } else {
-    const current = getBoardLocalSheetColumns(archive.boardType, boardSheetColumns);
-    if (!current.some((column) => column.id === archive.column.id)) {
-      boardSheetColumns = {
-        ...boardSheetColumns,
-        [archive.boardType]: [...current, archive.column],
-      };
+    // Fixed columns live in order only — never re-add them as custom definitions.
+    // Shared Main columns removed from a sub-board also stay order-only.
+    if (
+      !isFixedSheetColumnId(archive.column.id) &&
+      !isMainOverviewSharedColumn(archive.column.id, boardSheetColumns)
+    ) {
+      const current = getBoardLocalSheetColumns(archive.boardType, boardSheetColumns);
+      if (!current.some((column) => column.id === archive.column.id)) {
+        boardSheetColumns = {
+          ...boardSheetColumns,
+          [archive.boardType]: [...current, archive.column],
+        };
+      }
     }
     const order = getBoardSheetColumnOrder(
       archive.boardType,

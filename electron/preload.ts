@@ -76,4 +76,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('boardroom-api:publish-snapshot', snapshot),
   getBoardroomApiStatus: (): Promise<{ port: number; host: string }> =>
     ipcRenderer.invoke('boardroom-api:get-status'),
+  savePersistedStore: (payload: {
+    state: string;
+    updatedAt: number;
+  }): Promise<{ ok: true; path: string } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('boardroom:save-persisted-store', payload),
+  loadPersistedStore: (): Promise<
+    | { ok: true; state: string; updatedAt: number; path: string }
+    | { ok: false; error?: string }
+  > => ipcRenderer.invoke('boardroom:load-persisted-store'),
+  clearPersistedStore: (): Promise<{ ok: true } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('boardroom:clear-persisted-store'),
 });

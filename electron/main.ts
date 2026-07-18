@@ -54,7 +54,6 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 let mainWindow: BrowserWindow | null = null;
-let permissionsMenuVisible = false;
 let boardroomExportsWatcher: fs.FSWatcher | null = null;
 
 function getRepoRoot() {
@@ -159,10 +158,6 @@ function sendNavigate(tab: string) {
   mainWindow?.webContents.send('navigate-to', tab);
 }
 
-function requestPermissionsMenuSync() {
-  mainWindow?.webContents.send('request-permissions-menu-sync');
-}
-
 function buildApplicationMenu() {
   const viewSubmenu: Electron.MenuItemConstructorOptions[] = [
     { role: 'reload' },
@@ -174,6 +169,24 @@ function buildApplicationMenu() {
     { role: 'zoomOut' },
     { type: 'separator' },
     { role: 'togglefullscreen' },
+  ];
+
+  const editSubmenu: Electron.MenuItemConstructorOptions[] = [
+    { role: 'undo' },
+    { role: 'redo' },
+    { type: 'separator' },
+    { role: 'cut' },
+    { role: 'copy' },
+    { role: 'paste' },
+    ...(process.platform === 'darwin'
+      ? ([{ role: 'pasteAndMatchStyle' }, { role: 'delete' }, { role: 'selectAll' }] as const)
+      : ([{ role: 'delete' }, { type: 'separator' }, { role: 'selectAll' }] as const)),
+    { type: 'separator' },
+    {
+      label: 'Column Settings...',
+      accelerator: process.platform === 'darwin' ? 'Cmd+Shift+C' : 'Ctrl+Shift+C',
+      click: () => sendNavigate('column-settings'),
+    },
   ];
 
   const template: Electron.MenuItemConstructorOptions[] = [
@@ -199,21 +212,10 @@ function buildApplicationMenu() {
       label: 'File',
       submenu: [process.platform === 'darwin' ? { role: 'close' } : { role: 'quit' }],
     },
-    { role: 'editMenu' },
-    ...(permissionsMenuVisible
-      ? [
-          {
-            label: 'Organization & Permissions',
-            submenu: [
-              {
-                label: 'Open Org Chart',
-                accelerator: process.platform === 'darwin' ? 'Cmd+Shift+P' : 'Ctrl+Shift+P',
-                click: () => sendNavigate('org-chart'),
-              },
-            ],
-          } satisfies Electron.MenuItemConstructorOptions,
-        ]
-      : []),
+    {
+      label: 'Edit',
+      submenu: editSubmenu,
+    },
     {
       label: 'View',
       submenu: viewSubmenu,
@@ -256,7 +258,6 @@ function createWindow() {
 
   mainWindow.webContents.on('did-finish-load', () => {
     mainWindow?.webContents.setZoomFactor(DEFAULT_ZOOM_FACTOR);
-    requestPermissionsMenuSync();
   });
 
   mainWindow.webContents.on('before-input-event', (event, input) => {
@@ -271,9 +272,8 @@ function createWindow() {
   });
 }
 
-ipcMain.on('set-permissions-menu-visible', (_event, visible: boolean) => {
-  permissionsMenuVisible = visible;
-  buildApplicationMenu();
+ipcMain.on('set-permissions-menu-visible', () => {
+  // Organization & Permissions menu removed — keep handler for older renderers.
 });
 
 ipcMain.handle('boardroom:get-default-exports-dir', () => getDefaultBoardroomExportsDir());
@@ -390,6 +390,81 @@ ipcMain.handle('boardroom:watch-exports', (event) => {
   }
 
   return { ok: true as const, dir };
+});
+
+function getPersistedStorePath() {
+  return path.join(app.getPath('userData'), 'bim-boardroom-store.json');
+}
+
+ipcMain.handle('boardroom:save-persisted-store', (_event, payload: { state: string; updatedAt: number }) => {
+  try {
+    if (!payload?.state || typeof payload.state !== 'string') {
+      return { ok: false as const, error: 'missing state' };
+    }
+    const updatedAt =
+      typeof payload.updatedAt === 'number' && Number.isFinite(payload.updatedAt)
+        ? payload.updatedAt
+        : Date.now();
+    const filePath = getPersistedStorePath();
+    const bakPath = `${filePath}.bak`;
+    try {
+      if (fs.existsSync(filePath)) {
+        fs.copyFileSync(filePath, bakPath);
+      }
+    } catch {
+      /* ignore bak copy failures */
+    }
+    fs.writeFileSync(
+      filePath,
+      JSON.stringify({ updatedAt, state: payload.state }),
+      'utf8'
+    );
+    return { ok: true as const, path: filePath };
+  } catch (error) {
+    return {
+      ok: false as const,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+});
+
+ipcMain.handle('boardroom:load-persisted-store', () => {
+  try {
+    const filePath = getPersistedStorePath();
+    const tryRead = (p: string) => {
+      if (!fs.existsSync(p)) return null;
+      const raw = fs.readFileSync(p, 'utf8');
+      const parsed = JSON.parse(raw) as { updatedAt?: number; state?: string };
+      if (!parsed?.state || typeof parsed.state !== 'string') return null;
+      return {
+        ok: true as const,
+        state: parsed.state,
+        updatedAt: typeof parsed.updatedAt === 'number' ? parsed.updatedAt : 0,
+        path: p,
+      };
+    };
+    return tryRead(filePath) ?? tryRead(`${filePath}.bak`) ?? { ok: false as const };
+  } catch (error) {
+    return {
+      ok: false as const,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+});
+
+ipcMain.handle('boardroom:clear-persisted-store', () => {
+  try {
+    const filePath = getPersistedStorePath();
+    for (const p of [filePath, `${filePath}.bak`]) {
+      if (fs.existsSync(p)) fs.unlinkSync(p);
+    }
+    return { ok: true as const };
+  } catch (error) {
+    return {
+      ok: false as const,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
 });
 
 ipcMain.handle('boardroom:unwatch-exports', () => {

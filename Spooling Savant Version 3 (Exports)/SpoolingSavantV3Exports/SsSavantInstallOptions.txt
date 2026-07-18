@@ -1,0 +1,2 @@
+# Optional dev settings beside SpoolingSavantV3Exports.dll after deploy.
+repositoryRoot=C:\Apps\BIM-Taskboard\Spooling Savant Version 3 (Exports)

@@ -3,6 +3,7 @@ import { useStore } from '../store/useStore';
 import type { Task } from '../types';
 import {
   isSsv3AssemblyTask,
+  isSsv3PackageTask,
   isSsv3ShippingPackageTask,
   SSV3_FIELD,
 } from '../utils/boardroomPackageImport';
@@ -19,6 +20,7 @@ import {
 } from '../utils/shippingTracking';
 import {
   getBoardTaskStatuses,
+  isAssemblyReleasedFromFabStatus,
   isShippingHandedToFieldStatus,
 } from '../utils/taskStatuses';
 import { canLogTime } from '../utils/permissions';
@@ -72,6 +74,26 @@ function isAssemblyShippedLane(status: ShippingLaneId): boolean {
   return status !== 'staging';
 }
 
+/** Package is fully on Shipping, or still on Fab with ≥1 assembly released for ship. */
+function isShippingVisiblePackage(task: Task, allTasks: Task[]): boolean {
+  if (isSsv3ShippingPackageTask(task) && !isShippingHandedToFieldStatus(task.status)) {
+    return true;
+  }
+  if (!isSsv3PackageTask(task)) return false;
+  return allTasks.some(
+    (child) =>
+      isSsv3AssemblyTask(child) &&
+      child.parentTaskId === task.id &&
+      isAssemblyReleasedFromFabStatus(child.status)
+  );
+}
+
+/** Effective lane for filters — Fab partial packages count as Staging. */
+function packageShippingLane(pkg: Task): ShippingLaneId {
+  if (pkg.boardType !== 'shipping') return 'staging';
+  return isShippingLaneId(pkg.status) ? pkg.status : 'staging';
+}
+
 function formatScanTime(iso: string | null): string {
   if (!iso) return 'Never';
   try {
@@ -116,9 +138,7 @@ export function ShippingWorkstationView() {
   );
 
   const allPackageTasks = useMemo(() => {
-    let list = tasks
-      .filter(isSsv3ShippingPackageTask)
-      .filter((task) => !isShippingHandedToFieldStatus(task.status));
+    let list = tasks.filter((task) => isShippingVisiblePackage(task, tasks));
     const filterId = projectFilterId ?? selectedProjectId;
     if (filterId) {
       list = list.filter((task) => task.projectId === filterId);
@@ -131,9 +151,7 @@ export function ShippingWorkstationView() {
       SHIPPING_LANES.map((lane) => [lane.id, 0])
     );
     for (const pkg of allPackageTasks) {
-      const key = SHIPPING_LANES.some((lane) => lane.id === pkg.status)
-        ? pkg.status
-        : 'staging';
+      const key = packageShippingLane(pkg);
       counts[key] = (counts[key] ?? 0) + 1;
     }
     return counts;
@@ -142,9 +160,9 @@ export function ShippingWorkstationView() {
   const packageTasks = useMemo(() => {
     if (laneFilter === 'all') return allPackageTasks;
     if (laneFilter === 'active') {
-      return allPackageTasks.filter((pkg) => pkg.status !== 'complete');
+      return allPackageTasks.filter((pkg) => packageShippingLane(pkg) !== 'complete');
     }
-    return allPackageTasks.filter((pkg) => pkg.status === laneFilter);
+    return allPackageTasks.filter((pkg) => packageShippingLane(pkg) === laneFilter);
   }, [allPackageTasks, laneFilter]);
 
   useEffect(() => {
@@ -187,7 +205,7 @@ export function ShippingWorkstationView() {
 
   const projectOptions = useMemo(() => {
     const ids = new Set(
-      tasks.filter(isSsv3ShippingPackageTask).map((task) => task.projectId).filter(Boolean)
+      tasks.filter((task) => isShippingVisiblePackage(task, tasks)).map((task) => task.projectId).filter(Boolean)
     );
     return projects
       .filter((project) => ids.has(project.id))
@@ -241,6 +259,11 @@ export function ShippingWorkstationView() {
 
   const setPackageShippingStatus = useCallback(
     (pkg: Task, status: string) => {
+      // Partial Fab packages must be promoted before package-level shipping lanes apply.
+      if (pkg.boardType === 'fab') {
+        updateTask(pkg.id, { status: 'ready-to-ship' });
+        return;
+      }
       updateTask(pkg.id, withPackageStatusShippedStamp(pkg, status));
     },
     [updateTask]
@@ -248,6 +271,12 @@ export function ShippingWorkstationView() {
 
   const returnPackageUpstream = useCallback(
     (pkg: Task, destination: 'return-to-fab' | 'spooling') => {
+      if (pkg.boardType !== 'shipping') {
+        window.alert(
+          'This package is still on Fabrication. Change assembly status there, or mark the package Ready for Shipping first.'
+        );
+        return;
+      }
       const label = destination === 'return-to-fab' ? 'Fab' : 'Spooling';
       const ok = window.confirm(
         `Return package "${pkg.title}" to ${label}?\n\nThe whole package and its assemblies will leave Shipping.`
@@ -274,6 +303,12 @@ export function ShippingWorkstationView() {
     (assembly: Task, status: string, packageTask: Task) => {
       if (status === 'return-to-fab' || status === 'spooling') {
         returnPackageUpstream(packageTask, status);
+        return;
+      }
+      if (
+        packageTask.boardType === 'fab' &&
+        !isAssemblyReleasedFromFabStatus(assembly.status)
+      ) {
         return;
       }
       setAssemblyShippingStatus(assembly, status);
@@ -365,15 +400,22 @@ export function ShippingWorkstationView() {
 
   const advancePackage = useCallback(
     (pkg: Task) => {
+      if (pkg.boardType === 'fab') {
+        updateTask(pkg.id, { status: 'ready-to-ship' });
+        return;
+      }
       const next = nextLaneId(pkg.status);
       if (!next) return;
       setPackageShippingStatus(pkg, next);
     },
-    [setPackageShippingStatus]
+    [setPackageShippingStatus, updateTask]
   );
 
   const advanceAssembly = useCallback(
     (assembly: Task) => {
+      if (!isAssemblyReleasedFromFabStatus(assembly.status) && assembly.boardType === 'fab') {
+        return;
+      }
       const next = nextLaneId(getAssemblyShippingStatus(assembly));
       if (!next) return;
       setAssemblyShippingStatus(assembly, next);
@@ -388,9 +430,11 @@ export function ShippingWorkstationView() {
       setTrackedAssemblyId(null);
       return;
     }
-    if (hit.packageTask.boardType !== 'shipping') {
+    const onShippingBoard = hit.packageTask.boardType === 'shipping';
+    const releasedForShip = isAssemblyReleasedFromFabStatus(hit.assembly.status);
+    if (!onShippingBoard && !releasedForShip) {
       setQrMessage(
-        `Found ${hit.assembly.title} on ${hit.packageTask.boardType} — open that board to track it.`
+        `Found ${hit.assembly.title} on ${hit.packageTask.boardType} — mark Ready for Shipping in Fab first.`
       );
     } else {
       const qrLabel = formatQrDisplayLabel(getTaskQr(hit.assembly)) || '—';
@@ -400,10 +444,17 @@ export function ShippingWorkstationView() {
     setTrackedAssemblyId(hit.assembly.id);
   }, [tasks, qrQuery]);
 
-  const selectedAdvance = selectedPackage ? nextLaneId(selectedPackage.status) : null;
-  const selectedAdvanceLabel = selectedAdvance
-    ? SHIPPING_LANES.find((lane) => lane.id === selectedAdvance)?.label
+  const selectedAdvance = selectedPackage
+    ? selectedPackage.boardType === 'fab'
+      ? 'ready-to-ship'
+      : nextLaneId(selectedPackage.status)
     : null;
+  const selectedAdvanceLabel =
+    selectedPackage?.boardType === 'fab'
+      ? 'Move package to Shipping'
+      : selectedAdvance
+        ? SHIPPING_LANES.find((lane) => lane.id === selectedAdvance)?.label
+        : null;
 
   const canClockPackage = canLogTime(currentUserId, employees, employeePermissions);
 
@@ -467,9 +518,9 @@ export function ShippingWorkstationView() {
         <div className={fabStyles.headerText}>
           <h2 className={fabStyles.title}>Shipping Dashboard</h2>
           <p className={fabStyles.subtitle}>
-            Packages marked Ready for Shipping leave Fabrication and move here — stage, load,
-            deliver, then hand off to Field. Ship the whole package or individual assemblies.
-            Advance to Received by Field to send the package to the Field Dashboard.
+            Assemblies marked Ready for Shipping in Fab appear here for individual release — stage,
+            load, deliver, then hand off to Field. Ship one assembly or the whole package. Advance
+            to Received by Field to send a Shipping package to the Field Dashboard.
           </p>
         </div>
         <div className={fabStyles.headerActions}>
@@ -527,7 +578,7 @@ export function ShippingWorkstationView() {
         >
           Active
           <span className={styles.laneCount}>
-            {allPackageTasks.filter((pkg) => pkg.status !== 'complete').length}
+            {allPackageTasks.filter((pkg) => packageShippingLane(pkg) !== 'complete').length}
           </span>
         </button>
         {SHIPPING_LANES.map((lane) => (
@@ -560,13 +611,17 @@ export function ShippingWorkstationView() {
           <h3 className={fabStyles.paneTitle}>Packages</h3>
           {packageTasks.length === 0 ? (
             <p className={fabStyles.empty}>
-              No packages in this stage. Mark a Fab package Ready for Shipping to send it here.
+              No packages in this stage. Mark assemblies Ready for Shipping in Fab, or move a
+              package Ready for Shipping to send it here.
             </p>
           ) : (
             <ul className={fabStyles.list}>
               {packageTasks.map((task) => {
                 const sPackage = task.customFields?.[SSV3_FIELD.package] ?? '';
-                const meta = statusMeta(task);
+                const partialFab = task.boardType === 'fab';
+                const meta = partialFab
+                  ? { label: 'Partial · still in Fab', color: '#fdba74' }
+                  : statusMeta(task);
                 const selected = task.id === selectedPackageId;
                 const statuses = shippingStatusesFor(task);
                 const { shipped, total } = assemblyProgress(task.id);
@@ -585,6 +640,7 @@ export function ShippingWorkstationView() {
                         <span className={fabStyles.packageName}>{task.title}</span>
                         <span className={fabStyles.packageMeta}>
                           {sPackage} · {projectLabel(task.projectId)}
+                          {partialFab ? ' · partial release' : ''}
                         </span>
                         {total > 0 ? (
                           <>
@@ -608,24 +664,35 @@ export function ShippingWorkstationView() {
                         <span className={fabStyles.srOnly}>Package status</span>
                         <select
                           className={fabStyles.statusSelect}
-                          value={task.status}
+                          value={partialFab ? 'staging' : task.status}
                           style={{ borderColor: meta.color, color: meta.color }}
                           onChange={(e) => handlePackageStatusChange(task, e.target.value)}
                           onClick={(e) => e.stopPropagation()}
-                          title="Package shipping status"
+                          title={
+                            partialFab
+                              ? 'Partial release — choose a shipping lane to move the whole package out of Fab'
+                              : 'Package shipping status'
+                          }
                         >
+                          {partialFab ? (
+                            <option value="staging">{meta.label}</option>
+                          ) : null}
                           {statuses.map((status) => (
                             <option key={status.id} value={status.id}>
-                              {status.label}
+                              {partialFab && status.id === 'staging'
+                                ? 'Move package to Shipping (Staging)'
+                                : status.label}
                             </option>
                           ))}
-                          <optgroup label="Return package">
-                            {RETURN_PACKAGE_OPTIONS.map((option) => (
-                              <option key={option.id} value={option.id}>
-                                {option.label}
-                              </option>
-                            ))}
-                          </optgroup>
+                          {!partialFab ? (
+                            <optgroup label="Return package">
+                              {RETURN_PACKAGE_OPTIONS.map((option) => (
+                                <option key={option.id} value={option.id}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </optgroup>
+                          ) : null}
                         </select>
                       </label>
                     </div>
@@ -654,11 +721,12 @@ export function ShippingWorkstationView() {
                 </p>
                 <div className={styles.workflowBar}>
                   {SHIPPING_LANES.map((lane, index) => {
+                    const currentLane = packageShippingLane(selectedPackage);
                     const currentIdx = SHIPPING_LANES.findIndex(
-                      (entry) => entry.id === selectedPackage.status
+                      (entry) => entry.id === currentLane
                     );
                     const done = currentIdx >= index;
-                    const current = selectedPackage.status === lane.id;
+                    const current = currentLane === lane.id;
                     return (
                       <div
                         key={lane.id}
@@ -676,6 +744,12 @@ export function ShippingWorkstationView() {
                     );
                   })}
                 </div>
+                {selectedPackage.boardType === 'fab' ? (
+                  <p className={fabStyles.empty} style={{ marginTop: 8, marginBottom: 0 }}>
+                    Partial release — this package is still on Fabrication. Ship released
+                    assemblies below, or move the whole package to Shipping when ready.
+                  </p>
+                ) : null}
                 <div className={styles.trackingRow}>
                   <label className={styles.dateField}>
                     <span className={styles.statusInlineLabel}>Shipped date</span>
@@ -703,27 +777,44 @@ export function ShippingWorkstationView() {
                     <span className={styles.statusInlineLabel}>Package status</span>
                     <select
                       className={fabStyles.statusSelect}
-                      value={selectedPackage.status}
+                      value={
+                        selectedPackage.boardType === 'fab'
+                          ? 'staging'
+                          : selectedPackage.status
+                      }
                       style={{
-                        borderColor: statusMeta(selectedPackage).color,
-                        color: statusMeta(selectedPackage).color,
+                        borderColor:
+                          selectedPackage.boardType === 'fab'
+                            ? '#fdba74'
+                            : statusMeta(selectedPackage).color,
+                        color:
+                          selectedPackage.boardType === 'fab'
+                            ? '#fdba74'
+                            : statusMeta(selectedPackage).color,
                       }}
                       onChange={(e) =>
                         handlePackageStatusChange(selectedPackage, e.target.value)
                       }
                     >
+                      {selectedPackage.boardType === 'fab' ? (
+                        <option value="staging">Partial · still in Fab</option>
+                      ) : null}
                       {shippingStatusesFor(selectedPackage).map((status) => (
                         <option key={status.id} value={status.id}>
-                          {status.label}
+                          {selectedPackage.boardType === 'fab' && status.id === 'staging'
+                            ? 'Move package to Shipping (Staging)'
+                            : status.label}
                         </option>
                       ))}
-                      <optgroup label="Return package">
-                        {RETURN_PACKAGE_OPTIONS.map((option) => (
-                          <option key={option.id} value={option.id}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </optgroup>
+                      {selectedPackage.boardType === 'shipping' ? (
+                        <optgroup label="Return package">
+                          {RETURN_PACKAGE_OPTIONS.map((option) => (
+                            <option key={option.id} value={option.id}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </optgroup>
+                      ) : null}
                     </select>
                   </label>
                   {selectedAdvance && selectedAdvanceLabel ? (
@@ -732,7 +823,9 @@ export function ShippingWorkstationView() {
                       className={styles.advanceBtn}
                       onClick={() => advancePackage(selectedPackage)}
                     >
-                      Advance package to {selectedAdvanceLabel}
+                      {selectedPackage.boardType === 'fab'
+                        ? selectedAdvanceLabel
+                        : `Advance package to ${selectedAdvanceLabel}`}
                     </button>
                   ) : (
                     <span className={styles.advanceDone}>Package shipping complete</span>
@@ -776,9 +869,12 @@ export function ShippingWorkstationView() {
                 ) : (
                   <ul className={fabStyles.assemblyList}>
                     {assemblies.map((task) => {
+                      const released =
+                        selectedPackage.boardType === 'shipping' ||
+                        isAssemblyReleasedFromFabStatus(task.status);
                       const shipStatus = getAssemblyShippingStatus(task);
                       const shipMeta = shippingLaneMeta(shipStatus, selectedPackage);
-                      const nextShip = nextLaneId(shipStatus);
+                      const nextShip = released ? nextLaneId(shipStatus) : null;
                       const nextShipLabel = nextShip
                         ? SHIPPING_LANES.find((lane) => lane.id === nextShip)?.label
                         : null;
@@ -787,29 +883,37 @@ export function ShippingWorkstationView() {
                         <li key={task.id}>
                           <div
                             className={
-                              tracked
-                                ? `${fabStyles.assemblyRow} ${styles.shipAssemblyRow} ${styles.assemblyRowTracked}`
-                                : `${fabStyles.assemblyRow} ${styles.shipAssemblyRow}`
+                              !released
+                                ? `${fabStyles.assemblyRowReleased} ${styles.shipAssemblyRow}`
+                                : tracked
+                                  ? `${fabStyles.assemblyRow} ${styles.shipAssemblyRow} ${styles.assemblyRowTracked}`
+                                  : `${fabStyles.assemblyRow} ${styles.shipAssemblyRow}`
                             }
                           >
                             <div className={styles.assemblyMain}>
                               <span className={fabStyles.assemblyTitle}>{task.title}</span>
+                              {!released ? (
+                                <span className={fabStyles.rowHint}>Still in Fab</span>
+                              ) : null}
                             </div>
                             <label className={styles.dateFieldCompact}>
                               <span className={styles.dateFieldCompactLabel}>Shipped</span>
                               <input
                                 type="date"
                                 className={styles.dateInputCompact}
+                                disabled={!released}
                                 value={toDateInputValue(
                                   getShippedAt(task) || getShippedAt(selectedPackage)
                                 )}
                                 onChange={(e) => setAssemblyShippedAt(task, e.target.value)}
                                 title={
-                                  getShippedAt(task)
-                                    ? 'Assembly shipped date'
-                                    : getShippedAt(selectedPackage)
-                                      ? 'Following package shipped date — change to set a different date'
-                                      : 'Date this assembly shipped'
+                                  !released
+                                    ? 'Mark Ready for Shipping in Fab first'
+                                    : getShippedAt(task)
+                                      ? 'Assembly shipped date'
+                                      : getShippedAt(selectedPackage)
+                                        ? 'Following package shipped date — change to set a different date'
+                                        : 'Date this assembly shipped'
                                 }
                               />
                             </label>
@@ -818,6 +922,7 @@ export function ShippingWorkstationView() {
                               <input
                                 type="date"
                                 className={styles.dateInputCompact}
+                                disabled={!released}
                                 value={toDateInputValue(
                                   getEstimatedArrival(task) ||
                                     getEstimatedArrival(selectedPackage)
@@ -826,11 +931,13 @@ export function ShippingWorkstationView() {
                                   setAssemblyEstimatedArrival(task, e.target.value)
                                 }
                                 title={
-                                  getEstimatedArrival(task)
-                                    ? 'Assembly expected delivery'
-                                    : getEstimatedArrival(selectedPackage)
-                                      ? 'Following package expected delivery — change to set a different date'
-                                      : 'Expected delivery date for this assembly'
+                                  !released
+                                    ? 'Mark Ready for Shipping in Fab first'
+                                    : getEstimatedArrival(task)
+                                      ? 'Assembly expected delivery'
+                                      : getEstimatedArrival(selectedPackage)
+                                        ? 'Following package expected delivery — change to set a different date'
+                                        : 'Expected delivery date for this assembly'
                                 }
                               />
                             </label>
@@ -839,6 +946,7 @@ export function ShippingWorkstationView() {
                               <select
                                 className={fabStyles.statusSelect}
                                 value={shipStatus}
+                                disabled={!released}
                                 style={{
                                   borderColor: shipMeta.color,
                                   color: shipMeta.color,
@@ -850,20 +958,26 @@ export function ShippingWorkstationView() {
                                     selectedPackage
                                   )
                                 }
-                                title="Assembly shipping status — or return the whole package upstream"
+                                title={
+                                  released
+                                    ? 'Assembly shipping status — or return the whole package upstream'
+                                    : 'Still in Fab — mark Ready for Shipping on the Fabrication Dashboard first'
+                                }
                               >
                                 {SHIPPING_LANES.map((lane) => (
                                   <option key={lane.id} value={lane.id}>
                                     {lane.label}
                                   </option>
                                 ))}
-                                <optgroup label="Return package">
-                                  {RETURN_PACKAGE_OPTIONS.map((option) => (
-                                    <option key={option.id} value={option.id}>
-                                      {option.label}
-                                    </option>
-                                  ))}
-                                </optgroup>
+                                {selectedPackage.boardType === 'shipping' ? (
+                                  <optgroup label="Return package">
+                                    {RETURN_PACKAGE_OPTIONS.map((option) => (
+                                      <option key={option.id} value={option.id}>
+                                        {option.label}
+                                      </option>
+                                    ))}
+                                  </optgroup>
+                                ) : null}
                               </select>
                             </label>
                             {nextShip && nextShipLabel ? (
@@ -875,8 +989,10 @@ export function ShippingWorkstationView() {
                               >
                                 Ship → {nextShipLabel}
                               </button>
-                            ) : (
+                            ) : released ? (
                               <span className={styles.shipOneDone}>Shipped</span>
+                            ) : (
+                              <span className={styles.shipOneDone}>In Fab</span>
                             )}
                           </div>
                         </li>

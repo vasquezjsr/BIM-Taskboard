@@ -1,0 +1,195 @@
+<Window x:Class="SpoolingSavantV3Exports.Workers.SpoolingManager.Views.SpoolSheetLayoutSettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Spool sheet layout"
+        Height="640"
+        Width="520"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        Background="{DynamicResource SsSavantChromeBackground}">
+    <Border Background="{DynamicResource SsSavantChromeBackground}"
+            BorderThickness="0"
+            Padding="12">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <StackPanel Grid.Row="0" Margin="0,0,0,14">
+                <TextBlock x:Name="txtLayoutTitle"
+                           Text="Schedule on sheet"
+                           FontSize="18"
+                           FontWeight="SemiBold"
+                           Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+                <TextBlock Text="Choose where spool sheets and views appear in the Project Browser. Schedule and weld log inset distances are measured from the title block bounding box on the sheet. Click OK, then Save on Spool Sheet Manager to write the settings file."
+                           Margin="0,8,0,0"
+                           TextWrapping="Wrap"
+                           Foreground="{DynamicResource SsSavantForegroundMuted}"/>
+            </StackPanel>
+
+            <Border Grid.Row="1"
+                    Background="{DynamicResource SsSavantListWellBackground}"
+                    BorderBrush="{DynamicResource SsSavantBorderOuter}"
+                    BorderThickness="1"
+                    CornerRadius="10"
+                    Padding="14">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="200"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Grid.Row="0" Grid.Column="0"
+                               Text="Project Browser location"
+                               Margin="0,0,12,12"
+                               VerticalAlignment="Center"
+                               TextWrapping="Wrap"
+                               ToolTip="Where Create Spool Sheets places each spool sheet and its assembly views."
+                               Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+                    <ComboBox x:Name="cmbProjectBrowserLocation"
+                              Grid.Row="0"
+                              Grid.Column="1"
+                              Height="28"
+                              Margin="0,0,0,12"
+                              VerticalAlignment="Center"
+                              HorizontalAlignment="Stretch"
+                              IsEditable="False"
+                              ToolTip="Assemblies nests sheets and views under each assembly. Sheets lists spool sheets under Project Browser &gt; Sheets."/>
+
+                    <TextBlock Grid.Row="1" Grid.Column="0"
+                               Text="Schedule inset from title block left"
+                               Margin="0,0,12,12"
+                               VerticalAlignment="Center"
+                               TextWrapping="Wrap"
+                               ToolTip="Distance from the title block left edge to the schedule's top-left cell corner."
+                               Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+                    <ComboBox x:Name="cmbScheduleInsetLeftInches"
+                              Grid.Row="1"
+                              Grid.Column="1"
+                              Height="28"
+                              Margin="0,0,0,12"
+                              VerticalAlignment="Center"
+                              IsEditable="False"
+                              ToolTip="1/16&quot; steps from 0&quot; to 1/2&quot;. Default 1/8&quot;."/>
+
+                    <TextBlock Grid.Row="2" Grid.Column="0"
+                               Text="Schedule inset from title block top"
+                               Margin="0,0,12,12"
+                               VerticalAlignment="Center"
+                               TextWrapping="Wrap"
+                               ToolTip="Distance down from the title block top edge to the schedule's top cell corner."
+                               Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+                    <ComboBox x:Name="cmbScheduleInsetTopInches"
+                              Grid.Row="2"
+                              Grid.Column="1"
+                              Height="28"
+                              Margin="0,0,0,12"
+                              VerticalAlignment="Center"
+                              IsEditable="False"
+                              ToolTip="1/16&quot; steps from 0&quot; to 1/2&quot;. Default 1/8&quot;."/>
+
+                    <TextBlock Grid.Row="3" Grid.Column="0"
+                               Text="Weld log inset from title block left"
+                               Margin="0,0,12,12"
+                               VerticalAlignment="Center"
+                               TextWrapping="Wrap"
+                               ToolTip="Left edge of the first WELD NUMBER column, measured from the title block left edge."
+                               Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+                    <TextBox x:Name="txtWeldLogInsetLeftInches"
+                             Grid.Row="3"
+                             Grid.Column="1"
+                             Height="28"
+                             Margin="0,0,0,12"
+                             VerticalAlignment="Center"
+                             ToolTip="Inches on the sheet. Blank = ½ in. default."/>
+
+                    <TextBlock Grid.Row="4" Grid.Column="0"
+                               Text="Weld log project strip height"
+                               Margin="0,0,12,12"
+                               VerticalAlignment="Center"
+                               TextWrapping="Wrap"
+                               ToolTip="Height of the project-info strip below the weld table (measured up from the title block bottom)."
+                               Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+                    <TextBox x:Name="txtWeldLogProjectStripInches"
+                             Grid.Row="4"
+                             Grid.Column="1"
+                             Height="28"
+                             Margin="0,0,0,12"
+                             VerticalAlignment="Center"
+                             ToolTip="Inches on the sheet. Blank = 1 1/8 in. default."/>
+
+                    <TextBlock Grid.Row="5" Grid.Column="0"
+                               Text="Weld log inset from title block bottom"
+                               Margin="0,0,12,12"
+                               VerticalAlignment="Center"
+                               TextWrapping="Wrap"
+                               ToolTip="Optional override: up from the title block bottom to the top weld-number row. Leave blank to use project strip + row spacing."
+                               Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+                    <TextBox x:Name="txtWeldLogInsetBottomInches"
+                             Grid.Row="5"
+                             Grid.Column="1"
+                             Height="28"
+                             Margin="0,0,0,12"
+                             VerticalAlignment="Center"
+                             ToolTip="Blank = project strip + five 1/4 in. rows below the top row (2 3/8 in. with defaults)."/>
+
+                    <TextBlock Grid.Row="6" Grid.Column="0"
+                               Text="Weld log row spacing"
+                               Margin="0,0,12,12"
+                               VerticalAlignment="Center"
+                               TextWrapping="Wrap"
+                               ToolTip="Height of each weld log data row."
+                               Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+                    <TextBox x:Name="txtWeldLogRowSpacingInches"
+                             Grid.Row="6"
+                             Grid.Column="1"
+                             Height="28"
+                             Margin="0,0,0,12"
+                             VerticalAlignment="Center"
+                             ToolTip="Inches on the sheet. Blank = 1/4 in. default."/>
+
+                    <TextBlock Grid.Row="7" Grid.Column="0"
+                               Text="Weld log row count"
+                               Margin="0,0,12,0"
+                               VerticalAlignment="Center"
+                               TextWrapping="Wrap"
+                               ToolTip="Number of data rows per WELD NUMBER column (fill top-to-bottom in each column, then next column)."
+                               Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+                    <TextBox x:Name="txtWeldLogMaxRows"
+                             Grid.Row="7"
+                             Grid.Column="1"
+                             Height="28"
+                             VerticalAlignment="Center"
+                             ToolTip="Blank = 6 rows (24 weld slots max across four WELD NUMBER columns)."/>
+                </Grid>
+            </Border>
+
+            <StackPanel Grid.Row="2"
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Right"
+                        Margin="0,14,0,0">
+                <Button x:Name="btnCancel"
+                        Content="Cancel"
+                        Width="100"
+                        Height="32"
+                        Margin="0,0,8,0"/>
+                <Button x:Name="btnOk"
+                        Content="OK"
+                        Width="100"
+                        Height="32"/>
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>

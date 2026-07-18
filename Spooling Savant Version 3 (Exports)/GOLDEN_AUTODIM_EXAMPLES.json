@@ -1,0 +1,792 @@
+{
+  "version": 1,
+  "rulesRef": "AUTO_DIMENSION_RULES.md",
+  "notes": "Machine-readable approved outcomes. Agents must not regress these without an explicit user request. Material-agnostic. Teaching boards keep getting appended via Submit as golden; Workers applies locked roles (C/F/E, Linear H/V, olet E→C, dual H+V C→C on diagonal offsets, F→E overall). CRAH L elev: open F face (not pipe-side seat). Tag: 2026-07-15-1000-CRAH-F-OLET.",
+  "examples": [
+    {
+      "id": "crah-5401-01-r-03-elev-right-l-stub",
+      "title": "CRAH L-spool Elevation Right — flange base ↔ elbow C, olet C",
+      "assemblyName": "CRAH-5401-01-R-03",
+      "source": {
+        "documentTitle": "Spooling Test Project_detached",
+        "sheetNumber": "CRAH-5401-01-R-03",
+        "sheetId": 2229284,
+        "viewName": "Elevation Right 2",
+        "viewId": 2229310,
+        "capturedAt": "2026-07-15"
+      },
+      "shape": "L_elbow_two_flanges_olets",
+      "materialAgnostic": true,
+      "requiredRoles": [
+        { "role": "flange_base_to_elbow_center", "axis": "horizontal", "approxInches": 65.6125, "tolInches": 0.0625 },
+        { "role": "elbow_center_to_flange_base", "axis": "vertical", "approxInches": 40.125, "tolInches": 0.0625 },
+        { "role": "pipe_end_to_olet_center", "axis": "horizontal", "approxInches": 6.75, "tolInches": 0.0625 }
+      ],
+      "constraints": {
+        "maxDimAngleDeg": 0.05,
+        "style": "Linear",
+        "forbidAligned": true,
+        "minDimsOnElevation": 3
+      },
+      "witnessHints": {
+        "elbowCenterLessonOkIfWithinHalfInchOfGeometricC": true,
+        "preferFlangeIndicesNearBase": [8, 9],
+        "rejectOdHeelWhenMissesGeometricC": true
+      },
+      "liveCapture": {
+        "dims": [
+          {
+            "inches": 40.125,
+            "angDeg": 0.0,
+            "axis": "vertical",
+            "role": "elbow_center_to_flange_base",
+            "refIndexHints": [10, 9]
+          },
+          {
+            "inches": 6.75,
+            "angDeg": 0.0,
+            "axis": "horizontal",
+            "role": "pipe_end_to_olet_center",
+            "refIndexHints": [2, 11],
+            "note": "Short-side pipe END (E) → olet center (C) — not flange base"
+          },
+          {
+            "inches": 65.6125,
+            "angDeg": 0.0,
+            "axis": "horizontal",
+            "role": "flange_base_to_elbow_center",
+            "refIndexHints": [8, 10]
+          }
+        ]
+      },
+      "antiPatterns": [
+        "Horizontal ~65.64in at ~1.5° tilt with flange:9 + elbow:10 OD pair",
+        "Only vertical dim present (H stub deleted by straighten)",
+        "Duplicate identical vertical dims",
+        "Dimension to gasket / OD heel"
+      ]
+    },
+    {
+      "id": "canvas-l-flange-elbow-olet-2026-07-15",
+      "title": "Teaching board — L flanges + elbow + olet (user-drawn)",
+      "assemblyName": "TEACHING-L-FLG-ELL-OLET",
+      "source": {
+        "kind": "cursor_canvas",
+        "canvas": "golden-autodim-spool.canvas.tsx",
+        "capturedAt": "2026-07-15",
+        "note": "User-approved sketch from Auto-Dim teaching board"
+      },
+      "shape": "L_elbow_two_flanges_olets",
+      "materialAgnostic": true,
+      "requiredRoles": [
+        {
+          "role": "flange_face_to_elbow_center",
+          "axis": "horizontal",
+          "from": "F face (left flange)",
+          "to": "C elbow"
+        },
+        {
+          "role": "flange_face_to_elbow_center",
+          "axis": "vertical",
+          "from": "F face (top flange)",
+          "to": "C elbow"
+        },
+        {
+          "role": "pipe_end_to_olet_center",
+          "axis": "horizontal",
+          "from": "E flange backside (EOP)",
+          "to": "C olet",
+          "note": "Olet stack uses short-side E → olet C, not flange face"
+        }
+      ],
+      "constraints": {
+        "maxDimAngleDeg": 0.05,
+        "style": "Linear",
+        "forbidAligned": true,
+        "minDimsOnElevation": 3
+      },
+      "fittingSnaps": {
+        "flange": ["F face", "E backside (EOP)"],
+        "elbow": ["C center", "E on both arms"],
+        "tee": ["C center", "E on all three ports"],
+        "olet": ["C center"]
+      },
+      "boardSnapshot": {
+        "fittings": [
+          { "kind": "flange", "x": 0, "y": 100, "rot": 0, "snaps": ["F", "E"] },
+          { "kind": "olet", "x": 60, "y": 100, "rot": 0, "snaps": ["C"] },
+          {
+            "kind": "elbow",
+            "x": 200,
+            "y": 100,
+            "rot": 0,
+            "snaps": ["C", "E arm H", "E arm V"]
+          },
+          { "kind": "flange", "x": 200, "y": 20, "rot": 90, "snaps": ["F", "E"] }
+        ],
+        "pipes": [
+          { "from": [20, 100], "to": [180, 100] },
+          { "from": [200, 80], "to": [200, 40] }
+        ],
+        "dims": [
+          { "label": "E→C", "from": "E left flange backside", "to": "C olet" },
+          { "label": "F→C", "from": "F left face", "to": "C elbow", "axis": "H" },
+          { "label": "F→C", "from": "F top face", "to": "C elbow", "axis": "V" }
+        ]
+      },
+      "antiPatterns": [
+        "Dim olet from flange face instead of EOP/backside E",
+        "Missing H or V stub flange face → elbow C",
+        "Tilted Linear dims"
+      ]
+    },
+    {
+      "id": "canvas-l-flange-elbow-olet-2026-07-15-submit",
+      "title": "Teaching board — L flanges + elbow + olet (Submit as golden)",
+      "assemblyName": "TEACHING-L-FLG-ELL-OLET",
+      "source": {
+        "kind": "cursor_canvas",
+        "canvas": "golden-autodim-spool.canvas.tsx",
+        "dataFile": "golden-autodim-spool.canvas.data.json",
+        "capturedAt": "2026-07-15",
+        "note": "User-approved sketch via Submit as golden on Auto-Dim teaching board"
+      },
+      "shape": "L_elbow_two_flanges_olets",
+      "materialAgnostic": true,
+      "requiredRoles": [
+        {
+          "role": "flange_face_to_elbow_center",
+          "axis": "horizontal",
+          "from": "F face (left flange)",
+          "to": "C elbow"
+        },
+        {
+          "role": "flange_face_to_elbow_center",
+          "axis": "vertical",
+          "from": "F face (top flange)",
+          "to": "C elbow"
+        },
+        {
+          "role": "pipe_end_to_olet_center",
+          "axis": "horizontal",
+          "from": "E flange backside (EOP)",
+          "to": "C olet",
+          "note": "Olet stack uses short-side E → olet C, not flange face"
+        }
+      ],
+      "constraints": {
+        "maxDimAngleDeg": 0.05,
+        "style": "Linear",
+        "forbidAligned": true,
+        "minDimsOnElevation": 3
+      },
+      "fittingSnaps": {
+        "flange": ["F face", "E backside (EOP)"],
+        "elbow": ["C center", "E on both arms"],
+        "tee": ["C center", "E on all three ports"],
+        "olet": ["C center"]
+      },
+      "boardSnapshot": {
+        "snaps": [
+          { "id": "s_m90qyl1", "kind": "F", "x": 200, "y": 20, "label": "F2" },
+          { "id": "s_e_top", "kind": "E", "x": 200, "y": 40, "label": "E1" },
+          { "id": "s_ell_h", "kind": "E", "x": 180, "y": 100, "label": "E3" },
+          { "id": "s_fo85l0q", "kind": "C", "x": 200, "y": 100, "label": "C1" },
+          { "id": "s_ell_v", "kind": "E", "x": 200, "y": 80, "label": "E4" },
+          { "id": "s_9buca34", "kind": "F", "x": 0, "y": 100, "label": "F2" },
+          { "id": "s_irdoj9m", "kind": "E", "x": 20, "y": 100, "label": "E4" },
+          { "id": "s_jjf7cgc", "kind": "C", "x": 60, "y": 100, "label": "C2" }
+        ],
+        "fittings": [
+          {
+            "id": "f_94l1pvo",
+            "kind": "flange",
+            "x": 200,
+            "y": 20,
+            "rot": 90,
+            "snapId": "s_m90qyl1",
+            "backSnapId": "s_e_top"
+          },
+          {
+            "id": "f_ki6ahth",
+            "kind": "elbow",
+            "x": 200,
+            "y": 100,
+            "rot": 0,
+            "snapId": "s_fo85l0q",
+            "eopSnapIds": ["s_ell_h", "s_ell_v"]
+          },
+          {
+            "id": "f_76amjm3",
+            "kind": "flange",
+            "x": 0,
+            "y": 100,
+            "rot": 0,
+            "snapId": "s_9buca34",
+            "backSnapId": "s_irdoj9m"
+          },
+          {
+            "id": "f_t4fve33",
+            "kind": "olet",
+            "x": 60,
+            "y": 100,
+            "rot": 0,
+            "snapId": "s_jjf7cgc"
+          }
+        ],
+        "pipes": [
+          { "id": "k_7nzu52k", "from": [200, 80], "to": [200, 40] },
+          { "id": "k_g5ntk9y", "from": [20, 100], "to": [180, 100] }
+        ],
+        "dims": [
+          {
+            "id": "d_jppu2zv",
+            "label": "E→C",
+            "a": "s_irdoj9m",
+            "b": "s_jjf7cgc",
+            "from": "E left flange backside",
+            "to": "C olet",
+            "axis": "H"
+          },
+          {
+            "id": "d_itos1uq",
+            "label": "F→C",
+            "a": "s_9buca34",
+            "b": "s_fo85l0q",
+            "from": "F left face",
+            "to": "C elbow",
+            "axis": "H"
+          },
+          {
+            "id": "d_njayl8n",
+            "label": "F→C",
+            "a": "s_m90qyl1",
+            "b": "s_fo85l0q",
+            "from": "F top face",
+            "to": "C elbow",
+            "axis": "V"
+          }
+        ]
+      },
+      "antiPatterns": [
+        "Dim olet from flange face instead of EOP/backside E",
+        "Missing H or V stub flange face → elbow C",
+        "Tilted Linear dims"
+      ]
+    },
+    {
+      "id": "canvas-straight-flange-pipe-end-2026-07-15-submit",
+      "title": "Teaching board — straight flange → open pipe end (Submit as golden)",
+      "assemblyName": "TEACHING-STRAIGHT-FLG-PIPE-E",
+      "source": {
+        "kind": "cursor_canvas",
+        "canvas": "golden-autodim-spool.canvas.tsx",
+        "dataFile": "golden-autodim-spool.canvas.data.json",
+        "capturedAt": "2026-07-15",
+        "submittedAt": "2026-07-15T13:51:30.419Z",
+        "note": "User-approved sketch via Submit as golden on Auto-Dim teaching board"
+      },
+      "shape": "straight_flange_open_end",
+      "materialAgnostic": true,
+      "requiredRoles": [
+        {
+          "role": "flange_face_to_pipe_open_end",
+          "axis": "horizontal",
+          "from": "F face (flange)",
+          "to": "E open pipe end",
+          "note": "Overall run: flange face F → free pipe end E"
+        }
+      ],
+      "constraints": {
+        "maxDimAngleDeg": 0.05,
+        "style": "Linear",
+        "forbidAligned": true,
+        "minDimsOnElevation": 1
+      },
+      "fittingSnaps": {
+        "flange": ["F face", "E backside (EOP)"],
+        "elbow": ["C center", "E on both arms"],
+        "tee": ["C center", "E on all three ports"],
+        "olet": ["C center"]
+      },
+      "boardSnapshot": {
+        "snaps": [
+          { "id": "s_5dpl6cl", "kind": "F", "x": 0, "y": 100, "label": "F1" },
+          { "id": "s_nazih6k", "kind": "E", "x": 20, "y": 100, "label": "E1" },
+          { "id": "s_9x1xmwo", "kind": "E", "x": 200, "y": 100, "label": "E2" }
+        ],
+        "fittings": [
+          {
+            "id": "f_ft70kmt",
+            "kind": "flange",
+            "x": 0,
+            "y": 100,
+            "rot": 0,
+            "snapId": "s_5dpl6cl",
+            "backSnapId": "s_nazih6k"
+          }
+        ],
+        "pipes": [
+          { "id": "k_bbkunyl", "from": [20, 100], "to": [200, 100] }
+        ],
+        "dims": [
+          {
+            "id": "d_g143abd",
+            "label": "F→E",
+            "a": "s_5dpl6cl",
+            "b": "s_9x1xmwo",
+            "from": "F flange face",
+            "to": "E open pipe end",
+            "axis": "H"
+          }
+        ]
+      },
+      "antiPatterns": [
+        "Dim from flange backside E instead of face F for overall run",
+        "Tilted Linear dims",
+        "Aligned style instead of horizontal Linear"
+      ]
+    },
+    {
+      "id": "canvas-flange-elbow-two-olets-2026-07-15-submit",
+      "title": "Teaching board — flange → elbow + two olets (Submit as golden)",
+      "assemblyName": "TEACHING-FLG-ELL-TWO-OLETS",
+      "source": {
+        "kind": "cursor_canvas",
+        "canvas": "golden-autodim-spool.canvas.tsx",
+        "dataFile": "golden-autodim-spool.canvas.data.json",
+        "capturedAt": "2026-07-15",
+        "submittedAt": "2026-07-15T13:55:09.923Z",
+        "note": "User-approved sketch via Submit as golden on Auto-Dim teaching board (pendingGolden queue)"
+      },
+      "shape": "straight_flange_elbow_two_olets",
+      "materialAgnostic": true,
+      "requiredRoles": [
+        {
+          "role": "flange_face_to_elbow_center",
+          "axis": "horizontal",
+          "from": "F face (flange)",
+          "to": "C elbow"
+        },
+        {
+          "role": "pipe_end_to_olet_center",
+          "axis": "horizontal",
+          "from": "E flange backside (EOP)",
+          "to": "C olet (near)",
+          "note": "Olet stack uses short-side E → olet C, not flange face"
+        },
+        {
+          "role": "pipe_end_to_olet_center",
+          "axis": "horizontal",
+          "from": "E flange backside (EOP)",
+          "to": "C olet (far)",
+          "note": "Second olet on same run; also E → olet C"
+        }
+      ],
+      "constraints": {
+        "maxDimAngleDeg": 0.05,
+        "style": "Linear",
+        "forbidAligned": true,
+        "minDimsOnElevation": 3
+      },
+      "fittingSnaps": {
+        "flange": ["F face", "E backside (EOP)"],
+        "elbow": ["C center", "E on both arms"],
+        "tee": ["C center", "E on all three ports"],
+        "olet": ["C center"]
+      },
+      "boardSnapshot": {
+        "snaps": [
+          { "id": "s_al16okn", "kind": "F", "x": 0, "y": 100, "label": "F1" },
+          { "id": "s_jutigjw", "kind": "E", "x": 20, "y": 100, "label": "E1" },
+          { "id": "s_exiau01", "kind": "C", "x": 180, "y": 100, "label": "C1" },
+          { "id": "s_n2j3v4d", "kind": "E", "x": 160, "y": 100, "label": "E2" },
+          { "id": "s_66fzm3i", "kind": "E", "x": 180, "y": 80, "label": "E3" },
+          { "id": "s_2mcw4o1", "kind": "C", "x": 60, "y": 100, "label": "C2" },
+          { "id": "s_mgppf4s", "kind": "C", "x": 100, "y": 100, "label": "C3" }
+        ],
+        "fittings": [
+          {
+            "id": "f_1ru0d48",
+            "kind": "flange",
+            "x": 0,
+            "y": 100,
+            "rot": 0,
+            "snapId": "s_al16okn",
+            "backSnapId": "s_jutigjw"
+          },
+          {
+            "id": "f_8hg9xex",
+            "kind": "elbow",
+            "x": 180,
+            "y": 100,
+            "rot": 0,
+            "snapId": "s_exiau01",
+            "eopSnapIds": ["s_n2j3v4d", "s_66fzm3i"]
+          },
+          {
+            "id": "f_73vh3px",
+            "kind": "olet",
+            "x": 60,
+            "y": 100,
+            "rot": 0,
+            "snapId": "s_2mcw4o1"
+          },
+          {
+            "id": "f_ig0vr86",
+            "kind": "olet",
+            "x": 100,
+            "y": 100,
+            "rot": 0,
+            "snapId": "s_mgppf4s"
+          }
+        ],
+        "pipes": [
+          { "id": "k_6b0n4dh", "from": [20, 100], "to": [180, 100] }
+        ],
+        "dims": [
+          {
+            "id": "d_y0vu8l7",
+            "label": "E→C",
+            "a": "s_jutigjw",
+            "b": "s_2mcw4o1",
+            "from": "E flange backside",
+            "to": "C olet (near)",
+            "axis": "H"
+          },
+          {
+            "id": "d_ptpcqer",
+            "label": "E→C",
+            "a": "s_jutigjw",
+            "b": "s_mgppf4s",
+            "from": "E flange backside",
+            "to": "C olet (far)",
+            "axis": "H"
+          },
+          {
+            "id": "d_8qhozsp",
+            "label": "F→C",
+            "a": "s_al16okn",
+            "b": "s_exiau01",
+            "from": "F flange face",
+            "to": "C elbow",
+            "axis": "H"
+          }
+        ]
+      },
+      "antiPatterns": [
+        "Dim olet from flange face instead of EOP/backside E",
+        "Missing F face → elbow C overall",
+        "Only one of two olets dimensioned",
+        "Tilted Linear dims"
+      ]
+    },
+    {
+      "id": "canvas-offset-two-elbows-open-end-2026-07-15-submit",
+      "title": "Teaching board — flange → two elbows → open end (Submit as golden)",
+      "assemblyName": "TEACHING-OFFSET-TWO-ELL-OPEN",
+      "source": {
+        "kind": "cursor_canvas",
+        "canvas": "golden-autodim-spool.canvas.tsx",
+        "dataFile": "golden-autodim-spool.canvas.data.json",
+        "capturedAt": "2026-07-15",
+        "submittedAt": "2026-07-15T14:00:18.044Z",
+        "note": "User-approved sketch via Submit as golden on Auto-Dim teaching board (pendingGolden queue)"
+      },
+      "shape": "offset_two_elbows_open_end",
+      "materialAgnostic": true,
+      "requiredRoles": [
+        {
+          "role": "flange_face_to_elbow_center",
+          "axis": "horizontal",
+          "from": "F face (flange)",
+          "to": "C first elbow"
+        },
+        {
+          "role": "elbow_center_to_elbow_center",
+          "axis": "vertical",
+          "from": "C first elbow",
+          "to": "C second elbow",
+          "note": "Offset stub between back-to-back elbows"
+        },
+        {
+          "role": "elbow_center_to_pipe_open_end",
+          "axis": "horizontal",
+          "from": "C second elbow",
+          "to": "E open pipe end"
+        }
+      ],
+      "constraints": {
+        "maxDimAngleDeg": 0.05,
+        "style": "Linear",
+        "forbidAligned": true,
+        "minDimsOnElevation": 3
+      },
+      "fittingSnaps": {
+        "flange": ["F face", "E backside (EOP)"],
+        "elbow": ["C center", "E on both arms"],
+        "tee": ["C center", "E on all three ports"],
+        "olet": ["C center"]
+      },
+      "boardSnapshot": {
+        "snaps": [
+          { "id": "s_mb4xep6", "kind": "F", "x": 20, "y": 200, "label": "F1" },
+          { "id": "s_g56klpe", "kind": "E", "x": 40, "y": 200, "label": "E1" },
+          { "id": "s_jz7fsr3", "kind": "C", "x": 60, "y": 200, "label": "C1" },
+          { "id": "s_vjoawdw", "kind": "E", "x": 40, "y": 200, "label": "E2" },
+          { "id": "s_pdksh18", "kind": "E", "x": 60, "y": 180, "label": "E3" },
+          { "id": "s_dxfzfih", "kind": "C", "x": 60, "y": 160, "label": "C2" },
+          { "id": "s_ygsv314", "kind": "E", "x": 80, "y": 160, "label": "E4" },
+          { "id": "s_fxyxd1b", "kind": "E", "x": 60, "y": 180, "label": "E5" },
+          { "id": "s_hj2y7tv", "kind": "E", "x": 200, "y": 160, "label": "E6" }
+        ],
+        "fittings": [
+          {
+            "id": "f_f21c0l4",
+            "kind": "flange",
+            "x": 20,
+            "y": 200,
+            "rot": 0,
+            "snapId": "s_mb4xep6",
+            "backSnapId": "s_g56klpe"
+          },
+          {
+            "id": "f_ruhj3p6",
+            "kind": "elbow",
+            "x": 60,
+            "y": 200,
+            "rot": 0,
+            "snapId": "s_jz7fsr3",
+            "eopSnapIds": ["s_vjoawdw", "s_pdksh18"]
+          },
+          {
+            "id": "f_ejsdef0",
+            "kind": "elbow",
+            "x": 60,
+            "y": 160,
+            "rot": 180,
+            "snapId": "s_dxfzfih",
+            "eopSnapIds": ["s_ygsv314", "s_fxyxd1b"]
+          }
+        ],
+        "pipes": [
+          { "id": "k_kvy3nnk", "from": [80, 160], "to": [200, 160] }
+        ],
+        "dims": [
+          {
+            "id": "d_pipz7rl",
+            "label": "F→C",
+            "a": "s_mb4xep6",
+            "b": "s_jz7fsr3",
+            "from": "F flange face",
+            "to": "C first elbow",
+            "axis": "H"
+          },
+          {
+            "id": "d_xisbpi1",
+            "label": "C→C",
+            "a": "s_jz7fsr3",
+            "b": "s_dxfzfih",
+            "from": "C first elbow",
+            "to": "C second elbow",
+            "axis": "V"
+          },
+          {
+            "id": "d_6nty8tl",
+            "label": "C→E",
+            "a": "s_dxfzfih",
+            "b": "s_hj2y7tv",
+            "from": "C second elbow",
+            "to": "E open pipe end",
+            "axis": "H"
+          }
+        ]
+      },
+      "antiPatterns": [
+        "Missing C→C offset stub between elbows",
+        "Dim only overall F→E and skip intervening elbow centers",
+        "Tilted Linear dims"
+      ]
+    },
+    {
+      "id": "canvas-flg-two-45-offset-flg-2026-07-15-submit",
+      "title": "Teaching board — flange → two 45° elbows → flange (Submit as golden)",
+      "assemblyName": "TEACHING-FLG-TWO-45-OFFSET-FLG",
+      "source": {
+        "kind": "cursor_canvas",
+        "canvas": "golden-autodim-spool.canvas.tsx",
+        "dataFile": "golden-autodim-spool.canvas.data.json",
+        "capturedAt": "2026-07-15",
+        "submittedAt": "2026-07-15T14:32:13.567Z",
+        "note": "User-approved sketch via Submit as golden on Auto-Dim teaching board (pendingGolden queue)"
+      },
+      "shape": "offset_two_45_elbows_two_flanges",
+      "materialAgnostic": true,
+      "requiredRoles": [
+        {
+          "role": "flange_face_to_elbow_center",
+          "axis": "horizontal",
+          "from": "F face (left flange)",
+          "to": "C first 45° elbow"
+        },
+        {
+          "role": "elbow_center_to_elbow_center",
+          "axis": "horizontal",
+          "from": "C first 45°",
+          "to": "C second 45°",
+          "note": "Horizontal span of the 45 offset (Linear H, not aligned hypotenuse)"
+        },
+        {
+          "role": "elbow_center_to_elbow_center",
+          "axis": "vertical",
+          "from": "C first 45°",
+          "to": "C second 45°",
+          "note": "Vertical rise of the 45 offset — pull V Linear"
+        },
+        {
+          "role": "elbow_center_to_flange_face",
+          "axis": "horizontal",
+          "from": "C second 45°",
+          "to": "F face (right flange)"
+        }
+      ],
+      "constraints": {
+        "maxDimAngleDeg": 0.05,
+        "style": "Linear",
+        "forbidAligned": true,
+        "minDimsOnElevation": 4
+      },
+      "fittingSnaps": {
+        "flange": ["F face", "E backside (EOP)"],
+        "elbow": ["C center", "E on both arms"],
+        "elbow45": ["C center", "E west", "E NE diagonal on grid"],
+        "tee": ["C center", "E on all three ports"],
+        "olet": ["C center"]
+      },
+      "boardSnapshot": {
+        "snaps": [
+          { "id": "s_kfpf6fa", "kind": "F", "x": 0, "y": 200, "label": "F1" },
+          { "id": "s_nq4612u", "kind": "E", "x": 20, "y": 200, "label": "E1" },
+          { "id": "s_l7fg423", "kind": "E", "x": 60, "y": 200, "label": "E2" },
+          { "id": "s_q4lymci", "kind": "C", "x": 80, "y": 200, "label": "C1" },
+          { "id": "s_1v3iste", "kind": "E", "x": 60, "y": 200, "label": "E3" },
+          { "id": "s_ck4x9nx", "kind": "E", "x": 100, "y": 180, "label": "E4" },
+          { "id": "s_czbz4w8", "kind": "E", "x": 140, "y": 140, "label": "E5" },
+          { "id": "s_qodqc7s", "kind": "C", "x": 160, "y": 120, "label": "C2" },
+          { "id": "s_lm7edcs", "kind": "E", "x": 180, "y": 120, "label": "E6" },
+          { "id": "s_lnc4f5h", "kind": "E", "x": 140, "y": 140, "label": "E7" },
+          { "id": "s_jfdu53v", "kind": "F", "x": 300, "y": 120, "label": "F2" },
+          { "id": "s_ty9bra1", "kind": "E", "x": 280, "y": 120, "label": "E8" }
+        ],
+        "fittings": [
+          {
+            "id": "f_y9u8bg0",
+            "kind": "flange",
+            "x": 0,
+            "y": 200,
+            "rot": 0,
+            "snapId": "s_kfpf6fa",
+            "backSnapId": "s_nq4612u"
+          },
+          {
+            "id": "f_kgvzvhi",
+            "kind": "elbow45",
+            "x": 80,
+            "y": 200,
+            "rot": 0,
+            "snapId": "s_q4lymci",
+            "eopSnapIds": ["s_1v3iste", "s_ck4x9nx"]
+          },
+          {
+            "id": "f_4rth6g9",
+            "kind": "elbow45",
+            "x": 160,
+            "y": 120,
+            "rot": 180,
+            "snapId": "s_qodqc7s",
+            "eopSnapIds": ["s_lm7edcs", "s_lnc4f5h"]
+          },
+          {
+            "id": "f_wy9uxmi",
+            "kind": "flange",
+            "x": 300,
+            "y": 120,
+            "rot": 180,
+            "snapId": "s_jfdu53v",
+            "backSnapId": "s_ty9bra1"
+          }
+        ],
+        "pipes": [
+          { "id": "k_ljtb6y7", "from": [20, 200], "to": [60, 200] },
+          { "id": "k_viib34g", "from": [140, 140], "to": [100, 180] },
+          { "id": "k_dwxfwfk", "from": [180, 120], "to": [280, 120] }
+        ],
+        "dims": [
+          {
+            "id": "d_p044786",
+            "label": "F→C",
+            "a": "s_kfpf6fa",
+            "b": "s_q4lymci",
+            "from": "F left face",
+            "to": "C first 45°",
+            "axis": "H",
+            "at": 180
+          },
+          {
+            "id": "d_f5be1us",
+            "label": "C→C",
+            "a": "s_q4lymci",
+            "b": "s_qodqc7s",
+            "from": "C first 45°",
+            "to": "C second 45°",
+            "axis": "H",
+            "at": 100,
+            "note": "Horizontal Linear span of 45 offset (not aligned)"
+          },
+          {
+            "id": "d_2642w6t",
+            "label": "C→F",
+            "a": "s_qodqc7s",
+            "b": "s_jfdu53v",
+            "from": "C second 45°",
+            "to": "F right face",
+            "axis": "H",
+            "at": 100
+          },
+          {
+            "id": "d_b1hqffv",
+            "label": "C→C",
+            "a": "s_q4lymci",
+            "b": "s_qodqc7s",
+            "from": "C first 45°",
+            "to": "C second 45°",
+            "axis": "V",
+            "at": 320,
+            "note": "Vertical Linear rise of 45 offset — user pulled V"
+          }
+        ]
+      },
+      "antiPatterns": [
+        "Aligned / hypotenuse dim along the 45 pipe instead of Linear H and V",
+        "Missing vertical rise C→C on the 45 offset",
+        "Missing horizontal span C→C on the 45 offset",
+        "Tilted Linear dims"
+      ]
+    },
+    {
+      "id": "generic-rules-checklist",
+      "title": "Universal role checklist (any material)",
+      "assemblyName": "*",
+      "requiredRoles": [
+        { "role": "elbow_or_tee_center", "when": "elbow or tee present" },
+        { "role": "flange_base", "when": "flange present" },
+        { "role": "olet_center", "when": "olet present on run in view plane" },
+        { "role": "pipe_open_end", "when": "open pipe end dimensioned" }
+      ],
+      "constraints": {
+        "maxDimAngleDeg": 0.05,
+        "forbidAligned": true
+      }
+    }
+  ]
+}

@@ -2,6 +2,7 @@ import type { CustomBoard, ProjectBoardType, SheetColumnDefinition, TaskGroup } 
 import { getProjectSubBoardOrder } from '../types';
 import {
   buildSheetColumnSlots,
+  filterBoardColumnOrder,
   getBoardSheetColumnOrder,
   getBoardSheetColumns,
   isFixedSheetColumnId,
@@ -98,7 +99,7 @@ export function resolveStoredMainOverviewSectionColumnOrder(
     }
   }
 
-  return result;
+  return filterBoardColumnOrder(sectionBoardType, result);
 }
 
 export function normalizeMainOverviewSectionColumnOrder(

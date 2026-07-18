@@ -122,12 +122,22 @@ export const canEditClientsProjects = permissionHelper('edit-clients-projects');
 export const canEditTasks = permissionHelper('edit-tasks');
 export const canAssignTasks = permissionHelper('assign-tasks');
 export const canManageStatuses = permissionHelper('manage-statuses');
-export const canAddColumns = permissionHelper('add-columns');
 
 function isColumnAdminCategory(employee: Employee | undefined): boolean {
   if (!employee) return false;
   const category = inferOrgCategory(employee);
   return category === 'owner' || category === 'bim-manager' || category === 'operations-manager';
+}
+
+/** Top-tier titles (Owner, BIM Manager, Operations Manager) can always add columns / materials. */
+export function canAddColumns(
+  userId: string | null,
+  employees: Employee[],
+  employeePermissions: EmployeePermissionsMap = {}
+): boolean {
+  if (hasPermission(userId, 'add-columns', employees, employeePermissions)) return true;
+  const employee = userId ? employees.find((entry) => entry.id === userId) : undefined;
+  return isColumnAdminCategory(employee);
 }
 
 export function canManageColumns(
@@ -138,6 +148,18 @@ export function canManageColumns(
   if (hasPermission(userId, 'manage-columns', employees, employeePermissions)) return true;
   const employee = userId ? employees.find((entry) => entry.id === userId) : undefined;
   return isColumnAdminCategory(employee);
+}
+
+/** Top-tier titles can edit Material dropdown options (and other column settings). */
+export function canManageMaterialOptions(
+  userId: string | null,
+  employees: Employee[],
+  employeePermissions: EmployeePermissionsMap = {}
+): boolean {
+  return (
+    canManageColumns(userId, employees, employeePermissions) ||
+    canAddColumns(userId, employees, employeePermissions)
+  );
 }
 
 export function canViewActivityLog(

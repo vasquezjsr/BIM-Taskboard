@@ -212,7 +212,7 @@ function walkSheetRowsToContainingGroup(
   return null;
 }
 
-/** Resolve task drop: task rows reorder; group headers regroup. */
+/** Resolve task drop: task rows reorder within/across groups; group headers regroup. */
 export function resolveTaskDropTarget(
   overId: string,
   activeTaskIds: string[],
@@ -222,6 +222,7 @@ export function resolveTaskDropTarget(
 ): TaskDropTarget | null {
   const movingSet = new Set(activeTaskIds);
   const leadTask = tasks.find((task) => task.id === activeTaskIds[0]);
+  if (!leadTask) return null;
 
   const directGroupId = parseGroupDropId(overId);
   if (directGroupId) {
@@ -263,7 +264,7 @@ export function resolveTaskDropTarget(
   }
 
   const overTaskId = parseTaskDragId(overId);
-  if (!overTaskId || !leadTask) return null;
+  if (!overTaskId) return null;
 
   if (movingSet.has(overTaskId)) {
     return {
@@ -274,9 +275,14 @@ export function resolveTaskDropTarget(
     };
   }
 
+  const overTask = tasks.find((task) => task.id === overTaskId);
+  if (!overTask) return null;
+
+  const targetGroupId = overTask.groupId;
+  const sameGroup = targetGroupId === leadTask.groupId;
   return {
-    intent: 'reorder',
-    targetGroupId: leadTask.groupId,
+    intent: sameGroup ? 'reorder' : 'regroup',
+    targetGroupId,
     insertBeforeTaskId: placement === 'before' ? overTaskId : null,
     insertAfterTaskId: placement === 'before' ? null : overTaskId,
   };
@@ -328,7 +334,11 @@ export function resolveGroupDropAction(
     if (collectDescendantGroupIds(taskGroups, active.id).includes(over.id)) {
       return null;
     }
-    if (active.parentId !== over.parentId) {
+    // Reparent+reorder under over's parent is allowed (existing compute path).
+    if (
+      over.parentId &&
+      collectDescendantGroupIds(taskGroups, active.id).includes(over.parentId)
+    ) {
       return null;
     }
     return {
@@ -355,6 +365,29 @@ export function resolveGroupDropAction(
     return { mode: 'nest', targetOverId, reorderPlacement: 'inside' };
   };
 
+  const buildNestAsFirstChild = (overGroupId: string): GroupDropActionResult | null => {
+    if (collectDescendantGroupIds(taskGroups, active.id).includes(overGroupId)) {
+      return { blockedReason: 'Cannot move a group into one of its own sub-groups.' };
+    }
+    const { targetOverId, blockedReason } = resolveGroupDropTargetForMove(
+      groupDropId(overGroupId),
+      taskGroups,
+      activeGroupId,
+      tasks,
+      sheetRows
+    );
+    if (!targetOverId) {
+      return blockedReason ? { blockedReason } : null;
+    }
+    return {
+      mode: 'nest',
+      targetOverId,
+      reorderPlacement: 'before',
+      hintTargetGroupId: overGroupId,
+      hintPlacement: placement === 'before' ? 'before' : 'after',
+    };
+  };
+
   const resolveOverGroup = (overGroupId: string): GroupDropActionResult | null => {
     const over = taskGroups.find((group) => group.id === overGroupId);
     if (!over) return null;
@@ -379,48 +412,38 @@ export function resolveGroupDropAction(
         active.parentId === overGroupId || isGroupUnderSection(taskGroups, active.id, overGroupId);
 
       if (activeInSection) {
-        if (placement === 'before' || placement === 'inside') {
-          return {
-            mode: 'reorder',
-            targetOverId: groupDropId(sectionChildren[0]!.id),
-            reorderPlacement: 'before',
-          };
-        }
-        if (placement === 'after') {
-          const last = sectionChildren[sectionChildren.length - 1]!;
-          const reorder = buildReorder(last.id, 'after');
-          return (
-            reorder ?? {
-              mode: 'reorder',
-              targetOverId: groupDropId(last.id),
-              reorderPlacement: 'after',
-            }
-          );
-        }
-        return null;
+        // Section header (any edge/center) = first slot under the section — the gap
+        // between the section row and its first child. Use a sibling's after-edge to go last.
+        return {
+          mode: 'reorder',
+          targetOverId: groupDropId(sectionChildren[0]!.id),
+          reorderPlacement: 'before',
+          hintTargetGroupId: overGroupId,
+          hintPlacement: placement === 'before' ? 'before' : 'after',
+        };
       }
 
       if (placement === 'inside') return buildNest(overGroupId);
       return null;
     }
 
-    // Reorder among children via parent container header edges
+    // Reorder among children via parent container header.
+    // The gap between the parent row and its first child is the parent's bottom edge
+    // (`after`) — that must become "before first sibling", not "after last sibling".
     if (active.parentId === overGroupId && overIsContainer) {
-      if (placement === 'inside') {
-        return buildNest(overGroupId);
-      }
       const siblings = sortGroupsByOrder(
         taskGroups.filter(
           (group) => group.parentId === overGroupId && group.id !== activeGroupId
         )
       );
-      if (placement === 'after' && siblings[siblings.length - 1]) {
-        return buildReorder(siblings[siblings.length - 1]!.id, 'after');
-      }
-      if (siblings[0]) {
-        return buildReorder(siblings[0]!.id, 'before');
-      }
-      return null;
+      if (!siblings[0]) return null;
+      return {
+        mode: 'reorder',
+        targetOverId: groupDropId(siblings[0].id),
+        reorderPlacement: 'before',
+        hintTargetGroupId: overGroupId,
+        hintPlacement: placement === 'before' ? 'before' : 'after',
+      };
     }
 
     // Same parent: edges reorder; center drop nests into the hovered group
@@ -432,10 +455,17 @@ export function resolveGroupDropAction(
       return buildReorder(overGroupId, edgePlacement);
     }
 
-    // Different branch: always nest into the hovered group (e.g. level → another trade group).
-    const nested = buildNest(overGroupId);
-    if (nested) return nested;
-    return null;
+    // Different branch:
+    // - container center → nest as last child
+    // - container edge → nest as first child (gap under header)
+    // - leaf edge → become sibling under over's parent (before/after)
+    // - leaf center → nest into that group
+    if (overIsContainer) {
+      if (placement === 'inside') return buildNest(overGroupId);
+      return buildNestAsFirstChild(overGroupId);
+    }
+    if (placement === 'inside') return buildNest(overGroupId);
+    return buildReorder(overGroupId, edgePlacement);
   };
 
   const directGroupId = parseGroupDropId(overId);
@@ -627,7 +657,8 @@ function computeBulkNestGroups(
   taskGroups: TaskGroup[],
   projectId: string,
   moving: TaskGroup[],
-  over: TaskGroup
+  over: TaskGroup,
+  reorderPlacement: DropPlacement = 'inside'
 ): SheetGroupUpdate[] {
   const newParentId = over.id;
   const movingIds = new Set(moving.map((group) => group.id));
@@ -647,7 +678,10 @@ function computeBulkNestGroups(
     )
   );
 
-  const allChildren = [...existingChildren, ...moving];
+  const allChildren =
+    reorderPlacement === 'before'
+      ? [...moving, ...existingChildren]
+      : [...existingChildren, ...moving];
   for (const [index, group] of allChildren.entries()) {
     const nextTier = movingIds.has(group.id) ? tierAfterReparent(group, over) : undefined;
     updates.push({
@@ -768,11 +802,7 @@ export function computeSheetGroupsDrop(
   if (moving.length === 0) return null;
 
   if (mode === 'nest') {
-    return computeBulkNestGroups(taskGroups, projectId, moving, over);
-  }
-
-  if (moving.some((group) => group.parentId !== over.parentId)) {
-    return computeBulkNestGroups(taskGroups, projectId, moving, over);
+    return computeBulkNestGroups(taskGroups, projectId, moving, over, reorderPlacement);
   }
 
   return computeBulkReorderGroups(taskGroups, projectId, moving, over, reorderPlacement);
@@ -797,17 +827,6 @@ export function computeSheetGroupDrop(
   if (collectDescendantGroupIds(taskGroups, active.id).includes(over.id)) return null;
 
   if (mode === 'reorder') {
-    if (active.parentId !== over.parentId) {
-      return computeSheetGroupDrop(
-        taskGroups,
-        projectId,
-        activeGroupId,
-        overId,
-        'nest',
-        reorderPlacement
-      );
-    }
-
     const targetParentId = over.parentId;
     if (
       targetParentId &&
@@ -891,7 +910,10 @@ export function computeSheetGroupDrop(
     }
   }
 
-  for (const [index, group] of [...newSiblings, active].entries()) {
+  const orderedChildren =
+    reorderPlacement === 'before' ? [active, ...newSiblings] : [...newSiblings, active];
+
+  for (const [index, group] of orderedChildren.entries()) {
     updates.push({
       id: group.id,
       parentId: newParentId,
@@ -1021,7 +1043,9 @@ export function computeSheetTasksDrop(
   if (!leadTask) return null;
 
   const regroup = target.intent === 'regroup';
-  const targetGroupId = regroup ? target.targetGroupId : leadTask.groupId;
+  const targetGroupId = regroup
+    ? target.targetGroupId
+    : (target.targetGroupId ?? leadTask.groupId);
   const insertBeforeTaskId = target.insertBeforeTaskId;
   const insertAfterTaskId = target.insertAfterTaskId;
 

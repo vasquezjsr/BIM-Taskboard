@@ -2,6 +2,7 @@ import type { Employee, Project, Task } from '../types';
 import {
   isSsv3AssemblyTask,
   isSsv3FieldPackageTask,
+  isSsv3PackageTask,
   isSsv3ShippingPackageTask,
   SSV3_FIELD,
 } from './boardroomPackageImport';
@@ -43,49 +44,72 @@ export function canEmployeeSeeFieldProject(
   return fieldLead || fieldCrew;
 }
 
+/**
+ * Package is still traveling (Fab partial release or Shipping board) — not yet
+ * handed off onto the Field board.
+ */
 export function isPackageInboundFromShipping(pkg: Task): boolean {
-  return isSsv3ShippingPackageTask(pkg);
+  return !isSsv3FieldPackageTask(pkg);
+}
+
+function packageHasFieldInboundAssembly(pkg: Task, allTasks: Task[]): boolean {
+  return allTasks.some(
+    (task) =>
+      isSsv3AssemblyTask(task) &&
+      task.parentTaskId === pkg.id &&
+      isShippingStatusVisibleToField(getAssemblyShippingLane(task))
+  );
 }
 
 /**
  * Packages Field should list:
  * - Already on Field board, or
- * - Still on Shipping with package/assembly lane In Transit or later.
+ * - Still on Shipping / Fab with package or assembly lane In Transit or later
+ *   (supports partial release while the package remains on Fab).
  */
 export function isPackageVisibleOnFieldDashboard(
   pkg: Task,
   allTasks: Task[]
 ): boolean {
   if (isSsv3FieldPackageTask(pkg)) return true;
-  if (!isSsv3ShippingPackageTask(pkg)) return false;
-  if (isShippingStatusVisibleToField(pkg.status)) return true;
-  const assemblies = allTasks.filter(
-    (task) => isSsv3AssemblyTask(task) && task.parentTaskId === pkg.id
-  );
-  return assemblies.some((assembly) =>
-    isShippingStatusVisibleToField(getAssemblyShippingLane(assembly))
-  );
+
+  if (isSsv3ShippingPackageTask(pkg)) {
+    if (isShippingStatusVisibleToField(pkg.status)) return true;
+    return packageHasFieldInboundAssembly(pkg, allTasks);
+  }
+
+  // Partial Fab release: package stays on Fab while individual assemblies ship.
+  if (isSsv3PackageTask(pkg)) {
+    return packageHasFieldInboundAssembly(pkg, allTasks);
+  }
+
+  return false;
 }
 
 /**
  * Assemblies shown for a Field-visible package.
- * Inbound shipping: only assemblies already In Transit+, unless the whole package is.
+ * Inbound (Fab/Shipping): only assemblies already In Transit+, unless the whole
+ * Shipping package lane is already In Transit+.
  */
 export function assembliesForFieldDashboardView(
   pkg: Task,
   assemblies: Task[]
 ): Task[] {
   if (isSsv3FieldPackageTask(pkg)) return assemblies;
-  if (!isSsv3ShippingPackageTask(pkg)) return assemblies;
-  if (isShippingStatusVisibleToField(pkg.status)) return assemblies;
+  if (isSsv3ShippingPackageTask(pkg) && isShippingStatusVisibleToField(pkg.status)) {
+    return assemblies;
+  }
   return assemblies.filter((assembly) =>
     isShippingStatusVisibleToField(getAssemblyShippingLane(assembly))
   );
 }
 
 export function inboundShippingLabel(pkg: Task, assemblies: Task[]): string | null {
-  if (!isSsv3ShippingPackageTask(pkg)) return null;
-  if (isShippingStatusVisibleToField(pkg.status)) {
+  if (isSsv3FieldPackageTask(pkg)) return null;
+  if (
+    isSsv3ShippingPackageTask(pkg) &&
+    isShippingStatusVisibleToField(pkg.status)
+  ) {
     return pkg.status;
   }
   const lanes = assemblies

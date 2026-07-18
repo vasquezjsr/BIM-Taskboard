@@ -16,6 +16,8 @@ interface ColumnSettingsProps {
   overviewSectionBoards?: { id: ProjectBoardType; label: string }[];
   overviewSectionBoardType?: ProjectBoardType | null;
   onClose: () => void;
+  /** Render inside another dialog (no portal / chrome). */
+  embedded?: boolean;
 }
 
 function textToOptions(text: string): string[] {
@@ -40,6 +42,7 @@ export function ColumnSettings({
   overviewSectionBoards,
   overviewSectionBoardType,
   onClose,
+  embedded = false,
 }: ColumnSettingsProps) {
   const addPremadeColumnsToTargets = useStore((s) => s.addPremadeColumnsToTargets);
   const addCustomColumnToTargets = useStore((s) => s.addCustomColumnToTargets);
@@ -73,12 +76,13 @@ export function ColumnSettings({
   }, [initialTarget]);
 
   useEffect(() => {
+    if (embedded) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
+  }, [embedded, onClose]);
 
   const availablePremade = useMemo(
     () =>
@@ -133,7 +137,7 @@ export function ColumnSettings({
       selectedPremadeIds,
       isOverviewMode ? 'overview' : 'board'
     );
-    onClose();
+    if (!embedded) onClose();
   };
 
   const handleAddCustom = () => {
@@ -149,7 +153,7 @@ export function ColumnSettings({
       cellAlignment,
       saveToLibrary
     );
-    onClose();
+    if (!embedded) onClose();
   };
 
   const selectAllBoards = () => {
@@ -160,23 +164,7 @@ export function ColumnSettings({
     setSelectedBoards([]);
   };
 
-  return createPortal(
-    <div className={styles.overlay} onClick={onClose}>
-      <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-        <div className={styles.header}>
-          <div>
-            <h2>Add column</h2>
-            <p className={styles.intro}>
-              {isOverviewMode
-                ? 'Choose one or more Main Overview sections, then add premade or custom columns.'
-                : 'Choose one or more boards, then add premade or custom columns.'}
-            </p>
-          </div>
-          <button type="button" className={styles.closeBtn} onClick={onClose} title="Close">
-            ×
-          </button>
-        </div>
-
+  const body = (
         <div className={styles.body}>
           <div className={styles.field}>
             <div className={styles.boardPickerHeader}>
@@ -357,6 +345,27 @@ export function ColumnSettings({
             Create column
           </button>
         </div>
+  );
+
+  if (embedded) return body;
+
+  return createPortal(
+    <div className={styles.overlay} onClick={onClose}>
+      <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+        <div className={styles.header}>
+          <div>
+            <h2>Add column</h2>
+            <p className={styles.intro}>
+              {isOverviewMode
+                ? 'Choose one or more Main Overview sections, then add premade or custom columns.'
+                : 'Choose one or more boards, then add premade or custom columns.'}
+            </p>
+          </div>
+          <button type="button" className={styles.closeBtn} onClick={onClose} title="Close">
+            ×
+          </button>
+        </div>
+        {body}
       </div>
     </div>,
     document.body

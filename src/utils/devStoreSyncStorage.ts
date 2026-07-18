@@ -39,18 +39,18 @@ export const DEV_STORE_SYNC_STORAGE_KEY = 'bim-task-board-storage';
 
 /**
  * Dev storage for 5173/5174.
- * CRITICAL: If this browser profile already has localStorage, that wins — never replace it
- * with the shared disk file on refresh (that was wiping Demo Mechanical on Ctrl+Shift+R).
- * Shared file is only used when local is empty (first boot / new profile).
+ * Prefer localStorage on read so hydrate never blocks on Vite fetch.
+ * Shared file is only used when local is empty.
  */
 export const devStoreSyncStorage: StateStorage = {
   getItem: async (name) => {
     const local = localStorage.getItem(name);
-    if (local) {
-      return local;
-    }
+    if (local) return local;
 
-    const shared = await readSharedPayload();
+    const shared = await Promise.race([
+      readSharedPayload(),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 1500)),
+    ]);
     if (!shared) return null;
 
     localStorage.setItem(name, shared.state);

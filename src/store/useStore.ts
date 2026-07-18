@@ -260,6 +260,7 @@ import {
   appendPremadeColumnToOverviewSectionState,
   ensurePremadeInMainOverviewSectionOrders,
   ensurePremadeSheetColumns,
+  normalizeColumnSettingsDropdownIds,
 } from '../data/premadeSheetColumns';
 import {
   applyCustomColumnToTargets,
@@ -289,7 +290,7 @@ import {
   type HistorySnapshot,
 } from '../utils/history';
 import { defaultStatusForBoard } from '../utils/taskStatus';
-import { devStoreSyncStorage } from '../utils/devStoreSyncStorage';
+import { durableStoreStorage, installDurableStoreFlushHooks } from '../utils/durableStoreStorage';
 import { ensureDemoPortfolio } from '../utils/ensureDemoPortfolio';
 import { normalizeTaskAssignees, taskHasAssignee } from '../utils/taskAssignees';
 import {
@@ -336,7 +337,10 @@ import {
   getBoardLocalSheetColumns,
   getBoardSheetColumnOrder,
   getBoardSheetColumns,
+  isFixedSheetColumnId,
   isMainOverviewSharedColumn,
+  isProtectedBoardColumnId,
+  fixedColumnAsDefinition,
   normalizeBoardSheetColumnOrder,
   normalizeBoardSheetColumns,
   propagateMainSheetColumnToAllBoards,
@@ -418,7 +422,8 @@ interface AppState {
   /** User-saved column layouts for reuse when adding columns */
   savedSheetColumnTemplates: import('../types').SavedSheetColumnTemplate[];
 
-
+  /** Dropdown column ids managed as tabs in Column Settings (Materials, Trade, …) */
+  columnSettingsDropdownIds: string[];
 
   activeMainTab: MainTab;
 
@@ -764,6 +769,10 @@ interface AppState {
   ) => string;
 
   removeSavedSheetColumnTemplate: (id: string) => void;
+
+  addColumnSettingsDropdown: (columnId: string) => void;
+
+  removeColumnSettingsDropdown: (columnId: string) => void;
 
   removeMainOverviewSectionColumn: (sectionBoardType: ProjectBoardType, id: string) => void;
 
@@ -1114,6 +1123,16 @@ function mergePersistedState(p: Partial<AppState>, current: AppState): AppState 
   const premadeEnsured = ensurePremadeSheetColumns(boardSheetColumns, boardSheetColumnOrder);
   boardSheetColumns = premadeEnsured.boardSheetColumns;
   boardSheetColumnOrder = premadeEnsured.boardSheetColumnOrder;
+  const mainOverviewSectionSheetColumns = normalizeBoardSheetColumns(
+    p.mainOverviewSectionSheetColumns ?? current.mainOverviewSectionSheetColumns
+  );
+  const mainOverviewSectionColumnOrder = ensurePremadeInMainOverviewSectionOrders(
+    normalizeMainOverviewSectionColumnOrder(
+      p.mainOverviewSectionColumnOrder ?? current.mainOverviewSectionColumnOrder ?? {},
+      mainOverviewSectionSheetColumns,
+      boardSheetColumns
+    )
+  );
 
   return {
     ...current,
@@ -1140,14 +1159,8 @@ function mergePersistedState(p: Partial<AppState>, current: AppState): AppState 
     projectBoardTaskStatuses: syncedStatusColors.projectBoardTaskStatuses,
     boardSheetColumns,
     boardSheetColumnOrder: boardSheetColumnOrder,
-    mainOverviewSectionColumnOrder: normalizeMainOverviewSectionColumnOrder(
-      p.mainOverviewSectionColumnOrder ?? current.mainOverviewSectionColumnOrder ?? {},
-      p.mainOverviewSectionSheetColumns ?? current.mainOverviewSectionSheetColumns ?? {},
-      p.boardSheetColumns ?? current.boardSheetColumns
-    ),
-    mainOverviewSectionSheetColumns: normalizeBoardSheetColumns(
-      p.mainOverviewSectionSheetColumns ?? current.mainOverviewSectionSheetColumns
-    ),
+    mainOverviewSectionColumnOrder,
+    mainOverviewSectionSheetColumns,
     taskAttachments,
     taskComments,
     taskCommentReadAt: p.taskCommentReadAt ?? current.taskCommentReadAt ?? {},
@@ -1174,6 +1187,9 @@ function mergePersistedState(p: Partial<AppState>, current: AppState): AppState 
     savedSheetColumnTemplates: Array.isArray(p.savedSheetColumnTemplates)
       ? p.savedSheetColumnTemplates
       : (current.savedSheetColumnTemplates ?? []),
+    columnSettingsDropdownIds: normalizeColumnSettingsDropdownIds(
+      p.columnSettingsDropdownIds ?? current.columnSettingsDropdownIds
+    ),
   };
 }
 
@@ -1476,9 +1492,28 @@ function enrichTaskUpdates(
   boardTaskStatuses: BoardTaskStatusesMap,
   projectBoardTaskStatuses: ProjectBoardTaskStatusesMap
 ): Partial<Task> {
+  // Treat customFields / durationFields as patches so one-column edits never wipe siblings.
+  const patched: Partial<Task> = { ...updates };
+  if (updates.customFields) {
+    patched.customFields = {
+      ...(task.customFields ?? {}),
+      ...updates.customFields,
+    };
+  }
+  if (updates.durationFields) {
+    const next = { ...(task.durationFields ?? {}) };
+    for (const [colId, range] of Object.entries(updates.durationFields)) {
+      next[colId] = {
+        ...(task.durationFields?.[colId] ?? { start: null, end: null }),
+        ...range,
+      };
+    }
+    patched.durationFields = next;
+  }
+
   const withBranch = enrichTaskUpdatesWithBranchGroup(
     task,
-    updates,
+    patched,
     taskGroups,
     PROJECT_COORDINATION_GROUP_NAME
   );
@@ -1883,6 +1918,7 @@ function createRecoveryPersistedState(persisted: unknown, employees: Employee[])
     deletedColumnArchive: [],
     deletedEmployeeArchive: [],
     savedSheetColumnTemplates: [],
+    columnSettingsDropdownIds: normalizeColumnSettingsDropdownIds(),
     timeEntries: [],
     employeeReportsTo: createBimOrgChartReportsTo(),
     orgChartLevelSlots: createDefaultOrgChartLevelSlots(
@@ -3036,6 +3072,12 @@ function runStoreMigration(persisted: unknown, version: number) {
           jobLevelNavVisibility = normalizeJobLevelNavVisibility(jobLevelNavVisibility);
         }
 
+        if (version < 124) {
+          const premade = ensurePremadeSheetColumns(boardSheetColumns, boardSheetColumnOrder);
+          boardSheetColumns = premade.boardSheetColumns;
+          boardSheetColumnOrder = premade.boardSheetColumnOrder;
+        }
+
         if (version < 110) {
           const nextPermissions: EmployeePermissionsMap = { ...employeePermissions };
           for (const employee of employees) {
@@ -3348,7 +3390,7 @@ function runStoreMigration(persisted: unknown, version: number) {
         }
 
         const migratedMainOverviewSectionColumnOrder =
-          version < 111
+          version < 124
             ? ensurePremadeInMainOverviewSectionOrders(
                 normalizeMainOverviewSectionColumnOrder(
                   (state.mainOverviewSectionColumnOrder as BoardSheetColumnOrderMap | undefined) ??
@@ -3402,11 +3444,28 @@ function runStoreMigration(persisted: unknown, version: number) {
         };
 }
 
-/** Blocks persist writes until rehydration finishes so default template state cannot wipe disk. */
-let storePersistHydrated = false;
+/** Blocks first-boot writes until rehydration so empty defaults cannot wipe disk.
+ * Session flag survives Vite HMR so in-progress edits keep saving after hot reload. */
+let storePersistHydrated =
+  typeof window !== 'undefined' && Boolean((window as Window & { __BIM_PERSIST_READY__?: boolean }).__BIM_PERSIST_READY__);
+
+let pendingPersistWrite: { name: string; value: string } | null = null;
 
 function markStorePersistHydrated() {
   storePersistHydrated = true;
+  if (typeof window !== 'undefined') {
+    (window as Window & { __BIM_PERSIST_READY__?: boolean }).__BIM_PERSIST_READY__ = true;
+  }
+  try {
+    installDurableStoreFlushHooks();
+  } catch {
+    /* ignore */
+  }
+  if (pendingPersistWrite) {
+    const pending = pendingPersistWrite;
+    pendingPersistWrite = null;
+    void durableStoreStorage.setItem(pending.name, pending.value);
+  }
   queueMicrotask(() => {
     try {
       ensureDemoPortfolio(useStore);
@@ -3475,7 +3534,7 @@ export const useStore = create<AppState>()(
 
         savedSheetColumnTemplates: [],
 
-
+        columnSettingsDropdownIds: normalizeColumnSettingsDropdownIds(),
 
         activeMainTab: 'clients',
 
@@ -6293,26 +6352,34 @@ export const useStore = create<AppState>()(
           set((s) => {
             const actorId = resolveActivityActorId(s.currentUserId, s.viewAsOriginalUserId);
             if (!canManageColumns(actorId, s.employees, s.employeePermissions)) return s;
+            if (isProtectedBoardColumnId(id)) return s;
 
             const sharedFromMain = isMainOverviewSharedColumn(id, s.boardSheetColumns);
-            if (sharedFromMain && boardType !== 'main') return s;
-
-            const column = findColumnDefinition(
-              boardType,
-              id,
-              s.boardSheetColumns,
-              s.mainOverviewSectionSheetColumns
-            );
+            const column =
+              findColumnDefinition(
+                boardType,
+                id,
+                s.boardSheetColumns,
+                s.mainOverviewSectionSheetColumns
+              ) ?? (isFixedSheetColumnId(id) ? fixedColumnAsDefinition(id) : null);
             if (!column) return s;
 
+            const isOverview = boardType === 'main';
             const columnOrderBefore = getBoardSheetColumnOrder(
               boardType,
               s.boardSheetColumnOrder,
               s.boardSheetColumns,
-              boardType === 'main'
+              isOverview
             );
+            if (!columnOrderBefore.includes(id)) return s;
+
             const activityLogId = uuid();
             const archiveId = uuid();
+            // Fixed columns and Main-shared columns on sub-boards: remove from this board's
+            // order only so definitions (and other boards) stay intact.
+            const orderOnly =
+              isFixedSheetColumnId(id) || (sharedFromMain && boardType !== 'main');
+
             const archive = buildColumnDeleteArchive({
               archiveId,
               activityLogId,
@@ -6321,11 +6388,10 @@ export const useStore = create<AppState>()(
               sectionBoardType: null,
               column,
               columnOrderBefore,
-              wasMainOverviewShared: sharedFromMain,
+              wasMainOverviewShared: sharedFromMain && boardType === 'main',
               tasks: s.tasks,
               taskGroups: s.taskGroups,
             });
-            const stripped = stripColumnFromState(boardType, id, s);
             const history = pushHistory(s);
             const activityLog = logActivity(
               s.activityLog,
@@ -6347,6 +6413,19 @@ export const useStore = create<AppState>()(
               uuid
             );
 
+            if (orderOnly) {
+              return {
+                ...history,
+                boardSheetColumnOrder: {
+                  ...s.boardSheetColumnOrder,
+                  [boardType]: columnOrderBefore.filter((columnId) => columnId !== id),
+                },
+                activityLog,
+                deletedColumnArchive: [archive, ...s.deletedColumnArchive],
+              };
+            }
+
+            const stripped = stripColumnFromState(boardType, id, s);
             return {
               ...history,
               ...stripped,
@@ -6615,6 +6694,25 @@ export const useStore = create<AppState>()(
           set((s) => ({
             savedSheetColumnTemplates: s.savedSheetColumnTemplates.filter(
               (template) => template.id !== id
+            ),
+          }));
+        },
+
+        addColumnSettingsDropdown: (columnId) => {
+          const trimmed = columnId.trim();
+          if (!trimmed) return;
+          set((s) => ({
+            columnSettingsDropdownIds: normalizeColumnSettingsDropdownIds([
+              ...s.columnSettingsDropdownIds,
+              trimmed,
+            ]),
+          }));
+        },
+
+        removeColumnSettingsDropdown: (columnId) => {
+          set((s) => ({
+            columnSettingsDropdownIds: normalizeColumnSettingsDropdownIds(
+              s.columnSettingsDropdownIds.filter((id) => id !== columnId)
             ),
           }));
         },
@@ -7419,7 +7517,7 @@ export const useStore = create<AppState>()(
 
       name: 'bim-task-board-storage',
 
-      version: 123,
+      version: 124,
 
       migrate: (persisted, version) => {
         try {
@@ -7517,6 +7615,8 @@ export const useStore = create<AppState>()(
 
         savedSheetColumnTemplates: state.savedSheetColumnTemplates,
 
+        columnSettingsDropdownIds: state.columnSettingsDropdownIds,
+
       }),
 
       merge: (persisted, current) => {
@@ -7531,19 +7631,18 @@ export const useStore = create<AppState>()(
         }
       },
 
-      storage: createJSONStorage(() => {
-        const base = import.meta.env.DEV ? devStoreSyncStorage : localStorage;
-        return {
-          getItem: (name) => base.getItem(name),
-          setItem: (name, value) => {
-            if (!storePersistHydrated) {
-              return undefined as unknown as void;
-            }
-            return base.setItem(name, value);
-          },
-          removeItem: (name) => base.removeItem(name),
-        };
-      }),
+      storage: createJSONStorage(() => ({
+        getItem: (name) => durableStoreStorage.getItem(name),
+        setItem: (name, value) => {
+          // First cold start: wait for hydrate. After that (incl. HMR), never drop edits.
+          if (!storePersistHydrated) {
+            pendingPersistWrite = { name, value };
+            return undefined as unknown as void;
+          }
+          return durableStoreStorage.setItem(name, value);
+        },
+        removeItem: (name) => durableStoreStorage.removeItem(name),
+      })),
 
     }
 

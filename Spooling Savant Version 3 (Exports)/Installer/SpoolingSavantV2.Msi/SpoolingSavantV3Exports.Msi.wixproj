@@ -1,0 +1,43 @@
+<Project Sdk="WixToolset.Sdk/6.0.2">
+  <PropertyGroup>
+    <OutputType>Package</OutputType>
+    <InstallerProductVersion Condition="'$(InstallerProductVersion)' == ''">1.0.0.0</InstallerProductVersion>
+    <OutputName>Spooling-Savant-V3-Exports-Revit-$(InstallerProductVersion)</OutputName>
+    <DefineConstants>$(DefineConstants);InstallerProductVersion=$(InstallerProductVersion)</DefineConstants>
+    <Platforms>x64</Platforms>
+    <InstallerPlatform>x64</InstallerPlatform>
+    <SuppressValidation>true</SuppressValidation>
+    <DeployRevitAddin>false</DeployRevitAddin>
+    <CoreCompileDependsOn>StageMsiIcons;$(CoreCompileDependsOn)</CoreCompileDependsOn>
+  </PropertyGroup>
+  <ItemGroup>
+    <BindPath Include="$(MSBuildProjectDirectory)" BindName="MsiProject" />
+    <ProjectReference Include="..\..\SpoolingSavantV3Exports\SpoolingSavantV3Exports.csproj">
+      <Private>false</Private>
+      <DoNotHarvest>true</DoNotHarvest>
+      <Properties>Configuration=$(Configuration);Platform=AnyCPU;DeployRevitAddin=false</Properties>
+    </ProjectReference>
+    <ProjectReference Include="..\..\SpoolingSavantV3Exports.Workers\SpoolingSavantV3Exports.Workers.csproj">
+      <Private>false</Private>
+      <DoNotHarvest>true</DoNotHarvest>
+      <Properties>Configuration=$(Configuration);Platform=AnyCPU;DeployRevitAddin=false;SkipDeployWorkersHotload=true</Properties>
+    </ProjectReference>
+  </ItemGroup>
+
+  <Target Name="StageMsiIcons" BeforeTargets="BeforeCompile">
+    <PropertyGroup>
+      <_IconSrc>$(MSBuildProjectDirectory)\..\..\SpoolingSavantV3Exports\bin\$(Configuration)\Icons</_IconSrc>
+      <_PayloadRoot>$(MSBuildProjectDirectory)\_payload</_PayloadRoot>
+    </PropertyGroup>
+    <RemoveDir Directories="$(_PayloadRoot)" Condition="Exists('$(_PayloadRoot)')" />
+    <MakeDir Directories="$(_PayloadRoot)\2024\Spooling-Savant-V3-Exports\Icons;$(_PayloadRoot)\2025\Spooling-Savant-V3-Exports\Icons;$(_PayloadRoot)\2026\Spooling-Savant-V3-Exports\Icons;$(_PayloadRoot)\2027\Spooling-Savant-V3-Exports\Icons" />
+    <ItemGroup>
+      <_IconFiles Include="$(_IconSrc)\**\*" Condition="Exists('$(_IconSrc)')" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_IconFiles)" DestinationFolder="$(_PayloadRoot)\2024\Spooling-Savant-V3-Exports\Icons\%(RecursiveDir)" SkipUnchangedFiles="false" Condition="'@(_IconFiles)' != ''" />
+    <Copy SourceFiles="@(_IconFiles)" DestinationFolder="$(_PayloadRoot)\2025\Spooling-Savant-V3-Exports\Icons\%(RecursiveDir)" SkipUnchangedFiles="false" Condition="'@(_IconFiles)' != ''" />
+    <Copy SourceFiles="@(_IconFiles)" DestinationFolder="$(_PayloadRoot)\2026\Spooling-Savant-V3-Exports\Icons\%(RecursiveDir)" SkipUnchangedFiles="false" Condition="'@(_IconFiles)' != ''" />
+    <Copy SourceFiles="@(_IconFiles)" DestinationFolder="$(_PayloadRoot)\2027\Spooling-Savant-V3-Exports\Icons\%(RecursiveDir)" SkipUnchangedFiles="false" Condition="'@(_IconFiles)' != ''" />
+    <Error Condition="!Exists('$(_IconSrc)') OR '@(_IconFiles)' == ''" Text="Missing icons. Build SpoolingSavantV3Exports Release first so '$(_IconSrc)' exists." />
+  </Target>
+</Project>

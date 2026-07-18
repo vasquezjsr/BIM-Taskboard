@@ -15,9 +15,13 @@ const FLAT_BOARD_HIDDEN_COLUMNS: Record<FlatBoardType, readonly string[]> = {
   rfi: ['assignee', 'due', 'duration'],
 };
 
+/** Per-board fixed columns that should not appear (persisted orders are filtered too). */
+const BOARD_HIDDEN_COLUMNS: Partial<Record<ProjectBoardType, readonly string[]>> = {
+  ...FLAT_BOARD_HIDDEN_COLUMNS,
+};
+
 export function getHiddenColumnsForBoard(boardType: ProjectBoardType): Set<string> {
-  if (!isFlatBoard(boardType)) return new Set();
-  return new Set(FLAT_BOARD_HIDDEN_COLUMNS[boardType]);
+  return new Set(BOARD_HIDDEN_COLUMNS[boardType] ?? []);
 }
 
 export function boardShowsStatusColumn(boardType: ProjectBoardType): boolean {
@@ -384,6 +388,21 @@ export function isFixedSheetColumnId(id: string): id is FixedSheetColumnId {
   return (FIXED_SHEET_COLUMN_IDS as readonly string[]).includes(id);
 }
 
+/** Title is structural — every sheet needs it. All other columns may be removed by column admins. */
+export function isProtectedBoardColumnId(columnId: string): boolean {
+  return columnId === 'title';
+}
+
+export function fixedColumnAsDefinition(id: FixedSheetColumnId): SheetColumnDefinition {
+  return {
+    id,
+    label: FIXED_SHEET_COLUMN_LABELS[id],
+    type: 'text',
+    headerAlignment: DEFAULT_SHEET_COLUMN_ALIGNMENT,
+    cellAlignment: DEFAULT_SHEET_COLUMN_ALIGNMENT,
+  };
+}
+
 export function defaultBoardColumnOrder(
   customColumns: SheetColumnDefinition[],
   isOverview: boolean,
@@ -404,7 +423,11 @@ export function defaultBoardColumnOrder(
     order.push(...customColumns.map((c) => c.id));
     return order;
   }
-  const order: string[] = ['title', 'description', 'status', 'assignee'];
+  const order: string[] = ['title'];
+  if (!(boardType && getHiddenColumnsForBoard(boardType).has('description'))) {
+    order.push('description');
+  }
+  order.push('status', 'assignee');
   if (boardType && boardUsesWorkflowDueDates(boardType)) {
     order.push(...WORKFLOW_DUE_DATE_COLUMN_IDS);
   } else {
@@ -444,10 +467,8 @@ export function getBoardSheetColumnOrder(
     }
   }
 
-  for (const id of defaults) {
-    if (!seen.has(id)) result.push(id);
-  }
-
+  // Stored order is authoritative: do not re-merge missing defaults/customs.
+  // Admins may intentionally remove columns; add/premade paths append to order explicitly.
   return applyBoardColumnRules(boardType, result);
 }
 

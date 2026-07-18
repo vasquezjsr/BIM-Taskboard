@@ -35,6 +35,8 @@ interface StatusSettingsProps {
   boards: { id: ProjectBoardType; label: string }[];
   projectId: string | null;
   onClose: () => void;
+  /** Render inside another dialog (no portal / outer chrome). */
+  embedded?: boolean;
 }
 
 type StatusAssignUpdates = Partial<
@@ -218,7 +220,13 @@ function SortableStatusItem({
   );
 }
 
-export function StatusSettings({ initialBoardType, boards, projectId, onClose }: StatusSettingsProps) {
+export function StatusSettings({
+  initialBoardType,
+  boards,
+  projectId,
+  onClose,
+  embedded = false,
+}: StatusSettingsProps) {
   const employees = useStore((s) => s.employees);
   const boardTaskStatuses = useStore((s) => s.boardTaskStatuses);
   const projectBoardTaskStatuses = useStore((s) => s.projectBoardTaskStatuses);
@@ -271,12 +279,13 @@ export function StatusSettings({ initialBoardType, boards, projectId, onClose }:
   }, [boardTaskStatuses, projectBoardTaskStatuses]);
 
   useEffect(() => {
+    if (embedded) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
+  }, [embedded, onClose]);
 
   const handleAdd = () => {
     if (!newLabel.trim()) return;
@@ -316,47 +325,43 @@ export function StatusSettings({ initialBoardType, boards, projectId, onClose }:
     }
   };
 
-  return createPortal(
-    <div className={styles.overlay} onClick={onClose}>
-      <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-        <div className={styles.header}>
-          <div>
-            <h2>Status options</h2>
-            <label className={styles.boardField}>
-              <span className={styles.boardLabel}>Board</span>
-              <select
-                className={styles.boardSelect}
-                value={selectedBoard}
-                onChange={(e) => setSelectedBoard(e.target.value as ProjectBoardType)}
-              >
-                {boards.map((board) => (
-                  <option key={board.id} value={board.id}>
-                    {board.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {isRfiBoard && (
-              <p className={styles.rfiHint}>
-                RFI uses <strong>Waiting for Response</strong> and <strong>Complete</strong> only.
-              </p>
-            )}
-            {showApplyAllOption && (
-              <label className={styles.applyAllField}>
-                <input
-                  type="checkbox"
-                  checked={applyToAllDeliverables}
-                  onChange={(e) => setApplyToAllDeliverables(e.target.checked)}
-                />
-                <span>Apply changes to all Deliverables boards (all projects)</span>
-              </label>
-            )}
-          </div>
-          <button type="button" className={styles.closeBtn} onClick={onClose} title="Close">
-            ×
-          </button>
-        </div>
+  const boardControls = (
+    <>
+      <label className={styles.boardField}>
+        <span className={styles.boardLabel}>Board</span>
+        <select
+          className={styles.boardSelect}
+          value={selectedBoard}
+          onChange={(e) => setSelectedBoard(e.target.value as ProjectBoardType)}
+        >
+          {boards.map((board) => (
+            <option key={board.id} value={board.id}>
+              {board.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      {isRfiBoard && (
+        <p className={styles.rfiHint}>
+          RFI uses <strong>Waiting for Response</strong> and <strong>Complete</strong> only.
+        </p>
+      )}
+      {showApplyAllOption && (
+        <label className={styles.applyAllField}>
+          <input
+            type="checkbox"
+            checked={applyToAllDeliverables}
+            onChange={(e) => setApplyToAllDeliverables(e.target.checked)}
+          />
+          <span>Apply changes to all Deliverables boards (all projects)</span>
+        </label>
+      )}
+    </>
+  );
+
+  const body = (
         <div className={styles.body}>
+          {embedded && <div className={styles.header}>{boardControls}</div>}
           {hasStatusSyncIssues && (
             <div className={styles.syncBanner}>
               <p className={styles.syncBannerText}>
@@ -419,6 +424,23 @@ export function StatusSettings({ initialBoardType, boards, projectId, onClose }:
           </div>
           )}
         </div>
+  );
+
+  if (embedded) return body;
+
+  return createPortal(
+    <div className={styles.overlay} onClick={onClose}>
+      <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+        <div className={styles.header}>
+          <div>
+            <h2>Status options</h2>
+            {boardControls}
+          </div>
+          <button type="button" className={styles.closeBtn} onClick={onClose} title="Close">
+            ×
+          </button>
+        </div>
+        {body}
       </div>
     </div>,
     document.body

@@ -1,0 +1,5 @@
+ProjectId,ProjectName,JobCode,ClientId,ClientName,IsTemplate,BillingType,RevitYear
+8cbe9b0a-e53a-4a2a-8c69-0727fa5e9777,Project Template,,652c7c08-2c36-4378-9d06-41cdbae839c5,Client Template,true,lump-sum,
+b0b5ec22-bd55-4720-af39-b75958749b53,Office Tower Phase 1,25-1001,f4b5528c-32c7-4385-b048-b3ba1d3c9801,Demo Mechanical,false,lump-sum,
+6493a1c1-bc03-4b3e-a0ea-a45d8ddc32da,Hospital Wing B,25-1002,f4b5528c-32c7-4385-b048-b3ba1d3c9801,Demo Mechanical,false,lump-sum,
+7e5b72e7-d45f-4023-b7e6-8673222a3bb6,Campus Utility Upgrade,25-1003,f4b5528c-32c7-4385-b048-b3ba1d3c9801,Demo Mechanical,false,lump-sum,

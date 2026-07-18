@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<RevitAddIns>
+  <AddIn Type="Application">
+    <Name>Spooling Savant V3 (Exports)</Name>
+    <Assembly>C:\ProgramData\Autodesk\Revit\Addins\2024\Spooling-Savant-V3-Exports\SpoolingSavantV3Exports.dll</Assembly>
+    <AddInId>2B208157-D12A-4351-95B4-AAA95E5149C6</AddInId>
+    <FullClassName>SpoolingSavantV3Exports.App</FullClassName>
+    <VendorId>SSVNT3</VendorId>
+    <VendorDescription>Spooling Savant V3 (Exports) — SS Manager for Revit spooling workflows.</VendorDescription>
+  </AddIn>
+</RevitAddIns>

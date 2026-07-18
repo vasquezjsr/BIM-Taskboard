@@ -1,0 +1,300 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+      Name="Spooling Savant V3 (Exports) for Autodesk Revit"
+      Manufacturer="Spooling Savant V3 (Exports)"
+      Version="$(var.InstallerProductVersion)"
+      UpgradeCode="D8F3B2C1-AE9A-5F7D-B6C5-4E3D2F1A0B9C"
+      Scope="perMachine"
+      InstallerVersion="500">
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="medium" />
+
+    <Feature Id="MainFeature" Title="Spooling Savant V3 (Exports)" Level="1">
+      <ComponentGroupRef Id="CG_All" />
+    </Feature>
+  </Package>
+
+  <Fragment>
+    <StandardDirectory Id="CommonAppDataFolder">
+      <Directory Id="DirAutodesk" Name="Autodesk">
+        <Directory Id="DirRevit" Name="Revit">
+          <Directory Id="DirAddins" Name="Addins">
+
+            <Directory Id="DirYear2024" Name="2024">
+              <Component Id="CmpManifest2024" Guid="*">
+                <File Id="FileManifest2024"
+                      Source="$(var.SpoolingSavantV3Exports.ProjectDir)Addins\2024\SpoolingSavantV3Exports.addin"
+                      KeyPath="yes" />
+              </Component>
+              <Directory Id="DirBin2024" Name="Spooling-Savant-V3-Exports">
+                <Component Id="CmpSsDll2024" Guid="*">
+                  <File Id="FileSsDll2024"
+                        Source="$(var.SpoolingSavantV3Exports.TargetDir)SpoolingSavantV3Exports.dll"
+                        KeyPath="yes" />
+                </Component>
+                <Component Id="CmpSsPdb2024" Guid="*">
+                  <File Id="FileSsPdb2024"
+                        Source="$(var.SpoolingSavantV3Exports.TargetDir)SpoolingSavantV3Exports.pdb"
+                        KeyPath="yes" />
+                </Component>
+                <Directory Id="DirIcons2024" Name="Icons" />
+                <Directory Id="DirParams2024" Name="Parameters">
+                  <Component Id="CmpParams2024" Guid="*">
+                    <File Id="FileParams2024"
+                          Source="$(var.SpoolingSavantV3Exports.Workers.ProjectDir)Parameters\Spooling-Savant-V3-Exports_SharedParameters.txt"
+                          KeyPath="yes" />
+                  </Component>
+                </Directory>
+                <Directory Id="DirHotload2024" Name="Hotload">
+                  <Component Id="CmpSwDll2024" Guid="*">
+                    <File Id="FileSwDll2024"
+                          Source="$(var.SpoolingSavantV3Exports.Workers.TargetDir)SpoolingSavantV3Exports.Workers.dll"
+                          KeyPath="yes" />
+                  </Component>
+                  <Component Id="CmpSwPdb2024" Guid="*">
+                    <File Id="FileSwPdb2024"
+                          Source="$(var.SpoolingSavantV3Exports.Workers.TargetDir)SpoolingSavantV3Exports.Workers.pdb"
+                          KeyPath="yes" />
+                  </Component>
+                  <Component Id="CmpBc2024" Guid="*">
+                    <File Id="FileBc2024"
+                          Source="$(var.SpoolingSavantV3Exports.Workers.TargetDir)BouncyCastle.Cryptography.dll"
+                          KeyPath="yes" />
+                  </Component>
+                  <Component Id="CmpIt2024" Guid="*">
+                    <File Id="FileIt2024"
+                          Source="$(var.SpoolingSavantV3Exports.Workers.TargetDir)itextsharp.dll"
+                          KeyPath="yes" />
+                  </Component>
+                </Directory>
+              </Directory>
+            </Directory>
+
+            <Directory Id="DirYear2025" Name="2025">
+              <Component Id="CmpManifest2025" Guid="*">
+                <File Id="FileManifest2025"
+                      Source="$(var.SpoolingSavantV3Exports.ProjectDir)Addins\2025\SpoolingSavantV3Exports.addin"
+                      KeyPath="yes" />
+              </Component>
+              <Directory Id="DirBin2025" Name="Spooling-Savant-V3-Exports">
+                <Component Id="CmpSsDll2025" Guid="*">
+                  <File Id="FileSsDll2025"
+                        Source="$(var.SpoolingSavantV3Exports.TargetDir)SpoolingSavantV3Exports.dll"
+                        KeyPath="yes" />
+                </Component>
+                <Component Id="CmpSsPdb2025" Guid="*">
+                  <File Id="FileSsPdb2025"
+                        Source="$(var.SpoolingSavantV3Exports.TargetDir)SpoolingSavantV3Exports.pdb"
+                        KeyPath="yes" />
+                </Component>
+                <Directory Id="DirIcons2025" Name="Icons" />
+                <Directory Id="DirParams2025" Name="Parameters">
+                  <Component Id="CmpParams2025" Guid="*">
+                    <File Id="FileParams2025"
+                          Source="$(var.SpoolingSavantV3Exports.Workers.ProjectDir)Parameters\Spooling-Savant-V3-Exports_SharedParameters.txt"
+                          KeyPath="yes" />
+                  </Component>
+                </Directory>
+                <Directory Id="DirHotload2025" Name="Hotload">
+                  <Component Id="CmpSwDll2025" Guid="*">
+                    <File Id="FileSwDll2025"
+                          Source="$(var.SpoolingSavantV3Exports.Workers.TargetDir)SpoolingSavantV3Exports.Workers.dll"
+                          KeyPath="yes" />
+                  </Component>
+                  <Component Id="CmpSwPdb2025" Guid="*">
+                    <File Id="FileSwPdb2025"
+                          Source="$(var.SpoolingSavantV3Exports.Workers.TargetDir)SpoolingSavantV3Exports.Workers.pdb"
+                          KeyPath="yes" />
+                  </Component>
+                  <Component Id="CmpBc2025" Guid="*">
+                    <File Id="FileBc2025"
+                          Source="$(var.SpoolingSavantV3Exports.Workers.TargetDir)BouncyCastle.Cryptography.dll"
+                          KeyPath="yes" />
+                  </Component>
+                  <Component Id="CmpIt2025" Guid="*">
+                    <File Id="FileIt2025"
+                          Source="$(var.SpoolingSavantV3Exports.Workers.TargetDir)itextsharp.dll"
+                          KeyPath="yes" />
+                  </Component>
+                </Directory>
+              </Directory>
+            </Directory>
+
+            <Directory Id="DirYear2026" Name="2026">
+              <Component Id="CmpManifest2026" Guid="*">
+                <File Id="FileManifest2026"
+                      Source="$(var.SpoolingSavantV3Exports.ProjectDir)Addins\2026\SpoolingSavantV3Exports.addin"
+                      KeyPath="yes" />
+              </Component>
+              <Directory Id="DirBin2026" Name="Spooling-Savant-V3-Exports">
+                <Component Id="CmpSsDll2026" Guid="*">
+                  <File Id="FileSsDll2026"
+                        Source="$(var.SpoolingSavantV3Exports.TargetDir)SpoolingSavantV3Exports.dll"
+                        KeyPath="yes" />
+                </Component>
+                <Component Id="CmpSsPdb2026" Guid="*">
+                  <File Id="FileSsPdb2026"
+                        Source="$(var.SpoolingSavantV3Exports.TargetDir)SpoolingSavantV3Exports.pdb"
+                        KeyPath="yes" />
+                </Component>
+                <Directory Id="DirIcons2026" Name="Icons" />
+                <Directory Id="DirParams2026" Name="Parameters">
+                  <Component Id="CmpParams2026" Guid="*">
+                    <File Id="FileParams2026"
+                          Source="$(var.SpoolingSavantV3Exports.Workers.ProjectDir)Parameters\Spooling-Savant-V3-Exports_SharedParameters.txt"
+                          KeyPath="yes" />
+                  </Component>
+                </Directory>
+                <Directory Id="DirHotload2026" Name="Hotload">
+                  <Component Id="CmpSwDll2026" Guid="*">
+                    <File Id="FileSwDll2026"
+                          Source="$(var.SpoolingSavantV3Exports.Workers.TargetDir)SpoolingSavantV3Exports.Workers.dll"
+                          KeyPath="yes" />
+                  </Component>
+                  <Component Id="CmpSwPdb2026" Guid="*">
+                    <File Id="FileSwPdb2026"
+                          Source="$(var.SpoolingSavantV3Exports.Workers.TargetDir)SpoolingSavantV3Exports.Workers.pdb"
+                          KeyPath="yes" />
+                  </Component>
+                  <Component Id="CmpBc2026" Guid="*">
+                    <File Id="FileBc2026"
+                          Source="$(var.SpoolingSavantV3Exports.Workers.TargetDir)BouncyCastle.Cryptography.dll"
+                          KeyPath="yes" />
+                  </Component>
+                  <Component Id="CmpIt2026" Guid="*">
+                    <File Id="FileIt2026"
+                          Source="$(var.SpoolingSavantV3Exports.Workers.TargetDir)itextsharp.dll"
+                          KeyPath="yes" />
+                  </Component>
+                </Directory>
+              </Directory>
+            </Directory>
+
+            <Directory Id="DirYear2027" Name="2027">
+              <Directory Id="DirBin2027" Name="Spooling-Savant-V3-Exports">
+                <Component Id="CmpSsDll2027" Guid="*">
+                  <File Id="FileSsDll2027"
+                        Source="$(var.SpoolingSavantV3Exports.TargetDir)SpoolingSavantV3Exports.dll"
+                        KeyPath="yes" />
+                </Component>
+                <Component Id="CmpSsPdb2027" Guid="*">
+                  <File Id="FileSsPdb2027"
+                        Source="$(var.SpoolingSavantV3Exports.TargetDir)SpoolingSavantV3Exports.pdb"
+                        KeyPath="yes" />
+                </Component>
+                <Directory Id="DirIcons2027" Name="Icons" />
+                <Directory Id="DirParams2027" Name="Parameters">
+                  <Component Id="CmpParams2027" Guid="*">
+                    <File Id="FileParams2027"
+                          Source="$(var.SpoolingSavantV3Exports.Workers.ProjectDir)Parameters\Spooling-Savant-V3-Exports_SharedParameters.txt"
+                          KeyPath="yes" />
+                  </Component>
+                </Directory>
+                <Directory Id="DirHotload2027" Name="Hotload">
+                  <Component Id="CmpSwDll2027" Guid="*">
+                    <File Id="FileSwDll2027"
+                          Source="$(var.SpoolingSavantV3Exports.Workers.TargetDir)SpoolingSavantV3Exports.Workers.dll"
+                          KeyPath="yes" />
+                  </Component>
+                  <Component Id="CmpSwPdb2027" Guid="*">
+                    <File Id="FileSwPdb2027"
+                          Source="$(var.SpoolingSavantV3Exports.Workers.TargetDir)SpoolingSavantV3Exports.Workers.pdb"
+                          KeyPath="yes" />
+                  </Component>
+                  <Component Id="CmpBc2027" Guid="*">
+                    <File Id="FileBc2027"
+                          Source="$(var.SpoolingSavantV3Exports.Workers.TargetDir)BouncyCastle.Cryptography.dll"
+                          KeyPath="yes" />
+                  </Component>
+                  <Component Id="CmpIt2027" Guid="*">
+                    <File Id="FileIt2027"
+                          Source="$(var.SpoolingSavantV3Exports.Workers.TargetDir)itextsharp.dll"
+                          KeyPath="yes" />
+                  </Component>
+                </Directory>
+              </Directory>
+            </Directory>
+
+          </Directory>
+        </Directory>
+      </Directory>
+    </StandardDirectory>
+
+    <!-- Revit 2027+ loads all-users manifests from Program Files, not ProgramData. Binaries stay in ProgramData (manifest uses absolute path). -->
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="PfAutodesk" Name="Autodesk">
+        <Directory Id="PfRevit" Name="Revit">
+          <Directory Id="PfAddins" Name="Addins">
+            <Directory Id="PfYear2027" Name="2027">
+              <Component Id="CmpManifest2027" Guid="*">
+                <File Id="FileManifest2027"
+                      Source="$(var.SpoolingSavantV3Exports.ProjectDir)Addins\2027\SpoolingSavantV3Exports.addin"
+                      KeyPath="yes" />
+              </Component>
+            </Directory>
+          </Directory>
+        </Directory>
+      </Directory>
+    </StandardDirectory>
+  </Fragment>
+
+  <Fragment>
+    <ComponentGroup Id="CG_All">
+      <ComponentRef Id="CmpManifest2024" />
+      <ComponentRef Id="CmpSsDll2024" />
+      <ComponentRef Id="CmpSsPdb2024" />
+      <ComponentRef Id="CmpParams2024" />
+      <ComponentRef Id="CmpSwDll2024" />
+      <ComponentRef Id="CmpSwPdb2024" />
+      <ComponentRef Id="CmpBc2024" />
+      <ComponentRef Id="CmpIt2024" />
+      <ComponentGroupRef Id="CG_Icons2024" />
+
+      <ComponentRef Id="CmpManifest2025" />
+      <ComponentRef Id="CmpSsDll2025" />
+      <ComponentRef Id="CmpSsPdb2025" />
+      <ComponentRef Id="CmpParams2025" />
+      <ComponentRef Id="CmpSwDll2025" />
+      <ComponentRef Id="CmpSwPdb2025" />
+      <ComponentRef Id="CmpBc2025" />
+      <ComponentRef Id="CmpIt2025" />
+      <ComponentGroupRef Id="CG_Icons2025" />
+
+      <ComponentRef Id="CmpManifest2026" />
+      <ComponentRef Id="CmpSsDll2026" />
+      <ComponentRef Id="CmpSsPdb2026" />
+      <ComponentRef Id="CmpParams2026" />
+      <ComponentRef Id="CmpSwDll2026" />
+      <ComponentRef Id="CmpSwPdb2026" />
+      <ComponentRef Id="CmpBc2026" />
+      <ComponentRef Id="CmpIt2026" />
+      <ComponentGroupRef Id="CG_Icons2026" />
+
+      <ComponentRef Id="CmpManifest2027" />
+      <ComponentRef Id="CmpSsDll2027" />
+      <ComponentRef Id="CmpSsPdb2027" />
+      <ComponentRef Id="CmpParams2027" />
+      <ComponentRef Id="CmpSwDll2027" />
+      <ComponentRef Id="CmpSwPdb2027" />
+      <ComponentRef Id="CmpBc2027" />
+      <ComponentRef Id="CmpIt2027" />
+      <ComponentGroupRef Id="CG_Icons2027" />
+    </ComponentGroup>
+  </Fragment>
+
+  <Fragment>
+    <ComponentGroup Id="CG_Icons2024" Directory="DirIcons2024">
+      <Files Include="!(bindpath.MsiProject)\_payload\2024\Spooling-Savant-V3-Exports\Icons\**" />
+    </ComponentGroup>
+    <ComponentGroup Id="CG_Icons2025" Directory="DirIcons2025">
+      <Files Include="!(bindpath.MsiProject)\_payload\2025\Spooling-Savant-V3-Exports\Icons\**" />
+    </ComponentGroup>
+    <ComponentGroup Id="CG_Icons2026" Directory="DirIcons2026">
+      <Files Include="!(bindpath.MsiProject)\_payload\2026\Spooling-Savant-V3-Exports\Icons\**" />
+    </ComponentGroup>
+    <ComponentGroup Id="CG_Icons2027" Directory="DirIcons2027">
+      <Files Include="!(bindpath.MsiProject)\_payload\2027\Spooling-Savant-V3-Exports\Icons\**" />
+    </ComponentGroup>
+  </Fragment>
+</Wix>

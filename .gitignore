@@ -7,5 +7,25 @@ release/
 .dev-store-sync.json
 dim-inspector-live.txt
 
-# Separate Revit addin repo (Spooling Savant V3 Exports)
-Spooling Savant Version 3 (Exports)/
+# Local scratch / recovery / CDP probes (not product source)
+.cdp-*
+_cdp_*
+cdp-*
+_backup*/
+_pre_rollback*/
+_method_extract_tmp/
+_recover*/
+_recovered_stores/
+_cdu-spool-study/
+_build_cycle*.txt
+_fix_*.py
+_history-*.txt
+_restore_*.py
+ports-check*.txt
+ssv3-build-out.txt
+symbol-search.txt
+tsc-*.txt
+dim-placement-logic.txt
+
+# Nested git metadata if present from former separate clone
+Spooling Savant Version 3 (Exports)/.git-disabled-nested/

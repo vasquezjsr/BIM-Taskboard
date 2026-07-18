@@ -1205,6 +1205,7 @@
   flex: 1 1 auto;
   min-width: 80px;
   max-width: none;
+  margin-right: 14px;
   padding: 4px 8px;
   background: transparent;
   border: 1px solid transparent;
@@ -1371,6 +1372,16 @@
   align-items: center;
   flex: 1;
   min-width: 0;
+  gap: 0.35rem;
+}
+
+.ungroupedSuffix {
+  flex-shrink: 0;
+  font-size: 0.78em;
+  font-weight: 500;
+  opacity: 0.72;
+  white-space: nowrap;
+  color: var(--text-muted, #9aa3b2);
 }
 
 .taskRow {

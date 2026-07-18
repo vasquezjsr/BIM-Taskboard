@@ -237,8 +237,13 @@ export function isAssemblyCompleteStatus(
   status: string,
   statuses?: { id: string; countsAsComplete?: boolean }[]
 ): boolean {
-  if (status === 'complete') return true;
+  if (status === 'complete' || isFabShippedStatus(status)) return true;
   return Boolean(statuses?.find((entry) => entry.id === status)?.countsAsComplete);
+}
+
+/** Assembly released from Fab shop work — locked / greyed on Fabrication Dashboard. */
+export function isAssemblyReleasedFromFabStatus(status: string): boolean {
+  return isFabShippedStatus(status);
 }
 
 /** Inject Pulling Material into persisted fab status lists that predate it. */

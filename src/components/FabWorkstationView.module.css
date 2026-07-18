@@ -452,7 +452,8 @@
 }
 
 .assemblyRow,
-.assemblyRowActive {
+.assemblyRowActive,
+.assemblyRowReleased {
   display: grid;
   grid-template-columns: minmax(6rem, 1fr) minmax(9rem, 11rem) auto;
   align-items: center;
@@ -462,6 +463,24 @@
   background: rgba(15, 23, 42, 0.45);
   border: 1px solid transparent;
   color: inherit;
+}
+
+.assemblyRowReleased {
+  opacity: 0.48;
+  background: rgba(30, 41, 59, 0.35);
+  border-color: rgba(148, 163, 184, 0.18);
+  filter: grayscale(0.35);
+}
+
+.assemblyRowReleased .rowSelectBtn:disabled {
+  cursor: not-allowed;
+  opacity: 1;
+}
+
+.assemblyRowReleased .assignSelect:disabled,
+.assemblyRowReleased .statusSelect:disabled {
+  cursor: not-allowed;
+  opacity: 0.85;
 }
 
 .fileRow,

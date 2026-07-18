@@ -1,0 +1,1043 @@
+<Window x:Class="SpoolingSavantV3Exports.Workers.SpoolingManager.Views.AssemblySettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Spool Sheet Manager"
+        Width="1120"
+        Height="720"
+        MinHeight="560"
+        MaxHeight="900"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="CanResizeWithGrip"
+        Background="{DynamicResource SsSavantChromeBackground}">
+    <Border Background="{DynamicResource SsSavantChromeBackground}"
+            BorderThickness="0"
+            Padding="12">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*" MinHeight="200"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- Header -->
+            <Grid Grid.Row="0" Margin="0,0,0,12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="90"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <Grid Grid.Column="0"
+                      Width="84"
+                      Height="84"
+                      ClipToBounds="False"
+                      VerticalAlignment="Top">
+                    <Border Width="78"
+                            Height="78"
+                            HorizontalAlignment="Left"
+                            VerticalAlignment="Top"
+                            Background="{DynamicResource SsSavantInputBackground}"
+                            BorderBrush="{DynamicResource SsSavantListBorder}"
+                            BorderThickness="1"
+                            CornerRadius="8">
+                        <Grid>
+                            <Image x:Name="imgLogoPreview"
+                                   Stretch="Uniform"
+                                   Margin="4"/>
+                            <TextBlock x:Name="txtLogoPlaceholder"
+                                       Text="LOGO"
+                                       Foreground="{DynamicResource SsSavantForegroundMuted}"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"/>
+                        </Grid>
+                    </Border>
+
+                    <Button x:Name="btnBrowseLogo"
+                            Width="26"
+                            Height="26"
+                            MinWidth="0"
+                            MinHeight="0"
+                            Padding="0"
+                            HorizontalAlignment="Left"
+                            VerticalAlignment="Top"
+                            Margin="58,54,0,0"
+                            Cursor="Hand"
+                            ToolTip="Choose logo image"
+                            Click="BtnBrowseLogo_Click">
+                        <TextBlock FontFamily="Segoe MDL2 Assets"
+                                   Text="&#xE70F;"
+                                   FontSize="12"
+                                   Foreground="{DynamicResource SsSavantForegroundPrimary}"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"/>
+                    </Button>
+                </Grid>
+
+                <StackPanel Grid.Column="1" Margin="12,0,12,0" VerticalAlignment="Center">
+                    <TextBlock x:Name="txtSettingsHeaderTitle"
+                               Text="Spool Sheet Manager"
+                               FontSize="22"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+                    <TextBlock x:Name="txtSettingsHeaderSubtitle"
+                               Text="Configure sheet layout, annotations, tags, dimensions, and weld log options."
+                               Margin="0,6,0,0"
+                               TextWrapping="Wrap"
+                               Foreground="{DynamicResource SsSavantForegroundMuted}"/>
+                </StackPanel>
+
+                <StackPanel Grid.Column="2"
+                            Orientation="Horizontal"
+                            VerticalAlignment="Top">
+                    <TextBlock x:Name="txtLayoutSettingsPrompt"
+                               Text="Settings for adjusting schedule away from the top left corner of the each Spool Sheet"
+                               MaxWidth="280"
+                               Margin="0,2,10,0"
+                               TextWrapping="Wrap"
+                               TextAlignment="Right"
+                               VerticalAlignment="Center"
+                               FontSize="11"
+                               Foreground="{DynamicResource SsSavantForegroundMuted}"/>
+                    <Button x:Name="btnLayoutSettings"
+                            Width="34"
+                            Height="34"
+                            Padding="0"
+                            VerticalAlignment="Top"
+                            Cursor="Hand"
+                            ToolTip="Schedule position on sheet">
+                        <TextBlock FontFamily="Segoe MDL2 Assets"
+                                   Text="&#xE713;"
+                                   FontSize="16"
+                                   Foreground="{DynamicResource SsSavantForegroundPrimary}"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"/>
+                    </Button>
+                </StackPanel>
+            </Grid>
+
+            <!-- Body -->
+            <TabControl x:Name="tabMainSettings"
+                        Grid.Row="1">
+                <TabItem Header="Sheet Setup">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Margin="0,4,0,0">
+
+                    <!-- Sheet layout settings -->
+                    <Border Background="{DynamicResource SsSavantListWellBackground}"
+                            BorderBrush="{DynamicResource SsSavantBorderOuter}"
+                            BorderThickness="1"
+                            CornerRadius="10"
+                            Padding="14"
+                            Margin="0,0,0,12">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="160"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0"
+                                       Grid.Column="0"
+                                       Text="Title Block"
+                                       Margin="0,0,12,12"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+
+                            <ComboBox x:Name="cmbTitleBlock"
+                                      Grid.Row="0"
+                                      Grid.Column="1"
+                                      Height="28"
+                                      Margin="0,0,0,12"
+                                      VerticalAlignment="Center"
+                                      IsEditable="True"/>
+
+                            <TextBlock Grid.Row="1"
+                                       Grid.Column="0"
+                                       Text="Viewport Type"
+                                       Margin="0,0,12,12"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+
+                            <ComboBox x:Name="cmbViewportType"
+                                      Grid.Row="1"
+                                      Grid.Column="1"
+                                      Height="28"
+                                      Margin="0,0,0,12"
+                                      VerticalAlignment="Center"
+                                      HorizontalAlignment="Stretch"
+                                      IsEditable="True"/>
+
+                            <TextBlock x:Name="lblViewScale"
+                                       Grid.Row="2"
+                                       Grid.Column="0"
+                                       Text="View Scale"
+                                       Margin="0,0,12,0"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+
+                            <ComboBox x:Name="cmbViewScale"
+                                      Grid.Row="2"
+                                      Grid.Column="1"
+                                      Height="28"
+                                      VerticalAlignment="Center"
+                                      IsEditable="False"/>
+
+                        </Grid>
+                    </Border>
+
+                    <!-- Views settings block -->
+                    <Border Background="{DynamicResource SsSavantListWellBackground}"
+                            BorderBrush="{DynamicResource SsSavantBorderOuter}"
+                            BorderThickness="1"
+                            CornerRadius="10"
+                            Padding="14">
+                        <Grid x:Name="grdSpoolViews">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="170"/>
+                                <ColumnDefinition Width="170"/>
+                                <ColumnDefinition Width="72"/>
+                                <ColumnDefinition Width="88"/>
+                                <ColumnDefinition Width="200"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition MinHeight="38"/>
+                                <RowDefinition MinHeight="38"/>
+                                <RowDefinition MinHeight="38"/>
+                                <RowDefinition MinHeight="38"/>
+                                <RowDefinition MinHeight="38"/>
+                                <RowDefinition MinHeight="38"/>
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="View" FontWeight="SemiBold" Margin="0,0,12,12" VerticalAlignment="Center" Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+                            <TextBlock Grid.Row="0" Grid.Column="1" Text="Direction / Rotation" FontWeight="SemiBold" Margin="0,0,12,12" VerticalAlignment="Center" Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+                            <TextBlock Grid.Row="0" Grid.Column="2" Text="Tag Y/N" FontWeight="SemiBold" Margin="0,0,8,12" VerticalAlignment="Center" Foreground="{DynamicResource SsSavantForegroundPrimary}" TextAlignment="Center"/>
+                            <TextBlock x:Name="txtViewsAutoDimHeader" Grid.Row="0" Grid.Column="3" Text="Auto Dim" FontWeight="SemiBold" Margin="0,0,12,12" VerticalAlignment="Center" Foreground="{DynamicResource SsSavantForegroundPrimary}" TextAlignment="Center" TextWrapping="Wrap"/>
+                            <TextBlock Grid.Row="0" Grid.Column="4" Text="Placement" FontWeight="SemiBold" Margin="0,0,12,12" VerticalAlignment="Center" Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+                            <TextBlock Grid.Row="0" Grid.Column="5" Text="View Template" FontWeight="SemiBold" Margin="0,0,0,12" VerticalAlignment="Center" Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+
+                            <CheckBox x:Name="chk3DOrtho" Grid.Row="1" Grid.Column="0" Content="3D Ortho" Margin="0,0,12,0" VerticalAlignment="Center" Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+
+                            <ComboBox x:Name="cmb3DDirection"
+                                      Grid.Row="1"
+                                      Grid.Column="1"
+                                      Height="28"
+                                      Margin="0,0,12,0"
+                                      VerticalAlignment="Center"
+                                      HorizontalAlignment="Stretch"/>
+
+                            <CheckBox x:Name="chk3DTag" Grid.Row="1" Grid.Column="2" Margin="0,0,8,0" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                            <CheckBox x:Name="chk3DAutoDim" Grid.Row="1" Grid.Column="3" Margin="0,0,12,0" VerticalAlignment="Center" HorizontalAlignment="Center" ToolTip="Automatically add dimensions for this view when spool sheets are created."/>
+
+                            <ComboBox x:Name="cmb3DPlacement"
+                                      Grid.Row="1"
+                                      Grid.Column="4"
+                                      Height="28"
+                                      Margin="0,0,12,0"
+                                      VerticalAlignment="Center"
+                                      HorizontalAlignment="Stretch"/>
+
+                            <ComboBox x:Name="cmb3DTemplate"
+                                      Grid.Row="1"
+                                      Grid.Column="5"
+                                      Height="28"
+                                      Margin="0,0,0,0"
+                                      VerticalAlignment="Center"
+                                      HorizontalAlignment="Stretch"
+                                      IsEditable="True"/>
+
+                            <CheckBox x:Name="chkBackView" Grid.Row="2" Grid.Column="0" Content="Back View" Margin="0,0,12,0" VerticalAlignment="Center" Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+
+                            <ComboBox x:Name="cmbBackRotation"
+                                      Grid.Row="2"
+                                      Grid.Column="1"
+                                      Height="28"
+                                      Margin="0,0,12,0"
+                                      VerticalAlignment="Center"
+                                      HorizontalAlignment="Stretch"
+                                      IsEditable="False"
+                                      ToolTip="Rotate this view on the sheet (90° steps)."/>
+                            <CheckBox x:Name="chkBackTag" Grid.Row="2" Grid.Column="2" Margin="0,0,8,0" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                            <CheckBox x:Name="chkBackAutoDim" Grid.Row="2" Grid.Column="3" Margin="0,0,12,0" VerticalAlignment="Center" HorizontalAlignment="Center" ToolTip="Automatically add dimensions for this view when spool sheets are created."/>
+
+                            <ComboBox x:Name="cmbBackPlacement"
+                                      Grid.Row="2"
+                                      Grid.Column="4"
+                                      Height="28"
+                                      Margin="0,0,12,0"
+                                      VerticalAlignment="Center"
+                                      HorizontalAlignment="Stretch"/>
+
+                            <ComboBox x:Name="cmbBackTemplate"
+                                      Grid.Row="2"
+                                      Grid.Column="5"
+                                      Height="28"
+                                      Margin="0,0,0,0"
+                                      VerticalAlignment="Center"
+                                      HorizontalAlignment="Stretch"
+                                      IsEditable="True"/>
+
+                            <CheckBox x:Name="chkFrontView" Grid.Row="3" Grid.Column="0" Content="Front View" Margin="0,0,12,0" VerticalAlignment="Center" Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+
+                            <ComboBox x:Name="cmbFrontRotation"
+                                      Grid.Row="3"
+                                      Grid.Column="1"
+                                      Height="28"
+                                      Margin="0,0,12,0"
+                                      VerticalAlignment="Center"
+                                      HorizontalAlignment="Stretch"
+                                      IsEditable="False"
+                                      ToolTip="Rotate this view on the sheet (90° steps)."/>
+                            <CheckBox x:Name="chkFrontTag" Grid.Row="3" Grid.Column="2" Margin="0,0,8,0" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                            <CheckBox x:Name="chkFrontAutoDim" Grid.Row="3" Grid.Column="3" Margin="0,0,12,0" VerticalAlignment="Center" HorizontalAlignment="Center" ToolTip="Automatically add dimensions for this view when spool sheets are created."/>
+
+                            <ComboBox x:Name="cmbFrontPlacement"
+                                      Grid.Row="3"
+                                      Grid.Column="4"
+                                      Height="28"
+                                      Margin="0,0,12,0"
+                                      VerticalAlignment="Center"
+                                      HorizontalAlignment="Stretch"/>
+
+                            <ComboBox x:Name="cmbFrontTemplate"
+                                      Grid.Row="3"
+                                      Grid.Column="5"
+                                      Height="28"
+                                      Margin="0,0,0,0"
+                                      VerticalAlignment="Center"
+                                      HorizontalAlignment="Stretch"
+                                      IsEditable="True"/>
+
+                            <CheckBox x:Name="chkLeftView" Grid.Row="4" Grid.Column="0" Content="Left View" Margin="0,0,12,0" VerticalAlignment="Center" Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+
+                            <ComboBox x:Name="cmbLeftRotation"
+                                      Grid.Row="4"
+                                      Grid.Column="1"
+                                      Height="28"
+                                      Margin="0,0,12,0"
+                                      VerticalAlignment="Center"
+                                      HorizontalAlignment="Stretch"
+                                      IsEditable="False"
+                                      ToolTip="Rotate this view on the sheet (90° steps)."/>
+                            <CheckBox x:Name="chkLeftTag" Grid.Row="4" Grid.Column="2" Margin="0,0,8,0" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                            <CheckBox x:Name="chkLeftAutoDim" Grid.Row="4" Grid.Column="3" Margin="0,0,12,0" VerticalAlignment="Center" HorizontalAlignment="Center" ToolTip="Automatically add dimensions for this view when spool sheets are created."/>
+
+                            <ComboBox x:Name="cmbLeftPlacement"
+                                      Grid.Row="4"
+                                      Grid.Column="4"
+                                      Height="28"
+                                      Margin="0,0,12,0"
+                                      VerticalAlignment="Center"
+                                      HorizontalAlignment="Stretch"/>
+
+                            <ComboBox x:Name="cmbLeftTemplate"
+                                      Grid.Row="4"
+                                      Grid.Column="5"
+                                      Height="28"
+                                      Margin="0,0,0,0"
+                                      VerticalAlignment="Center"
+                                      HorizontalAlignment="Stretch"
+                                      IsEditable="True"/>
+
+                            <CheckBox x:Name="chkRightView" Grid.Row="5" Grid.Column="0" Content="Right View" Margin="0,0,12,0" VerticalAlignment="Center" Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+
+                            <ComboBox x:Name="cmbRightRotation"
+                                      Grid.Row="5"
+                                      Grid.Column="1"
+                                      Height="28"
+                                      Margin="0,0,12,0"
+                                      VerticalAlignment="Center"
+                                      HorizontalAlignment="Stretch"
+                                      IsEditable="False"
+                                      ToolTip="Rotate this view on the sheet (90° steps)."/>
+                            <CheckBox x:Name="chkRightTag" Grid.Row="5" Grid.Column="2" Margin="0,0,8,0" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                            <CheckBox x:Name="chkRightAutoDim" Grid.Row="5" Grid.Column="3" Margin="0,0,12,0" VerticalAlignment="Center" HorizontalAlignment="Center" ToolTip="Automatically add dimensions for this view when spool sheets are created."/>
+
+                            <ComboBox x:Name="cmbRightPlacement"
+                                      Grid.Row="5"
+                                      Grid.Column="4"
+                                      Height="28"
+                                      Margin="0,0,12,0"
+                                      VerticalAlignment="Center"
+                                      HorizontalAlignment="Stretch"/>
+
+                            <ComboBox x:Name="cmbRightTemplate"
+                                      Grid.Row="5"
+                                      Grid.Column="5"
+                                      Height="28"
+                                      Margin="0,0,0,0"
+                                      VerticalAlignment="Center"
+                                      HorizontalAlignment="Stretch"
+                                      IsEditable="True"/>
+
+                            <CheckBox x:Name="chkTopView" Grid.Row="6" Grid.Column="0" Content="Top View" Margin="0,0,12,0" VerticalAlignment="Center" Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+
+                            <ComboBox x:Name="cmbTopRotation"
+                                      Grid.Row="6"
+                                      Grid.Column="1"
+                                      Height="28"
+                                      Margin="0,0,12,0"
+                                      VerticalAlignment="Center"
+                                      HorizontalAlignment="Stretch"
+                                      IsEditable="False"
+                                      ToolTip="Rotate this view on the sheet (90° steps)."/>
+
+                            <CheckBox x:Name="chkTopTag" Grid.Row="6" Grid.Column="2" Margin="0,0,8,0" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                            <CheckBox x:Name="chkTopAutoDim" Grid.Row="6" Grid.Column="3" Margin="0,0,12,0" VerticalAlignment="Center" HorizontalAlignment="Center" ToolTip="Automatically add dimensions for this view when spool sheets are created."/>
+
+                            <ComboBox x:Name="cmbTopPlacement"
+                                      Grid.Row="6"
+                                      Grid.Column="4"
+                                      Height="28"
+                                      Margin="0,0,12,0"
+                                      VerticalAlignment="Center"
+                                      HorizontalAlignment="Stretch"/>
+
+                            <ComboBox x:Name="cmbTopTemplate"
+                                      Grid.Row="6"
+                                      Grid.Column="5"
+                                      Height="28"
+                                      Margin="0,0,0,0"
+                                      VerticalAlignment="Center"
+                                      HorizontalAlignment="Stretch"
+                                      IsEditable="True"/>
+                        </Grid>
+                    </Border>
+                    </StackPanel>
+                    </ScrollViewer>
+                </TabItem>
+
+                <TabItem Header="Schedules">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Margin="0,4,0,0">
+                        <Border Background="{DynamicResource SsSavantListWellBackground}"
+                                BorderBrush="{DynamicResource SsSavantBorderOuter}"
+                                BorderThickness="1"
+                                CornerRadius="10"
+                                Padding="14"
+                                Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Text="Schedules"
+                                           FontSize="16"
+                                           FontWeight="SemiBold"
+                                           Margin="0,0,0,4"
+                                           Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+                                <TextBlock Text="Add Filter-by-Sheet schedules and choose Top Left or Top Right. Same-side schedules stack with a 1/16&quot; gap. Corners sit on the title block's 1/8&quot; inset."
+                                           TextWrapping="Wrap"
+                                           Margin="0,0,0,12"
+                                           Foreground="{DynamicResource SsSavantForegroundMuted}"/>
+                                <StackPanel x:Name="pnlScheduleRows"/>
+                                <Button x:Name="btnAddSchedule"
+                                        Content="Add schedule"
+                                        Height="28"
+                                        Margin="0,8,0,0"
+                                        HorizontalAlignment="Left"
+                                        Padding="12,0"
+                                        ToolTip="Add another Filter-by-Sheet schedule to place on each spool sheet"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                    </ScrollViewer>
+                </TabItem>
+
+                <TabItem Header="Annotations">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Margin="0,4,0,0">
+
+                    <!-- Tag and dimension types -->
+                    <Border Background="{DynamicResource SsSavantListWellBackground}"
+                            BorderBrush="{DynamicResource SsSavantBorderOuter}"
+                            BorderThickness="1"
+                            CornerRadius="10"
+                            Padding="14"
+                            Margin="0,0,0,12">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="180"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0"
+                                       Grid.Column="0"
+                                       Text="Pipe/Fitting Tag"
+                                       Margin="0,0,12,12"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+
+                            <ComboBox x:Name="cmbTagType"
+                                      Grid.Row="0"
+                                      Grid.Column="1"
+                                      Height="28"
+                                      Margin="0,0,0,12"
+                                      VerticalAlignment="Center"
+                                      MaxDropDownHeight="560"
+                                      HorizontalAlignment="Stretch"
+                                      IsEditable="True"/>
+
+                            <TextBlock Grid.Row="1"
+                                       Grid.Column="0"
+                                       Text="Hanger Tag"
+                                       Margin="0,0,12,12"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+
+                            <ComboBox x:Name="cmbHangerTagType"
+                                      Grid.Row="1"
+                                      Grid.Column="1"
+                                      Height="28"
+                                      Margin="0,0,0,12"
+                                      VerticalAlignment="Center"
+                                      MaxDropDownHeight="560"
+                                      HorizontalAlignment="Stretch"
+                                      IsEditable="True"/>
+
+                            <TextBlock Grid.Row="2"
+                                       Grid.Column="0"
+                                       Text="Duct Tag"
+                                       Margin="0,0,12,12"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+
+                            <ComboBox x:Name="cmbDuctTagType"
+                                      Grid.Row="2"
+                                      Grid.Column="1"
+                                      Height="28"
+                                      Margin="0,0,0,12"
+                                      VerticalAlignment="Center"
+                                      MaxDropDownHeight="560"
+                                      HorizontalAlignment="Stretch"
+                                      IsEditable="True"/>
+
+                            <TextBlock Grid.Row="3"
+                                       Grid.Column="0"
+                                       Text="Weld Tag Type"
+                                       Margin="0,0,12,12"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+
+                            <ComboBox x:Name="cmbWeldTagType"
+                                      Grid.Row="3"
+                                      Grid.Column="1"
+                                      Height="28"
+                                      Margin="0,0,0,12"
+                                      VerticalAlignment="Center"
+                                      MaxDropDownHeight="560"
+                                      HorizontalAlignment="Stretch"
+                                      IsEditable="True"/>
+
+                            <TextBlock Grid.Row="4"
+                                       Grid.Column="0"
+                                       Text="Continuation Tag Type"
+                                       Margin="0,0,12,12"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+
+                            <ComboBox x:Name="cmbAssemblyTagType"
+                                      Grid.Row="4"
+                                      Grid.Column="1"
+                                      Height="28"
+                                      Margin="0,0,0,12"
+                                      VerticalAlignment="Center"
+                                      MaxDropDownHeight="560"
+                                      HorizontalAlignment="Stretch"
+                                      IsEditable="True"/>
+
+                            <TextBlock Grid.Row="5"
+                                       Grid.Column="0"
+                                       Text="Weld Log Text Type"
+                                       Margin="0,0,12,12"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+
+                            <ComboBox x:Name="cmbWeldLogTextType"
+                                      Grid.Row="5"
+                                      Grid.Column="1"
+                                      Height="28"
+                                      Margin="0,0,0,12"
+                                      VerticalAlignment="Center"
+                                      HorizontalAlignment="Stretch"
+                                      IsEditable="True"
+                                      ToolTip="Text note type used for weld numbers placed on the sheet weld log. Spooling Savant V3 (Exports) replaces all notes of this type on each spool sheet when Generate/Refresh runs."/>
+
+                            <TextBlock Grid.Row="6"
+                                       Grid.Column="0"
+                                       Text="Weld Log Source View"
+                                       Margin="0,0,12,12"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+
+                            <ComboBox x:Name="cmbWeldLogSourceView"
+                                      Grid.Row="6"
+                                      Grid.Column="1"
+                                      Height="28"
+                                      Margin="0,0,0,12"
+                                      VerticalAlignment="Center"
+                                      HorizontalAlignment="Stretch"
+                                      IsEditable="False"
+                                      ToolTip="Assembly view on the sheet whose visible welds populate the weld log (one text note per weld)."/>
+
+                            <TextBlock x:Name="lblAutoDimensionType"
+                                       Grid.Row="7"
+                                       Grid.Column="0"
+                                       Text="Linear Dimension Type"
+                                       Margin="0,0,12,12"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+
+                            <ComboBox x:Name="cmbAutoDimensionType"
+                                      Grid.Row="7"
+                                      Grid.Column="1"
+                                      Height="28"
+                                      Margin="0,0,0,12"
+                                      VerticalAlignment="Center"
+                                      MaxDropDownHeight="560"
+                                      HorizontalAlignment="Stretch"
+                                      IsEditable="True"
+                                      ToolTip="Dimension type used when Auto Dim is enabled on a view. Leave blank to use the project default linear type."/>
+
+                            <TextBlock x:Name="lblAutoDimAnnotations"
+                                       Grid.Row="8"
+                                       Grid.Column="0"
+                                       Text="Dim Annotations"
+                                       Margin="0,0,12,0"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+
+                            <CheckBox x:Name="chkAutoDimAnnotations"
+                                      Grid.Row="8"
+                                      Grid.Column="1"
+                                      Content="Label each auto dimension Below (E-C, F-F, C-C, etc.)"
+                                      VerticalAlignment="Center"
+                                      Foreground="{DynamicResource SsSavantForegroundPrimary}"
+                                      ToolTip="When enabled, auto-placed dimensions get a Below label showing the dimension rule (E-C, C-E, E-E, F-F, C-C, C-F)."/>
+
+                        </Grid>
+                    </Border>
+
+                    <!-- Generate options -->
+                    <Border Background="{DynamicResource SsSavantListWellBackground}"
+                            BorderBrush="{DynamicResource SsSavantBorderOuter}"
+                            BorderThickness="1"
+                            CornerRadius="10"
+                            Padding="14">
+                        <StackPanel>
+                            <TextBlock Text="Generate Options"
+                                       FontWeight="SemiBold"
+                                       Margin="0,0,0,12"
+                                       Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+                            <StackPanel Orientation="Horizontal">
+                                <CheckBox x:Name="chkNumberWelds"
+                                          Margin="0,0,24,0"
+                                          VerticalAlignment="Center"
+                                          VerticalContentAlignment="Center"
+                                          Content="Number Welds"
+                                          ToolTip="When enabled, Generate/Refresh numbers and tags shop welds, field welds, and o-lets."
+                                          Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+                                <CheckBox x:Name="chkFillWeldLog"
+                                          Margin="0,0,24,0"
+                                          VerticalAlignment="Center"
+                                          VerticalContentAlignment="Center"
+                                          Content="Fill Weld Log"
+                                          ToolTip="When enabled, Generate/Refresh places one sheet text note per visible weld in the weld log table (see Weld Log Text Type and layout settings)."
+                                          Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+                                <CheckBox x:Name="chkWeldLogEntryFields"
+                                          Margin="0,0,24,0"
+                                          VerticalAlignment="Center"
+                                          VerticalContentAlignment="Center"
+                                          Content="Include Weld Log entry fields"
+                                          ToolTip="When enabled, Spools Combined PDFs get fillable Date, Welder ID, and Initials fields next to each weld number for shop entry."
+                                          Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+                                <CheckBox x:Name="chkContinuationTags"
+                                          VerticalAlignment="Center"
+                                          VerticalContentAlignment="Center"
+                                          Content="Continuation Tags"
+                                          ToolTip="When enabled, Generate Sheets places assembly continuation tags at connections to other assemblies."
+                                          Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+                            </StackPanel>
+                            <CheckBox x:Name="chkWeldTagPackagePrefix"
+                                      Margin="0,12,0,0"
+                                      VerticalAlignment="Center"
+                                      VerticalContentAlignment="Center"
+                                      Content="Prefix weld tags with Package # (e.g. B0001-CHW-11-01)"
+                                      ToolTip="When enabled, weld numbers and weld tags are prefixed with the assembly's Package # and a dash. When off, weld tags are assembly-only (e.g. CHW-11-01)."
+                                      Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+                            <CheckBox x:Name="chkItemNumberCustomFormat"
+                                      Margin="0,14,0,6"
+                                      VerticalAlignment="Center"
+                                      VerticalContentAlignment="Center"
+                                      Content="Custom Item Number prefix / suffix (Straights, Fittings, Valves)"
+                                      ToolTip="When enabled, Item Numbers use separate series with your prefix and suffix (e.g. P-001-S, P-001-F, P-001-V). When off, Standard uses 1, 2, 3… and MMC uses built-in P-###-S / P-###-F."
+                                      Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+                            <Grid Margin="0,0,0,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="88"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="64"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0" Grid.Column="1" Text="Prefix" Margin="0,0,8,4"
+                                           Foreground="{DynamicResource SsSavantForegroundMuted}"/>
+                                <TextBlock Grid.Row="0" Grid.Column="2" Text="Suffix" Margin="0,0,8,4"
+                                           Foreground="{DynamicResource SsSavantForegroundMuted}"/>
+                                <TextBlock Grid.Row="0" Grid.Column="3" Text="Digits" Margin="0,0,0,4"
+                                           Foreground="{DynamicResource SsSavantForegroundMuted}"/>
+                                <TextBlock Grid.Row="1" Grid.Column="0" Text="Straight" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+                                <TextBox x:Name="txtItemNumberStraightPrefix" Grid.Row="1" Grid.Column="1" Margin="0,0,8,6"
+                                         ToolTip="Prefix for straight pipe Item Numbers (e.g. P-)"/>
+                                <TextBox x:Name="txtItemNumberStraightSuffix" Grid.Row="1" Grid.Column="2" Margin="0,0,8,6"
+                                         ToolTip="Suffix for straight pipe Item Numbers (e.g. -S)"/>
+                                <TextBox x:Name="txtItemNumberDigits" Grid.Row="1" Grid.Column="3" Margin="0,0,0,6"
+                                         ToolTip="Zero-pad width for the number (e.g. 3 → 001). Applies to all three series."/>
+                                <TextBlock Grid.Row="2" Grid.Column="0" Text="Fitting" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+                                <TextBox x:Name="txtItemNumberFittingPrefix" Grid.Row="2" Grid.Column="1" Margin="0,0,8,6"
+                                         ToolTip="Prefix for fitting Item Numbers (e.g. P-)"/>
+                                <TextBox x:Name="txtItemNumberFittingSuffix" Grid.Row="2" Grid.Column="2" Margin="0,0,8,6"
+                                         ToolTip="Suffix for fitting Item Numbers (e.g. -F)"/>
+                                <TextBlock Grid.Row="3" Grid.Column="0" Text="Valve" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+                                <TextBox x:Name="txtItemNumberValvePrefix" Grid.Row="3" Grid.Column="1" Margin="0,0,8,0"
+                                         ToolTip="Prefix for valve Item Numbers (e.g. P-)"/>
+                                <TextBox x:Name="txtItemNumberValveSuffix" Grid.Row="3" Grid.Column="2" Margin="0,0,8,0"
+                                         ToolTip="Suffix for valve Item Numbers (e.g. -V)"/>
+                            </Grid>
+                            <TextBlock Text="Example: Prefix P- + Digits 3 + Suffix -S → P-001-S"
+                                       Margin="0,2,0,8" FontSize="11"
+                                       Foreground="{DynamicResource SsSavantForegroundMuted}"/>
+                            <CheckBox x:Name="chkPlaceTrackingQr"
+                                      Margin="0,12,0,0"
+                                      VerticalAlignment="Center"
+                                      VerticalContentAlignment="Center"
+                                      Content="Place tracking QR on spool sheets"
+                                      ToolTip="Places a 1&quot; QR in the titleblock QR slot on create/refresh/plot. Encodes package + assembly for shop tracking."
+                                      Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+                            <TextBlock Text="QR URL base (optional)"
+                                       Margin="0,10,0,4"
+                                       Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+                            <TextBox x:Name="txtQrTrackingUrlBase"
+                                     Margin="0,0,0,0"
+                                     ToolTip="Leave blank to encode SSV2|P={package}|A={assembly}. When set, encodes {base}?p=…&amp;a=… for a future tracking app."/>
+                        </StackPanel>
+                    </Border>
+
+                    </StackPanel>
+                    </ScrollViewer>
+                </TabItem>
+
+                <TabItem Header="TigerStop">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Margin="0,4,0,0">
+                        <Border Background="{DynamicResource SsSavantListWellBackground}"
+                                BorderBrush="{DynamicResource SsSavantBorderOuter}"
+                                BorderThickness="1"
+                                CornerRadius="10"
+                                Padding="14"
+                                Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Text="TigerStop"
+                                           FontSize="16"
+                                           FontWeight="SemiBold"
+                                           Margin="0,0,0,4"
+                                           Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+                                <TextBlock Text="Plot Packages writes one CSV per S-Package and material when TigerStop is checked. Straight pipe only — fittings and valves are excluded. LengthInches is decimal inches for TigerLink. Keywords match S-Material / Part Material and catalog text."
+                                           TextWrapping="Wrap"
+                                           Margin="0,0,0,12"
+                                           Foreground="{DynamicResource SsSavantForegroundMuted}"/>
+                                <TextBlock Text="CSV columns (export order)"
+                                           Margin="0,0,0,4"
+                                           Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+                                <ListBox x:Name="lstTigerStopColumns"
+                                         MinHeight="120"
+                                         MaxHeight="180"
+                                         Margin="0,0,0,8"/>
+                                <Grid Margin="0,0,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <ComboBox x:Name="cmbTigerStopColumnAdd"
+                                              Grid.Column="0"
+                                              Height="28"
+                                              Margin="0,0,8,0"
+                                              IsEditable="False"/>
+                                    <Button x:Name="btnTigerStopColumnAdd"
+                                            Grid.Column="1"
+                                            Content="Add"
+                                            Height="28"
+                                            MinWidth="64"
+                                            Margin="0,0,8,0"
+                                            Padding="10,0"/>
+                                    <Button x:Name="btnTigerStopColumnRemove"
+                                            Grid.Column="2"
+                                            Content="Remove"
+                                            Height="28"
+                                            MinWidth="72"
+                                            Margin="0,0,8,0"
+                                            Padding="10,0"/>
+                                    <StackPanel Grid.Column="3" Orientation="Horizontal">
+                                        <Button x:Name="btnTigerStopColumnUp"
+                                                Content="Up"
+                                                Height="28"
+                                                MinWidth="48"
+                                                Margin="0,0,4,0"
+                                                Padding="8,0"/>
+                                        <Button x:Name="btnTigerStopColumnDown"
+                                                Content="Down"
+                                                Height="28"
+                                                MinWidth="56"
+                                                Padding="8,0"/>
+                                    </StackPanel>
+                                </Grid>
+                                <TextBlock Text="Copper keywords"
+                                           Margin="0,0,0,4"
+                                           Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+                                <TextBox x:Name="txtTigerStopCopperKeywords"
+                                         MinHeight="56"
+                                         AcceptsReturn="True"
+                                         TextWrapping="Wrap"
+                                         VerticalScrollBarVisibility="Auto"
+                                         Margin="0,0,0,12"/>
+                                <TextBlock Text="PVC keywords"
+                                           Margin="0,0,0,4"
+                                           Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+                                <TextBox x:Name="txtTigerStopPvcKeywords"
+                                         MinHeight="56"
+                                         AcceptsReturn="True"
+                                         TextWrapping="Wrap"
+                                         VerticalScrollBarVisibility="Auto"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                    </ScrollViewer>
+                </TabItem>
+
+                <TabItem Header="PCF Files">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Margin="0,4,0,0">
+                        <Border Background="{DynamicResource SsSavantListWellBackground}"
+                                BorderBrush="{DynamicResource SsSavantBorderOuter}"
+                                BorderThickness="1"
+                                CornerRadius="10"
+                                Padding="14"
+                                Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Text="PCF Files"
+                                           FontSize="16"
+                                           FontWeight="SemiBold"
+                                           Margin="0,0,0,4"
+                                           Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+                                <TextBlock Text="Plot Packages writes one PCF per S-Package and material family (Steel, Cast Iron, Copper, PVC; unclassified parts go to Other). New catalog Item Codes are appended to the piping specification workbook (duplicates skipped). Choose which component fields to include. Keywords match S-Material / Part Material and catalog text."
+                                           TextWrapping="Wrap"
+                                           Margin="0,0,0,12"
+                                           Foreground="{DynamicResource SsSavantForegroundMuted}"/>
+                                <TextBlock Text="PCF fields (export order)"
+                                           Margin="0,0,0,4"
+                                           Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+                                <ListBox x:Name="lstPcfFields"
+                                         MinHeight="120"
+                                         MaxHeight="180"
+                                         Margin="0,0,0,8"/>
+                                <Grid Margin="0,0,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <ComboBox x:Name="cmbPcfFieldAdd"
+                                              Grid.Column="0"
+                                              Height="28"
+                                              Margin="0,0,8,0"
+                                              IsEditable="False"/>
+                                    <Button x:Name="btnPcfFieldAdd"
+                                            Grid.Column="1"
+                                            Content="Add"
+                                            Height="28"
+                                            MinWidth="64"
+                                            Margin="0,0,8,0"
+                                            Padding="10,0"/>
+                                    <Button x:Name="btnPcfFieldRemove"
+                                            Grid.Column="2"
+                                            Content="Remove"
+                                            Height="28"
+                                            MinWidth="72"
+                                            Margin="0,0,8,0"
+                                            Padding="10,0"/>
+                                    <StackPanel Grid.Column="3" Orientation="Horizontal">
+                                        <Button x:Name="btnPcfFieldUp"
+                                                Content="Up"
+                                                Height="28"
+                                                MinWidth="48"
+                                                Margin="0,0,4,0"
+                                                Padding="8,0"/>
+                                        <Button x:Name="btnPcfFieldDown"
+                                                Content="Down"
+                                                Height="28"
+                                                MinWidth="56"
+                                                Padding="8,0"/>
+                                    </StackPanel>
+                                </Grid>
+                                <TextBlock Text="Piping specification catalog"
+                                           Margin="0,0,0,4"
+                                           Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+                                <TextBlock Text="Choose the Excel workbook PCF export should update. The path is saved with your settings. New Item Codes are appended; duplicates are skipped."
+                                           TextWrapping="Wrap"
+                                           Margin="0,0,0,4"
+                                           Foreground="{DynamicResource SsSavantForegroundMuted}"/>
+                                <Grid Margin="0,0,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox x:Name="txtPipingSpecCatalogPath"
+                                             Height="28"
+                                             Margin="0,0,8,0"
+                                             VerticalContentAlignment="Center"
+                                             ToolTip="Saved catalog workbook path"/>
+                                    <Button x:Name="btnBrowsePipingSpecCatalog"
+                                            Grid.Column="1"
+                                            Content="Browse…"
+                                            Height="28"
+                                            MinWidth="88"
+                                            Padding="10,0"/>
+                                </Grid>
+                                <TextBlock Text="Copper keywords"
+                                           Margin="0,0,0,4"
+                                           Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+                                <TextBox x:Name="txtPcfCopperKeywords"
+                                         MinHeight="56"
+                                         AcceptsReturn="True"
+                                         TextWrapping="Wrap"
+                                         VerticalScrollBarVisibility="Auto"
+                                         Margin="0,0,0,12"/>
+                                <TextBlock Text="PVC keywords"
+                                           Margin="0,0,0,4"
+                                           Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+                                <TextBox x:Name="txtPcfPvcKeywords"
+                                         MinHeight="56"
+                                         AcceptsReturn="True"
+                                         TextWrapping="Wrap"
+                                         VerticalScrollBarVisibility="Auto"
+                                         Margin="0,0,0,12"/>
+                                <TextBlock Text="Steel keywords"
+                                           Margin="0,0,0,4"
+                                           Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+                                <TextBox x:Name="txtPcfSteelKeywords"
+                                         MinHeight="56"
+                                         AcceptsReturn="True"
+                                         TextWrapping="Wrap"
+                                         VerticalScrollBarVisibility="Auto"
+                                         Margin="0,0,0,12"/>
+                                <TextBlock Text="Cast Iron keywords"
+                                           Margin="0,0,0,4"
+                                           Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+                                <TextBox x:Name="txtPcfCastIronKeywords"
+                                         MinHeight="56"
+                                         AcceptsReturn="True"
+                                         TextWrapping="Wrap"
+                                         VerticalScrollBarVisibility="Auto"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                    </ScrollViewer>
+                </TabItem>
+
+                <TabItem Header="Boardroom">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Margin="0,4,0,0">
+                        <Border Background="{DynamicResource SsSavantListWellBackground}"
+                                BorderBrush="{DynamicResource SsSavantBorderOuter}"
+                                BorderThickness="1"
+                                CornerRadius="10"
+                                Padding="14"
+                                Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Text="BIM Boardroom connection"
+                                           FontSize="16"
+                                           FontWeight="SemiBold"
+                                           Margin="0,0,0,4"
+                                           Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+                                <TextBlock Text="BIM Boardroom must be running. Spooling Savant loads live projects and Spooling-board tasks from this local API (default http://127.0.0.1:17321)."
+                                           TextWrapping="Wrap"
+                                           Margin="0,0,0,12"
+                                           Foreground="{DynamicResource SsSavantForegroundMuted}"/>
+                                <TextBlock Text="Boardroom API URL"
+                                           Margin="0,0,0,4"
+                                           Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+                                <TextBox x:Name="txtBoardroomApiBaseUrl"
+                                         Height="28"
+                                         Margin="0,0,0,8"
+                                         VerticalContentAlignment="Center"
+                                         ToolTip="http://127.0.0.1:17321"/>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                    <Button x:Name="btnTestBoardroomApi"
+                                            Content="Test connection"
+                                            Height="28"
+                                            MinWidth="120"
+                                            Padding="10,0"
+                                            Margin="0,0,8,0"/>
+                                    <Button x:Name="btnUseDefaultBoardroomApi"
+                                            Content="Use default URL"
+                                            Height="28"
+                                            MinWidth="120"
+                                            Padding="10,0"/>
+                                </StackPanel>
+                                <TextBlock x:Name="txtBoardroomApiStatus"
+                                           TextWrapping="Wrap"
+                                           Foreground="{DynamicResource SsSavantForegroundMuted}"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                    </ScrollViewer>
+                </TabItem>
+            </TabControl>
+
+            <!-- Footer -->
+            <Grid Grid.Row="2" Margin="0,12,0,0">
+                <StackPanel Orientation="Horizontal"
+                            HorizontalAlignment="Right"
+                            VerticalAlignment="Center">
+                    <Button x:Name="btnCancel"
+                            Content="Cancel"
+                            Width="100"
+                            Height="32"
+                            Margin="0,0,8,0"
+                            Click="BtnCancel_Click"/>
+                    <Button x:Name="btnSave"
+                            Content="Save"
+                            Width="100"
+                            Height="32"
+                            Click="BtnSave_Click"/>
+                </StackPanel>
+            </Grid>
+        </Grid>
+    </Border>
+</Window>
+
+
