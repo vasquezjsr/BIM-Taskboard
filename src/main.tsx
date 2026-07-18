@@ -2,7 +2,8 @@ import { StrictMode, Component, type ErrorInfo, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
 import { useStore } from './store/useStore';
-import { pullDevStoreSync, pushDevStoreSyncIfNewer } from './utils/devStoreSyncStorage';
+import { startBoardroomApiBridge } from './boardroomApiBridge';
+import { pushDevStoreSyncIfNewer } from './utils/devStoreSyncStorage';
 import './styles/global.css';
 
 /** Match Electron default zoom when running in the browser dev server. */
@@ -48,46 +49,17 @@ class AppErrorBoundary extends Component<{ children: ReactNode }, { error: Error
   }
 }
 
-async function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<T>((resolve) => {
-      window.setTimeout(() => resolve(fallback), ms);
-    }),
-  ]);
-}
-
 async function bootstrapDevStoreSync() {
   try {
-    const pulled = await withTimeout(pullDevStoreSync(), 2500, false);
-    if (pulled) {
-      await Promise.race([
-        Promise.resolve(useStore.persist.rehydrate()),
-        new Promise<void>((resolve) => window.setTimeout(resolve, 2500)),
-      ]);
-    }
+    // Push-only: never pull shared disk state over this window (refresh was wiping projects).
     await Promise.race([
       pushDevStoreSyncIfNewer(),
       new Promise<void>((resolve) => window.setTimeout(resolve, 2500)),
     ]);
 
-    const pullAndRehydrate = async () => {
-      const updated = await withTimeout(pullDevStoreSync(), 2500, false);
-      if (updated) {
-        await Promise.race([
-          Promise.resolve(useStore.persist.rehydrate()),
-          new Promise<void>((resolve) => window.setTimeout(resolve, 2500)),
-        ]);
-      }
-    };
-
     window.addEventListener('focus', () => {
-      void pullAndRehydrate();
+      void pushDevStoreSyncIfNewer();
     });
-
-    window.setInterval(() => {
-      void pullAndRehydrate();
-    }, 3000);
   } catch (error) {
     console.error('Dev store sync failed', error);
   }
@@ -102,7 +74,10 @@ function startApp() {
     </StrictMode>
   );
 
+  startBoardroomApiBridge();
+
   if (import.meta.env.DEV) {
+    (window as Window & { __BIM_STORE__?: typeof useStore }).__BIM_STORE__ = useStore;
     void bootstrapDevStoreSync();
   }
 }

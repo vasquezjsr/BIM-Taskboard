@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
 import { useStore } from '../store/useStore';
 import {
-  canAssignDetailerTrade,
   getEmployeeManagers,
   inferOrgCategory,
+  orgCategoryLabel,
 } from '../utils/orgChart';
 import { canManageOrg } from '../utils/permissions';
 import {
@@ -22,6 +22,12 @@ import {
   type EmployeeStageId,
 } from '../utils/employeeDashboardStages';
 import {
+  findEmployeeJobTitle,
+  jobTitleGroup,
+  jobTitleIdForEmployee,
+  stageForJobTitle,
+} from '../utils/employeeJobs';
+import {
   createDefaultDashboardAssignments,
   dashboardRolesFor,
   DASHBOARD_META,
@@ -29,7 +35,8 @@ import {
 import { employeeAssigneeStyle, employeeInitials, isOwnerEmployee, isProtectedRosterEmployee } from '../data/employees';
 import { isValidEmail } from '../utils/auth';
 import { EmployeeInviteModal, type EmployeeInviteDetails } from './EmployeeInviteModal';
-import { PermissionToggles, WorksUnderPicker } from './EmployeeFormControls';
+import { JobTitlesSettingsModal } from './JobTitlesSettingsModal';
+import { WorksUnderPicker } from './EmployeeFormControls';
 import formStyles from './EmployeeManagementDialog.module.css';
 import styles from './EmployeeDashboardView.module.css';
 
@@ -38,6 +45,7 @@ export function EmployeeDashboardView() {
   const employeeReportsTo = useStore((s) => s.employeeReportsTo);
   const employeePermissions = useStore((s) => s.employeePermissions);
   const employeeCredentials = useStore((s) => s.employeeCredentials);
+  const employeeJobTitles = useStore((s) => s.employeeJobTitles);
   const dashboardAssignments = useStore(
     (s) => s.dashboardAssignments ?? createDefaultDashboardAssignments()
   );
@@ -48,8 +56,8 @@ export function EmployeeDashboardView() {
   const removeEmployee = useStore((s) => s.removeEmployee);
   const updateEmployee = useStore((s) => s.updateEmployee);
   const updateEmployeeEmail = useStore((s) => s.updateEmployeeEmail);
+  const changeEmployeeJob = useStore((s) => s.changeEmployeeJob);
   const toggleEmployeeManager = useStore((s) => s.toggleEmployeeManager);
-  const setEmployeePermission = useStore((s) => s.setEmployeePermission);
   const assignDashboardMember = useStore((s) => s.assignDashboardMember);
   const unassignDashboardMember = useStore((s) => s.unassignDashboardMember);
 
@@ -57,6 +65,7 @@ export function EmployeeDashboardView() {
   const [pickerRole, setPickerRole] = useState<{ dashboard: DashboardType; roleId: string } | null>(
     null
   );
+  const [jobTitlesOpen, setJobTitlesOpen] = useState(false);
   const [newName, setNewName] = useState('');
   const [newEmail, setNewEmail] = useState('');
   const [newRole, setNewRole] = useState<EmployeeRole>('detailer');
@@ -66,11 +75,14 @@ export function EmployeeDashboardView() {
   const memberIds = useMemo(() => employees.map((employee) => employee.id), [employees]);
   const editorUserId = viewAsOriginalUserId ?? currentUserId;
   const canManage = canManageOrg(editorUserId, employees, employeePermissions);
-  const counts = useMemo(() => stageCounts(employees, dashboardAssignments), [employees, dashboardAssignments]);
+  const counts = useMemo(
+    () => stageCounts(employees, dashboardAssignments, employeeJobTitles),
+    [employees, dashboardAssignments, employeeJobTitles]
+  );
   const stageMeta = EMPLOYEE_STAGES.find((stage) => stage.id === activeStage)!;
   const stageEmployees = useMemo(
-    () => employeesForStage(activeStage, employees, dashboardAssignments),
-    [activeStage, employees, dashboardAssignments]
+    () => employeesForStage(activeStage, employees, dashboardAssignments, employeeJobTitles),
+    [activeStage, employees, dashboardAssignments, employeeJobTitles]
   );
 
   const trimmedName = newName.trim();
@@ -95,60 +107,62 @@ export function EmployeeDashboardView() {
 
   const renderRoleLabel = (emp: Employee) => {
     if (isOwnerEmployee(emp)) return 'Owner';
-    if (emp.role === 'operations') return 'Operations';
-    if (emp.role === 'support-specialist') {
-      return inferOrgCategory(emp) === 'support-manager'
-        ? 'Support Manager'
-        : 'Support Specialist';
+    if (emp.jobTitleId) {
+      const title = findEmployeeJobTitle(employeeJobTitles, emp.jobTitleId);
+      if (title) return title.label;
     }
-    const category = DETAILER_ORG_CATEGORIES.find((entry) => entry.id === inferOrgCategory(emp));
-    return category?.label ?? 'Detailer';
+    const category = inferOrgCategory(emp);
+    if (
+      category === 'owner' ||
+      category === 'bim-manager' ||
+      category === 'operations-manager' ||
+      category === 'support-manager' ||
+      category === 'support-specialist'
+    ) {
+      return orgCategoryLabel(category);
+    }
+    if (emp.role === 'operations') return 'Operations';
+    const detailer = DETAILER_ORG_CATEGORIES.find((entry) => entry.id === category);
+    return detailer?.label ?? 'Detailer';
   };
 
   const renderRoleField = (emp: Employee) => {
     if (isOwnerEmployee(emp)) {
       return <span className={formStyles.roleBadge}>Owner</span>;
     }
-    if (emp.role === 'operations') {
-      return <span className={formStyles.roleBadge}>Operations</span>;
+    if (!canManage || isProtectedRosterEmployee(emp.id)) {
+      return <span className={formStyles.cellText}>{renderRoleLabel(emp)}</span>;
     }
-    if (emp.role === 'support-specialist') {
-      if (!canManage) return <span className={formStyles.cellText}>Support Specialist</span>;
-      return (
-        <select
-          className={formStyles.cellSelect}
-          value={emp.role}
-          onChange={(e) => updateEmployee(emp.id, { role: e.target.value as EmployeeRole })}
-        >
-          {EMPLOYEE_ROLES.map((role) => (
-            <option key={role.id} value={role.id}>
-              {role.label}
-            </option>
-          ))}
-        </select>
-      );
-    }
-    if (canAssignDetailerTrade(emp)) {
-      if (!canManage) {
-        return <span className={formStyles.cellText}>{renderRoleLabel(emp)}</span>;
-      }
-      return (
-        <select
-          className={formStyles.cellSelect}
-          value={inferOrgCategory(emp)}
-          onChange={(e) =>
-            updateEmployee(emp.id, { orgCategory: e.target.value as OrgCategory })
-          }
-        >
-          {DETAILER_ORG_CATEGORIES.map((category) => (
-            <option key={category.id} value={category.id}>
-              {category.label}
-            </option>
-          ))}
-        </select>
-      );
-    }
-    return <span className={formStyles.roleBadge}>{renderRoleLabel(emp)}</span>;
+
+    const currentJobId = jobTitleIdForEmployee(emp, dashboardAssignments, employeeJobTitles);
+    const groups = ['Office', 'Detailers', 'Operations'] as const;
+
+    return (
+      <select
+        className={formStyles.cellSelect}
+        value={currentJobId}
+        aria-label={`Job title for ${emp.name}`}
+        title="Promote or change this person’s job"
+        onChange={(e) => {
+          const title = findEmployeeJobTitle(employeeJobTitles, e.target.value);
+          if (!title) return;
+          changeEmployeeJob(emp.id, title.id);
+          setActiveStage(stageForJobTitle(title));
+        }}
+      >
+        {groups.map((group) => (
+          <optgroup key={group} label={group}>
+            {employeeJobTitles
+              .filter((title) => jobTitleGroup(title.stageId) === group)
+              .map((title) => (
+                <option key={title.id} value={title.id}>
+                  {title.label}
+                </option>
+              ))}
+          </optgroup>
+        ))}
+      </select>
+    );
   };
 
   const renderEmployeeCard = (emp: Employee) => {
@@ -156,7 +170,6 @@ export function EmployeeDashboardView() {
     const managerOptions = employees
       .filter((entry) => entry.id !== emp.id)
       .sort((a, b) => a.name.localeCompare(b.name));
-    const permissions = employeePermissions[emp.id] ?? [];
     const email = employeeCredentials[emp.id]?.email ?? '';
     const badge = employeeAssigneeStyle(emp.id, assigneeStyles);
 
@@ -198,9 +211,14 @@ export function EmployeeDashboardView() {
             <button
               type="button"
               className={styles.removeBtn}
-              onClick={() => removeEmployee(emp.id)}
-              title={`Remove ${emp.name}`}
-              aria-label={`Remove ${emp.name}`}
+              onClick={() => {
+                const confirmed = window.confirm(
+                  `Remove ${emp.name} from the company roster?\n\nThis deletes them everywhere (not just this stage). You can restore them from the Activity Log.`
+                );
+                if (confirmed) removeEmployee(emp.id);
+              }}
+              title={`Delete ${emp.name} from roster`}
+              aria-label={`Delete ${emp.name} from roster`}
             >
               ×
             </button>
@@ -235,7 +253,7 @@ export function EmployeeDashboardView() {
             )}
           </div>
 
-          <span className={styles.fieldLabel}>Role</span>
+          <span className={styles.fieldLabel}>Job title</span>
           <div>{renderRoleField(emp)}</div>
 
           <span className={styles.fieldLabel}>Reports to</span>
@@ -250,18 +268,6 @@ export function EmployeeDashboardView() {
               disabled={!canManage}
             />
           </div>
-        </div>
-
-        <div className={styles.permissionsBlock}>
-          <span className={styles.fieldLabel}>Permissions</span>
-          <PermissionToggles
-            permissions={permissions}
-            onToggle={(permission, enabled) =>
-              setEmployeePermission(emp.id, permission, enabled)
-            }
-            disabled={!canManage}
-            compact
-          />
         </div>
       </article>
     );
@@ -415,31 +421,41 @@ export function EmployeeDashboardView() {
         <div className={styles.titleBlock}>
           <h1>Employees</h1>
           <p>
-            Roster, reporting lines, permissions, and operations assignments — organized by
-            workforce stage so office and field teams stay separate.
+            Roster, reporting lines, and operations assignments — organized by workforce stage so
+            office and field teams stay separate. Manage permissions on Access Control.
           </p>
         </div>
-        <div className={styles.stats}>
-          <span className={styles.statChip}>
-            Total<strong>{totalEmployees}</strong>
-          </span>
-          <span className={styles.statChip}>
-            Office
-            <strong>
-              {officeStages.reduce((sum, stage) => sum + counts[stage.id], 0)}
-            </strong>
-          </span>
-          <span className={styles.statChip}>
-            Operations
-            <strong>{opsStages.reduce((sum, stage) => sum + counts[stage.id], 0)}</strong>
-          </span>
+        <div className={styles.topBarActions}>
+          {canManage && (
+            <button
+              type="button"
+              className={styles.settingsBtn}
+              onClick={() => setJobTitlesOpen(true)}
+            >
+              Job titles
+            </button>
+          )}
+          <div className={styles.stats}>
+            <span className={styles.statChip}>
+              Total<strong>{totalEmployees}</strong>
+            </span>
+            <span className={styles.statChip}>
+              Office
+              <strong>
+                {officeStages.reduce((sum, stage) => sum + counts[stage.id], 0)}
+              </strong>
+            </span>
+            <span className={styles.statChip}>
+              Operations
+              <strong>{opsStages.reduce((sum, stage) => sum + counts[stage.id], 0)}</strong>
+            </span>
+          </div>
         </div>
       </header>
 
       {!canManage && (
         <p className={styles.readOnlyBanner}>
-          You can browse the roster and permissions. Only owners and org managers can edit
-          employees.
+          You can browse the roster. Only owners and org managers can edit employees.
         </p>
       )}
 
@@ -552,6 +568,7 @@ export function EmployeeDashboardView() {
       {pendingInvite && (
         <EmployeeInviteModal invite={pendingInvite} onClose={() => setPendingInvite(null)} />
       )}
+      {jobTitlesOpen && <JobTitlesSettingsModal onClose={() => setJobTitlesOpen(false)} />}
     </div>
   );
 }

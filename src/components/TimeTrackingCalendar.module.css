@@ -248,6 +248,15 @@
   box-shadow: inset 0 0 0 1px rgba(124, 111, 201, 0.25);
 }
 
+.dayEntryChipOpen {
+  background: rgba(110, 231, 183, 0.12);
+  border-color: rgba(52, 211, 153, 0.35);
+}
+
+.dayEntryChipOpen .dayEntryTime {
+  color: var(--level2-accent);
+}
+
 .dayEntryTask {
   display: block;
   width: 100%;

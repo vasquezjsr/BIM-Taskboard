@@ -145,6 +145,12 @@
   color: var(--support-board-text);
 }
 
+.fieldChip.chipSelected {
+  background: rgba(22, 163, 74, 0.22);
+  border-color: #86efac;
+  color: #bbf7d0;
+}
+
 .checkMark {
   margin-right: 4px;
   font-size: 11px;

@@ -184,16 +184,194 @@ export const DEFAULT_FIELD_TASK_STATUSES: TaskStatusDefinition[] = [
 /** Fab shop production workflow */
 export const DEFAULT_FAB_TASK_STATUSES: TaskStatusDefinition[] = [
   { id: 'not-started', label: 'Not Started', color: '#94a3b8' },
+  /** Return package to the Spooling board when the export needs rework. */
+  { id: 'spooling', label: 'Spooling', color: '#fdba74' },
   { id: 'queued', label: 'Queued', color: '#fde68a' },
+  { id: 'pulling-material', label: 'Pulling Material', color: '#c4b5fd' },
   { id: 'material-pulled', label: 'Material Pulled', color: '#cbd5e1' },
+  /** Package-level: any assembly is In Fab (Mech/Plmb/HVAC). */
+  { id: 'in-progress', label: 'In Progress', color: '#93c5fd' },
   { id: 'in-fab-mech', label: 'In Fab (Mech)', color: '#93c5fd' },
   { id: 'in-fab-plmb', label: 'In Fab (Plmb)', color: '#7dd3fc' },
   { id: 'in-fab-hvac', label: 'In Fab (HVAC)', color: '#a5b4fc' },
   { id: 'qa-review', label: 'QA Review', color: '#f9a8d4' },
   { id: 'rework', label: 'Rework', color: '#fca5a5' },
-  { id: 'ready-to-ship', label: 'Ready to Ship', color: '#fdba74' },
+  { id: 'ready-to-ship', label: 'Ready for Shipping', color: '#fdba74' },
   { id: 'complete', label: 'Complete', color: '#86efac', countsAsComplete: true },
 ];
+
+export const FAB_WAREHOUSE_ACTIVE_STATUSES = ['queued', 'pulling-material'] as const;
+export const FAB_WAREHOUSE_STATUS_OPTIONS = [
+  'queued',
+  'pulling-material',
+  'material-pulled',
+] as const;
+
+/** Queued Dashboard — leave once fabrication starts (or later). */
+export const FAB_QUEUE_ACTIVE_STATUSES = [
+  'not-started',
+  'queued',
+  'pulling-material',
+  'material-pulled',
+] as const;
+
+/** Assembly is actively being fabricated in a shop department. */
+export const FAB_IN_FAB_STATUSES = ['in-fab-mech', 'in-fab-plmb', 'in-fab-hvac'] as const;
+
+/** Terminal / leave-Fab package status (handoff to Shipping). */
+export const FAB_SHIPPED_STATUSES = ['ready-to-ship'] as const;
+
+export function isFabInFabStatus(status: string): boolean {
+  return (FAB_IN_FAB_STATUSES as readonly string[]).includes(
+    status as (typeof FAB_IN_FAB_STATUSES)[number]
+  );
+}
+
+export function isFabShippedStatus(status: string): boolean {
+  return (FAB_SHIPPED_STATUSES as readonly string[]).includes(
+    status as (typeof FAB_SHIPPED_STATUSES)[number]
+  );
+}
+
+export function isAssemblyCompleteStatus(
+  status: string,
+  statuses?: { id: string; countsAsComplete?: boolean }[]
+): boolean {
+  if (status === 'complete') return true;
+  return Boolean(statuses?.find((entry) => entry.id === status)?.countsAsComplete);
+}
+
+/** Inject Pulling Material into persisted fab status lists that predate it. */
+export function ensureFabPullingMaterialStatus(
+  statuses: TaskStatusDefinition[]
+): TaskStatusDefinition[] {
+  if (statuses.some((status) => status.id === 'pulling-material')) return statuses;
+  const insert: TaskStatusDefinition = {
+    id: 'pulling-material',
+    label: 'Pulling Material',
+    color: '#c4b5fd',
+  };
+  const materialIdx = statuses.findIndex((status) => status.id === 'material-pulled');
+  if (materialIdx < 0) return [...statuses, insert];
+  const next = [...statuses];
+  next.splice(materialIdx, 0, insert);
+  return next;
+}
+
+/** Inject Spooling into persisted fab status lists that predate the return-to-spooling path. */
+export function ensureFabSpoolingStatus(
+  statuses: TaskStatusDefinition[]
+): TaskStatusDefinition[] {
+  if (statuses.some((status) => status.id === 'spooling')) return statuses;
+  const insert: TaskStatusDefinition = {
+    id: 'spooling',
+    label: 'Spooling',
+    color: '#fdba74',
+  };
+  const queuedIdx = statuses.findIndex((status) => status.id === 'queued');
+  if (queuedIdx < 0) {
+    const notStartedIdx = statuses.findIndex((status) => status.id === 'not-started');
+    if (notStartedIdx < 0) return [insert, ...statuses];
+    const next = [...statuses];
+    next.splice(notStartedIdx + 1, 0, insert);
+    return next;
+  }
+  const next = [...statuses];
+  next.splice(queuedIdx, 0, insert);
+  return next;
+}
+
+/** Inject package-level In Progress into persisted fab status lists. */
+export function ensureFabInProgressStatus(
+  statuses: TaskStatusDefinition[]
+): TaskStatusDefinition[] {
+  if (statuses.some((status) => status.id === 'in-progress')) return statuses;
+  const insert: TaskStatusDefinition = {
+    id: 'in-progress',
+    label: 'In Progress',
+    color: '#93c5fd',
+  };
+  const inFabIdx = statuses.findIndex((status) => status.id.startsWith('in-fab'));
+  if (inFabIdx >= 0) {
+    const next = [...statuses];
+    next.splice(inFabIdx, 0, insert);
+    return next;
+  }
+  const materialIdx = statuses.findIndex((status) => status.id === 'material-pulled');
+  if (materialIdx >= 0) {
+    const next = [...statuses];
+    next.splice(materialIdx + 1, 0, insert);
+    return next;
+  }
+  return [...statuses, insert];
+}
+
+/** Ensure assembly Complete exists on persisted fab status lists. */
+export function ensureFabCompleteStatus(
+  statuses: TaskStatusDefinition[]
+): TaskStatusDefinition[] {
+  if (statuses.some((status) => status.id === 'complete')) {
+    return statuses.map((status) =>
+      status.id === 'complete'
+        ? {
+            ...status,
+            label: status.label || 'Complete',
+            countsAsComplete: true,
+            color: status.color || '#86efac',
+          }
+        : status.id === 'ready-to-ship'
+          ? { ...status, label: 'Ready for Shipping' }
+          : status
+    );
+  }
+  const insert: TaskStatusDefinition = {
+    id: 'complete',
+    label: 'Complete',
+    color: '#86efac',
+    countsAsComplete: true,
+  };
+  const readyIdx = statuses.findIndex((status) => status.id === 'ready-to-ship');
+  if (readyIdx >= 0) {
+    const next = statuses.map((status) =>
+      status.id === 'ready-to-ship' ? { ...status, label: 'Ready for Shipping' } : status
+    );
+    next.splice(readyIdx + 1, 0, insert);
+    return next;
+  }
+  return [...statuses, insert];
+}
+
+/** Keep fab status lists current for shop workstation dropdowns. */
+export function ensureFabWorkstationStatuses(
+  statuses: TaskStatusDefinition[]
+): TaskStatusDefinition[] {
+  return ensureFabCompleteStatus(
+    ensureFabInProgressStatus(
+      ensureFabSpoolingStatus(ensureFabPullingMaterialStatus(statuses))
+    )
+  );
+}
+
+/** Terminal / leave-Shipping package status (handoff to Field). */
+export const SHIPPING_HANDED_TO_FIELD_STATUSES = ['received-field'] as const;
+
+export function isShippingHandedToFieldStatus(status: string): boolean {
+  return (SHIPPING_HANDED_TO_FIELD_STATUSES as readonly string[]).includes(
+    status as (typeof SHIPPING_HANDED_TO_FIELD_STATUSES)[number]
+  );
+}
+
+/** Primary field install lanes used on the Field Dashboard. */
+export const FIELD_WORKFLOW_LANES = [
+  'material-on-site',
+  'rough-in',
+  'hydro-test',
+  'trim-out',
+  'punch-list',
+  'as-built-update',
+  'final-inspection',
+  'complete',
+] as const;
 
 /** Shipping & logistics workflow */
 export const DEFAULT_SHIPPING_TASK_STATUSES: TaskStatusDefinition[] = [
@@ -233,6 +411,9 @@ export function normalizeTaskStatuses(
       color: s.color || LEGACY_COLORS[s.id] || '#94a3b8',
       countsAsComplete: s.countsAsComplete ?? s.id === 'complete',
       ...(s.autoAssignTeam !== undefined ? { autoAssignTeam: s.autoAssignTeam } : {}),
+      ...(s.autoAssignEmployeeId !== undefined
+        ? { autoAssignEmployeeId: s.autoAssignEmployeeId }
+        : {}),
     });
   }
   return result.length ? result : [...DEFAULT_TASK_STATUSES];
@@ -284,10 +465,14 @@ export function getBoardTaskStatuses(
   }
 
   if (projectId && projectBoardTaskStatuses?.[projectId]?.[boardType]?.length) {
-    return normalizeTaskStatuses(projectBoardTaskStatuses[projectId]![boardType]);
+    const list = normalizeTaskStatuses(projectBoardTaskStatuses[projectId]![boardType]);
+    return boardType === 'fab' ? ensureFabWorkstationStatuses(list) : list;
   }
   const list = boardTaskStatuses[boardType];
-  if (list?.length) return normalizeTaskStatuses(list);
+  if (list?.length) {
+    const normalized = normalizeTaskStatuses(list);
+    return boardType === 'fab' ? ensureFabWorkstationStatuses(normalized) : normalized;
+  }
   const main = boardTaskStatuses.main;
   if (main?.length) return normalizeTaskStatuses(main);
   return [...DEFAULT_TASK_STATUSES];

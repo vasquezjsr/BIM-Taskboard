@@ -16,6 +16,9 @@ export const FAB_STAFF_IDS = [
   'emp-fab-5',
   'emp-fab-6',
   'emp-fab-7',
+  'emp-fab-8',
+  'emp-fab-9',
+  'emp-fab-10',
 ] as const;
 
 /** Shipping roster */
@@ -34,6 +37,9 @@ export const DEPARTMENT_STAFF: Employee[] = [
   { id: 'emp-fab-5', name: 'Ethan Walsh', role: 'operations', orgCategory: 'operations-staff' },
   { id: 'emp-fab-6', name: 'Olivia Marsh', role: 'operations', orgCategory: 'operations-staff' },
   { id: 'emp-fab-7', name: 'Jaden Cole', role: 'operations', orgCategory: 'operations-staff' },
+  { id: 'emp-fab-8', name: 'Ava Brooks', role: 'operations', orgCategory: 'operations-staff' },
+  { id: 'emp-fab-9', name: 'Miles Chen', role: 'operations', orgCategory: 'operations-staff' },
+  { id: 'emp-fab-10', name: 'Priya Nair', role: 'operations', orgCategory: 'operations-staff' },
   { id: 'emp-ship-1', name: 'Harper Sloan', role: 'operations', orgCategory: 'operations-staff' },
   { id: 'emp-ship-2', name: 'Mason Price', role: 'operations', orgCategory: 'operations-staff' },
 ];
@@ -57,6 +63,8 @@ export function createSeededDashboardAssignments(): DashboardAssignments {
     },
     fab: {
       'shop-super': ['emp-fab-1'],
+      'warehouse-lead': ['emp-fab-8'],
+      'warehouse-worker': ['emp-fab-9', 'emp-fab-10'],
       'dept-manager-mech': ['emp-fab-2'],
       'dept-manager-plmb': ['emp-fab-3'],
       'dept-manager-hvac': ['emp-fab-4'],
@@ -95,20 +103,32 @@ export function mergeDashboardAssignments(
       ),
     },
     fab: {
-      'shop-super': mergeRoleIds(current.fab['shop-super'], seeded.fab['shop-super']),
+      'shop-super': mergeRoleIds(current.fab?.['shop-super'] ?? [], seeded.fab['shop-super']),
+      'warehouse-lead': mergeRoleIds(
+        [
+          ...(current.fab?.['warehouse-lead'] ?? []),
+          // Migrate legacy single `warehouse` role → warehouse-lead
+          ...((current.fab as { warehouse?: string[] } | undefined)?.warehouse ?? []),
+        ],
+        seeded.fab['warehouse-lead']
+      ),
+      'warehouse-worker': mergeRoleIds(
+        current.fab?.['warehouse-worker'] ?? [],
+        seeded.fab['warehouse-worker']
+      ),
       'dept-manager-mech': mergeRoleIds(
-        current.fab['dept-manager-mech'],
+        current.fab?.['dept-manager-mech'] ?? [],
         seeded.fab['dept-manager-mech']
       ),
       'dept-manager-plmb': mergeRoleIds(
-        current.fab['dept-manager-plmb'],
+        current.fab?.['dept-manager-plmb'] ?? [],
         seeded.fab['dept-manager-plmb']
       ),
       'dept-manager-hvac': mergeRoleIds(
-        current.fab['dept-manager-hvac'],
+        current.fab?.['dept-manager-hvac'] ?? [],
         seeded.fab['dept-manager-hvac']
       ),
-      worker: mergeRoleIds(current.fab.worker, seeded.fab.worker),
+      worker: mergeRoleIds(current.fab?.worker ?? [], seeded.fab.worker),
     },
     shipping: {
       'shipping-manager': mergeRoleIds(
@@ -123,13 +143,19 @@ export function mergeDashboardAssignments(
 export function operationsDashboardPermissions(employeeId: string): AppPermission[] {
   const permissions: AppPermission[] = [];
   if ((PM_STAFF_IDS as readonly string[]).includes(employeeId)) {
-    permissions.push('view-pm-dashboard', 'view-field-dashboard', 'view-fab-dashboard', 'view-shipping-dashboard');
+    permissions.push(
+      'view-pm-dashboard',
+      'view-field-dashboard',
+      'view-fab-dashboard',
+      'view-shipping-dashboard',
+      'view-weld-log-dashboard'
+    );
   }
   if ((FIELD_STAFF_IDS as readonly string[]).includes(employeeId)) {
-    permissions.push('view-field-dashboard');
+    permissions.push('view-field-dashboard', 'view-weld-log-dashboard');
   }
   if ((FAB_STAFF_IDS as readonly string[]).includes(employeeId)) {
-    permissions.push('view-fab-dashboard');
+    permissions.push('view-fab-dashboard', 'view-weld-log-dashboard');
   }
   if ((SHIPPING_STAFF_IDS as readonly string[]).includes(employeeId)) {
     permissions.push('view-shipping-dashboard');

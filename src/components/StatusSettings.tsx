@@ -16,11 +16,13 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useStore } from '../store/useStore';
-import type { ProjectBoardType, TaskStatusDefinition } from '../types';
+import type { TaskStatusDefinition } from '../types';
+import type { ProjectBoardType } from '../types';
 import {
-  STATUS_AUTO_ASSIGN_OPTIONS,
   autoAssignChoiceFromStatus,
+  autoAssignEmployeeIdToStoreValue,
   autoAssignTeamToStoreValue,
+  buildStatusAutoAssignOptions,
   type StatusAutoAssignChoice,
 } from '../utils/taskAssigneesAuto';
 import { getBoardTaskStatuses, isRfiBoardStatusListLocked } from '../utils/taskStatuses';
@@ -35,16 +37,24 @@ interface StatusSettingsProps {
   onClose: () => void;
 }
 
+type StatusAssignUpdates = Partial<
+  Pick<
+    TaskStatusDefinition,
+    'label' | 'color' | 'countsAsComplete' | 'autoAssignTeam' | 'autoAssignEmployeeId'
+  >
+>;
+
 interface SortableStatusItemProps {
   status: TaskStatusDefinition;
   canRemove: boolean;
   applyAll: boolean;
   projectId: string | null;
   selectedBoard: ProjectBoardType;
+  assignOptions: ReturnType<typeof buildStatusAutoAssignOptions>;
   onUpdate: (
     boardType: ProjectBoardType,
     id: string,
-    updates: Partial<Pick<TaskStatusDefinition, 'label' | 'color' | 'countsAsComplete' | 'autoAssignTeam'>>,
+    updates: StatusAssignUpdates,
     projectId: string | null,
     applyToAllDeliverables: boolean
   ) => void;
@@ -56,12 +66,73 @@ interface SortableStatusItemProps {
   ) => void;
 }
 
+function assignUpdatesFromChoice(choice: string): StatusAssignUpdates {
+  return {
+    autoAssignTeam: autoAssignTeamToStoreValue(choice),
+    autoAssignEmployeeId: autoAssignEmployeeIdToStoreValue(choice),
+  };
+}
+
+function StatusAssignSelect({
+  value,
+  options,
+  onChange,
+  className,
+  title,
+}: {
+  value: StatusAutoAssignChoice;
+  options: ReturnType<typeof buildStatusAutoAssignOptions>;
+  onChange: (choice: string) => void;
+  className: string;
+  title?: string;
+}) {
+  const teamOptions = options.filter((option) => option.group === 'team');
+  const peopleOptions = options.filter((option) => option.group === 'people');
+  const knownIds = new Set(options.map((option) => option.id));
+  const orphanPerson =
+    value.startsWith('person:') && !knownIds.has(value) ? value.slice('person:'.length) : null;
+
+  return (
+    <select
+      className={className}
+      value={value}
+      title={title}
+      onChange={(e) => onChange(e.target.value)}
+    >
+      <optgroup label="Teams">
+        {teamOptions.map((option) => (
+          <option key={option.id} value={option.id}>
+            {option.label}
+          </option>
+        ))}
+      </optgroup>
+      <optgroup label="People">
+        {orphanPerson ? (
+          <option value={value}>{orphanPerson} (missing)</option>
+        ) : null}
+        {peopleOptions.length === 0 ? (
+          <option value="" disabled>
+            No employees yet
+          </option>
+        ) : (
+          peopleOptions.map((option) => (
+            <option key={option.id} value={option.id}>
+              {option.label}
+            </option>
+          ))
+        )}
+      </optgroup>
+    </select>
+  );
+}
+
 function SortableStatusItem({
   status,
   canRemove,
   applyAll,
   projectId,
   selectedBoard,
+  assignOptions,
   onUpdate,
   onRemove,
 }: SortableStatusItemProps) {
@@ -109,27 +180,14 @@ function SortableStatusItem({
       <span className={styles.label}>{status.label}</span>
       <label className={styles.autoAssignField} title="Auto-assign when a task enters this status">
         <span className={styles.autoAssignLabel}>Assign</span>
-        <select
+        <StatusAssignSelect
           className={styles.autoAssignSelect}
-          value={autoAssignChoiceFromStatus(status.autoAssignTeam)}
-          onChange={(e) =>
-            onUpdate(
-              selectedBoard,
-              status.id,
-              {
-                autoAssignTeam: autoAssignTeamToStoreValue(e.target.value as StatusAutoAssignChoice),
-              },
-              projectId,
-              applyAll
-            )
+          value={autoAssignChoiceFromStatus(status.autoAssignTeam, status.autoAssignEmployeeId)}
+          options={assignOptions}
+          onChange={(choice) =>
+            onUpdate(selectedBoard, status.id, assignUpdatesFromChoice(choice), projectId, applyAll)
           }
-        >
-          {STATUS_AUTO_ASSIGN_OPTIONS.map((option) => (
-            <option key={option.id} value={option.id}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+        />
       </label>
       <label className={styles.completeToggle} title="Counts toward progress">
         <input
@@ -161,6 +219,7 @@ function SortableStatusItem({
 }
 
 export function StatusSettings({ initialBoardType, boards, projectId, onClose }: StatusSettingsProps) {
+  const employees = useStore((s) => s.employees);
   const boardTaskStatuses = useStore((s) => s.boardTaskStatuses);
   const projectBoardTaskStatuses = useStore((s) => s.projectBoardTaskStatuses);
   const addBoardTaskStatus = useStore((s) => s.addBoardTaskStatus);
@@ -178,6 +237,11 @@ export function StatusSettings({ initialBoardType, boards, projectId, onClose }:
   const showApplyAllOption = Boolean(projectId && selectedBoard === 'deliverables');
   const effectiveApplyAll = showApplyAllOption && applyToAllDeliverables;
   const isRfiBoard = isRfiBoardStatusListLocked(selectedBoard);
+
+  const assignOptions = useMemo(
+    () => buildStatusAutoAssignOptions(employees.map((employee) => ({ id: employee.id, name: employee.name }))),
+    [employees]
+  );
 
   const statuses = useMemo(
     () => getBoardTaskStatuses(selectedBoard, boardTaskStatuses, projectId, projectBoardTaskStatuses),
@@ -221,7 +285,8 @@ export function StatusSettings({ initialBoardType, boards, projectId, onClose }:
       newLabel.trim(),
       autoAssignTeamToStoreValue(newAutoAssign),
       projectId,
-      effectiveApplyAll
+      effectiveApplyAll,
+      autoAssignEmployeeIdToStoreValue(newAutoAssign)
     );
     setNewLabel('');
     setNewAutoAssign('none');
@@ -320,6 +385,7 @@ export function StatusSettings({ initialBoardType, boards, projectId, onClose }:
                     applyAll={effectiveApplyAll}
                     projectId={projectId}
                     selectedBoard={selectedBoard}
+                    assignOptions={assignOptions}
                     onUpdate={updateBoardTaskStatus}
                     onRemove={removeBoardTaskStatus}
                   />
@@ -343,17 +409,12 @@ export function StatusSettings({ initialBoardType, boards, projectId, onClose }:
             </div>
             <label className={styles.addAutoAssignField}>
               <span className={styles.addAutoAssignLabel}>Auto assign to</span>
-              <select
+              <StatusAssignSelect
                 className={styles.addAutoAssignSelect}
                 value={newAutoAssign}
-                onChange={(e) => setNewAutoAssign(e.target.value as StatusAutoAssignChoice)}
-              >
-                {STATUS_AUTO_ASSIGN_OPTIONS.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+                options={assignOptions}
+                onChange={(choice) => setNewAutoAssign(choice as StatusAutoAssignChoice)}
+              />
             </label>
           </div>
           )}

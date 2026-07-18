@@ -17,6 +17,7 @@ import {
   generateReports,
 } from '../utils/reports/generateReports';
 import { buildReportProjectGroups } from '../utils/reports/reportData';
+import { downloadBoardroomProjectsCsv } from '../utils/exportBoardroomProjectsCsv';
 import styles from './ReportsDialog.module.css';
 
 interface ReportsDialogProps {
@@ -369,6 +370,17 @@ export function ReportsDialog({ activeTab, onClose }: ReportsDialogProps) {
         </div>
 
         <div className={styles.footer}>
+          <button
+            type="button"
+            className={styles.cancelBtn}
+            onClick={() => {
+              downloadBoardroomProjectsCsv(clients, projects, { includeTemplates: true });
+              setMessage('Downloaded projects CSV.');
+            }}
+            title="Download a CSV of all clients and projects"
+          >
+            Export projects CSV
+          </button>
           <button type="button" className={styles.cancelBtn} onClick={onClose}>
             Close
           </button>

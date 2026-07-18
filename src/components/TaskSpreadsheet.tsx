@@ -52,7 +52,13 @@ import {
   PROJECT_BOARD_TYPES,
 } from '../types';
 import { getBoardTaskStatuses, getStatusColor, statusBoardForTask, type BoardTaskStatusesMap, type ProjectBoardTaskStatusesMap } from '../utils/taskStatuses';
-import { canManageColumns } from '../utils/permissions';
+import {
+  canAddColumns,
+  canAssignTasks,
+  canEditTasks,
+  canManageColumns,
+  canManageStatuses,
+} from '../utils/permissions';
 import { getContrastingTextColor } from '../utils/colorContrast';
 import {
   buildSheetColumnSlots,
@@ -1352,6 +1358,8 @@ interface SortableTaskRowProps {
   onUpdate: TaskUpdateHandler;
   onRemove: (id: string) => void;
   onDuplicate: (id: string) => void;
+  allowEditTasks: boolean;
+  allowAssignTasks: boolean;
 }
 
 function renderFixedColumnCell(
@@ -1359,6 +1367,7 @@ function renderFixedColumnCell(
   task: Task,
   depth: number,
   readOnly: boolean,
+  allowAssignTasks: boolean,
   isOverview: boolean,
   employees: { id: string; name: string }[],
   taskStatuses: TaskStatusDefinition[],
@@ -1435,12 +1444,24 @@ function renderFixedColumnCell(
     }
     case 'assignee':
       return (
-        <AssigneeCell
-          assigneeIds={task.assigneeIds ?? []}
-          employees={employees}
-          assigneesLocked={task.assigneesLocked}
-          onChange={(assigneeIds) => onUpdate(task.id, { assigneeIds })}
-        />
+        <div
+          style={
+            !allowAssignTasks
+              ? { pointerEvents: 'none', opacity: 0.65 }
+              : undefined
+          }
+          title={!allowAssignTasks ? 'You do not have permission to assign tasks' : undefined}
+        >
+          <AssigneeCell
+            assigneeIds={task.assigneeIds ?? []}
+            employees={employees}
+            assigneesLocked={task.assigneesLocked}
+            onChange={(assigneeIds) => {
+              if (!allowAssignTasks) return;
+              onUpdate(task.id, { assigneeIds });
+            }}
+          />
+        </div>
       );
     case 'due':
       return (
@@ -1513,9 +1534,11 @@ function SortableTaskRow({
   onUpdate,
   onRemove,
   onDuplicate,
+  allowEditTasks,
+  allowAssignTasks,
 }: SortableTaskRowProps) {
   const { task, depth } = row;
-  const readOnly = false;
+  const readOnly = !allowEditTasks;
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: taskDragId(task.id),
   });
@@ -1645,6 +1668,7 @@ function SortableTaskRow({
               task,
               depth,
               readOnly,
+              allowAssignTasks,
               isOverview,
               employees,
               taskStatuses,
@@ -1704,6 +1728,10 @@ export function TaskSpreadsheet({ clientId, projectId, boardType }: TaskSpreadsh
   const isOverview = boardType === 'main';
   const columnAdminId = viewAsOriginalUserId ?? currentUserId;
   const canDeleteColumns = canManageColumns(columnAdminId, employees, employeePermissions);
+  const allowEditTasks = canEditTasks(columnAdminId, employees, employeePermissions);
+  const allowAssignTasks = canAssignTasks(columnAdminId, employees, employeePermissions);
+  const allowManageStatuses = canManageStatuses(columnAdminId, employees, employeePermissions);
+  const allowAddColumns = canAddColumns(columnAdminId, employees, employeePermissions);
   const overviewSectionBoardTypes = useMemo(
     () =>
       isOverview
@@ -2726,6 +2754,12 @@ export function TaskSpreadsheet({ clientId, projectId, boardType }: TaskSpreadsh
 
   const handleTaskUpdate = useCallback<TaskUpdateHandler>(
     (id, updates, options) => {
+      const updateKeys = Object.keys(updates) as (keyof Task)[];
+      const hasAssigneeUpdate = updates.assigneeIds !== undefined;
+      const hasNonAssigneeUpdate = updateKeys.some((key) => key !== 'assigneeIds');
+      if (hasAssigneeUpdate && !allowAssignTasks) return;
+      if (hasNonAssigneeUpdate && !allowEditTasks) return;
+
       const shouldBulk =
         !isTypingOnlyUpdate(updates, options) &&
         selectedTaskIds.size >= 2 &&
@@ -2740,7 +2774,15 @@ export function TaskSpreadsheet({ clientId, projectId, boardType }: TaskSpreadsh
         mergeBulkTaskUpdates(task, updates, boardTaskStatuses, projectBoardTaskStatuses)
       );
     },
-    [selectedTaskIds, updateTask, updateTasksWith, boardTaskStatuses, projectBoardTaskStatuses]
+    [
+      allowAssignTasks,
+      allowEditTasks,
+      selectedTaskIds,
+      updateTask,
+      updateTasksWith,
+      boardTaskStatuses,
+      projectBoardTaskStatuses,
+    ]
   );
 
   const handleTaskContextMenu = useCallback(
@@ -2997,7 +3039,7 @@ export function TaskSpreadsheet({ clientId, projectId, boardType }: TaskSpreadsh
         draggable
         labelAlign={DEFAULT_SHEET_COLUMN_ALIGNMENT}
         headerAction={
-          slot.id === 'status' ? (
+          slot.id === 'status' && allowManageStatuses ? (
             <div className={styles.statusHeaderAction}>
               <button
                 type="button"
@@ -3116,6 +3158,8 @@ export function TaskSpreadsheet({ clientId, projectId, boardType }: TaskSpreadsh
             onUpdate={handleTaskUpdate}
             onRemove={handleDeleteTask}
             onDuplicate={handleDuplicate}
+            allowEditTasks={allowEditTasks}
+            allowAssignTasks={allowAssignTasks}
           />
         );
       })
@@ -3247,6 +3291,7 @@ export function TaskSpreadsheet({ clientId, projectId, boardType }: TaskSpreadsh
                   }
                   onAutoFit={onSectionFit}
                   headerAction={
+                    allowAddColumns ? (
                     <button
                       type="button"
                       className={styles.columnManageBtn}
@@ -3260,6 +3305,7 @@ export function TaskSpreadsheet({ clientId, projectId, boardType }: TaskSpreadsh
                     >
                       +
                     </button>
+                    ) : undefined
                   }
                 />
               </tr>
@@ -4169,6 +4215,7 @@ export function TaskSpreadsheet({ clientId, projectId, boardType }: TaskSpreadsh
                   onHeaderContextMenu={(e) => openColumnHeaderMenu('actions', undefined, e)}
                   onAutoFit={autoFitColumn}
                   headerAction={
+                    allowAddColumns ? (
                     <button
                       type="button"
                       className={styles.columnManageBtn}
@@ -4181,6 +4228,7 @@ export function TaskSpreadsheet({ clientId, projectId, boardType }: TaskSpreadsh
                     >
                       +
                     </button>
+                    ) : undefined
                   }
                 />
               </tr>
@@ -4583,7 +4631,7 @@ export function TaskSpreadsheet({ clientId, projectId, boardType }: TaskSpreadsh
           </button>
         </ContextMenuPanel>
       )}
-      {showColumnSettings && (
+      {showColumnSettings && (allowAddColumns || canDeleteColumns) && (
         <ColumnSettings
           initialBoardType={boardType}
           boards={statusBoardOptions}
@@ -4702,7 +4750,7 @@ export function TaskSpreadsheet({ clientId, projectId, boardType }: TaskSpreadsh
           )}
         </ContextMenuPanel>
       )}
-      {showStatusSettings && (
+      {showStatusSettings && allowManageStatuses && (
         <StatusSettings
           initialBoardType={boardType}
           boards={statusBoardOptions}

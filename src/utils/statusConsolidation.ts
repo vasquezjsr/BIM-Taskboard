@@ -184,6 +184,11 @@ function remapStatusList(
               : builtIn.autoAssignTeam !== undefined
                 ? { autoAssignTeam: builtIn.autoAssignTeam }
                 : {}),
+            ...(status.autoAssignEmployeeId !== undefined
+              ? { autoAssignEmployeeId: status.autoAssignEmployeeId }
+              : builtIn.autoAssignEmployeeId !== undefined
+                ? { autoAssignEmployeeId: builtIn.autoAssignEmployeeId }
+                : {}),
           }
         : { ...status, id: canonicalId }
     );

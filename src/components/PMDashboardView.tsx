@@ -4,11 +4,22 @@ import { BIM_WORKFLOW_STAGES, computeWorkflowStageProgress, overallWorkflowPerce
 import { PM_STAFF_IDS } from '../data/departmentStaff';
 import { DASHBOARD_META } from '../data/dashboards';
 import { formatBudgetHoursDisplay, formatProjectDuration } from '../utils/projectDashboard';
-import { canManageOrg } from '../utils/permissions';
+import { canEditPmAssigns, canManageOrg, canViewDashboard } from '../utils/permissions';
 import { getBoardTaskStatuses } from '../utils/taskStatuses';
 import { isTemplateProject } from '../utils/projectTemplate';
+import { ProjectEmployeeAssignModal } from './ProjectEmployeeAssignModal';
 import styles from './ExecutiveDashboard.module.css';
 import deptStyles from './DepartmentDashboardView.module.css';
+
+function namesForIds(
+  ids: string[],
+  employees: { id: string; name: string }[]
+): string {
+  return ids
+    .map((id) => employees.find((entry) => entry.id === id)?.name)
+    .filter(Boolean)
+    .join(', ');
+}
 
 export function PMDashboardView() {
   const employees = useStore((s) => s.employees);
@@ -18,24 +29,40 @@ export function PMDashboardView() {
   const taskGroups = useStore((s) => s.taskGroups);
   const boardTaskStatuses = useStore((s) => s.boardTaskStatuses);
   const projectBoardTaskStatuses = useStore((s) => s.projectBoardTaskStatuses);
-  const assignProjectPm = useStore((s) => s.assignProjectPm);
   const openProjectBoard = useStore((s) => s.openProjectBoard);
+  const openFieldJobDashboard = useStore((s) => s.openFieldJobDashboard);
   const currentUserId = useStore((s) => s.currentUserId);
   const employeePermissions = useStore((s) => s.employeePermissions);
 
   const [pickerProjectId, setPickerProjectId] = useState<string | null>(null);
 
   const canManage = canManageOrg(currentUserId, employees, employeePermissions);
-  const isPmStaff = currentUserId ? (PM_STAFF_IDS as readonly string[]).includes(currentUserId) : false;
+  const canAssignEmployees = canEditPmAssigns(currentUserId, employees, employeePermissions);
+  const isPmStaff = currentUserId
+    ? (PM_STAFF_IDS as readonly string[]).includes(currentUserId)
+    : false;
+  const canOpenField = canViewDashboard(
+    'field',
+    currentUserId,
+    employees,
+    employeePermissions
+  );
 
   const visibleProjects = useMemo(() => {
     return projects.filter((project) => {
       if (isTemplateProject(project)) return false;
       if (canManage) return true;
       if (!currentUserId) return false;
-      return project.pmIds.includes(currentUserId) || isPmStaff;
+      if (project.pmIds.includes(currentUserId)) return true;
+      if ((project.assistantPmIds ?? []).includes(currentUserId)) return true;
+      if (isPmStaff) return true;
+      return false;
     });
   }, [projects, canManage, currentUserId, isPmStaff]);
+
+  const pickerProject = pickerProjectId
+    ? projects.find((project) => project.id === pickerProjectId) ?? null
+    : null;
 
   const pmBoardTasks = useMemo(
     () =>
@@ -65,7 +92,7 @@ export function PMDashboardView() {
         <h2 className={styles.title}>{DASHBOARD_META.pm.label}</h2>
         <p className={styles.subtitle}>
           Projects assigned to you with contract milestones, budget, and lifecycle progress from
-          Project Setup through Field. Assign PM staff from the Employees dashboard.
+          Project Setup through Field. Assign PMs, Assistant PMs, and Field staff to each job.
         </p>
       </header>
 
@@ -83,10 +110,10 @@ export function PMDashboardView() {
               projectBoardTaskStatuses
             );
             const overall = overallWorkflowPercent(stages);
-            const pmNames = project.pmIds
-              .map((id) => employees.find((entry) => entry.id === id)?.name)
-              .filter(Boolean)
-              .join(', ');
+            const pmNames = namesForIds(project.pmIds ?? [], employees);
+            const assistantNames = namesForIds(project.assistantPmIds ?? [], employees);
+            const fieldLeadNames = namesForIds(project.fieldIds ?? [], employees);
+            const fieldCrewNames = namesForIds(project.fieldCrewIds ?? [], employees);
 
             return (
               <article key={project.id} className={styles.projectCard}>
@@ -95,15 +122,27 @@ export function PMDashboardView() {
                     <h3>{project.name}</h3>
                     <p className={styles.clientName}>{client?.name ?? 'Client'}</p>
                   </div>
-                  <button
-                    type="button"
-                    className={styles.openBtn}
-                    onClick={() =>
-                      openProjectBoard(project.clientId, project.id, 'project-managers')
-                    }
-                  >
-                    Open PM Board
-                  </button>
+                  <div className={styles.cardActions}>
+                    <button
+                      type="button"
+                      className={styles.openBtn}
+                      onClick={() =>
+                        openProjectBoard(project.clientId, project.id, 'project-managers')
+                      }
+                    >
+                      Open PM Board
+                    </button>
+                    {canOpenField ? (
+                      <button
+                        type="button"
+                        className={styles.openBtnSecondary}
+                        onClick={() => openFieldJobDashboard(project.id)}
+                        title="Open this job on the Field Dashboard for crew visibility"
+                      >
+                        Open job Field view
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
 
                 <dl className={styles.metaGrid}>
@@ -122,12 +161,27 @@ export function PMDashboardView() {
                     </dd>
                   </div>
                   <div>
-                    <dt>Assigned PMs</dt>
+                    <dt>Overall progress</dt>
+                    <dd>{overall}%</dd>
+                  </div>
+                </dl>
+
+                <dl className={styles.teamGrid}>
+                  <div>
+                    <dt>Project Manager</dt>
                     <dd>{pmNames || '—'}</dd>
                   </div>
                   <div>
-                    <dt>Overall progress</dt>
-                    <dd>{overall}%</dd>
+                    <dt>Assistant PM</dt>
+                    <dd>{assistantNames || '—'}</dd>
+                  </div>
+                  <div>
+                    <dt>Field Super / lead</dt>
+                    <dd>{fieldLeadNames || '—'}</dd>
+                  </div>
+                  <div>
+                    <dt>Field crew</dt>
+                    <dd>{fieldCrewNames || '—'}</dd>
                   </div>
                 </dl>
 
@@ -146,15 +200,15 @@ export function PMDashboardView() {
                   ))}
                 </div>
 
-                {canManage && (
+                {canAssignEmployees ? (
                   <button
                     type="button"
                     className={styles.openBtn}
                     onClick={() => setPickerProjectId(project.id)}
                   >
-                    Assign PM
+                    Assign Employees
                   </button>
-                )}
+                ) : null}
               </article>
             );
           })
@@ -185,7 +239,8 @@ export function PMDashboardView() {
                   task.projectId,
                   projectBoardTaskStatuses
                 );
-                const label = statuses.find((status) => status.id === task.status)?.label ?? task.status;
+                const label =
+                  statuses.find((status) => status.id === task.status)?.label ?? task.status;
                 return (
                   <tr key={task.id}>
                     <td className={deptStyles.taskNumberCell}>{task.taskNumber ?? '—'}</td>
@@ -211,34 +266,12 @@ export function PMDashboardView() {
         </ul>
       </section>
 
-      {pickerProjectId && (
-        <div className={deptStyles.pickerOverlay} onClick={() => setPickerProjectId(null)}>
-          <div className={deptStyles.pickerModal} onClick={(e) => e.stopPropagation()}>
-            <h4>Assign project manager</h4>
-            <ul className={deptStyles.pickerList}>
-              {employees
-                .filter((employee) => (PM_STAFF_IDS as readonly string[]).includes(employee.id))
-                .map((employee) => (
-                  <li key={employee.id}>
-                    <button
-                      type="button"
-                      className={deptStyles.pickerItem}
-                      onClick={() => {
-                        assignProjectPm(pickerProjectId, employee.id);
-                        setPickerProjectId(null);
-                      }}
-                    >
-                      {employee.name}
-                    </button>
-                  </li>
-                ))}
-            </ul>
-            <button type="button" className={deptStyles.cancelBtn} onClick={() => setPickerProjectId(null)}>
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
+      {pickerProject && canAssignEmployees ? (
+        <ProjectEmployeeAssignModal
+          project={pickerProject}
+          onClose={() => setPickerProjectId(null)}
+        />
+      ) : null}
     </div>
   );
 }

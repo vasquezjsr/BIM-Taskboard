@@ -40,6 +40,8 @@ import type {
 
   DashboardType,
 
+  OrgCategory,
+
   OrgTeam,
 
   TimeEntry,
@@ -63,13 +65,23 @@ import {
   createSeededDashboardAssignments,
   mergeDashboardAssignments,
   mergeDepartmentStaff,
+  operationsDashboardPermissions,
 } from '../data/departmentStaff';
 import { buildBimOrgRoster, createBimOrgChartReportsTo } from '../data/bimOrgChart';
 import { applyDefaultProjectTeams, ensureDefaultProjectTeams } from '../data/projectTeams';
 import { defaultProjectFields, normalizeProject, type ProjectSettingsUpdate } from '../types';
 import { cloneProjectFromTemplate, type NewProjectOptions } from '../utils/projectTemplate';
-import { canAccessOrgChart, canEditBudgetHours, canManageColumns, canViewActivityLog, canViewDashboard, canViewEmployeeTime, canViewOwnerDashboard } from '../utils/permissions';
-import type { ActivityLogEntry, DeletedColumnArchive } from '../utils/activityLog';
+import { canAccessOrgChart, canEditBudgetHours, canManageColumns, canViewActivityLog, canViewDashboard, canViewEmployeeTime, canViewOwnerDashboard, canViewTimeTracking, canViewVisibilityDashboard, canViewWeldLogDashboard } from '../utils/permissions';
+import {
+  DEFAULT_JOB_LEVEL_NAV_VISIBILITY,
+  NAV_COLUMN_PERMISSION,
+  employeesForJobLevelRow,
+  normalizeJobLevelNavVisibility,
+  syncOpsDashboardPermissionsFromDefaults,
+  type JobLevelNavVisibilityMap,
+  type VisibilityNavColumn,
+} from '../utils/visibilityMatrix';
+import type { ActivityLogEntry, DeletedColumnArchive, DeletedEmployeeArchive } from '../utils/activityLog';
 import {
   applyColumnArchiveRestore,
   buildColumnDeleteArchive,
@@ -80,6 +92,28 @@ import {
   stripColumnFromState,
 } from './activityLogHelpers';
 import { backfillTaskNumbers, nextTaskNumberForProject } from '../utils/taskNumbers';
+import {
+  buildSpoolingExportCustomFields,
+  filterBoardroomPackageAttachmentFiles,
+  findProjectForManifest,
+  findSpoolingTaskForManifest,
+  isSsv3ExportLocked,
+  parseBoardroomPackageManifest,
+  spoolingTaskHasSsv3Export,
+  SSV3_FIELD,
+  SSV3_KIND_ASSEMBLY,
+  type BoardroomPackageImportResult,
+} from '../utils/boardroomPackageImport';
+import {
+  promoteSsv3SpoolingTaskToFab,
+  demoteSsv3FabTaskToSpooling,
+  promoteSsv3FabTaskToShipping,
+  promoteSsv3ShippingTaskToField,
+  demoteSsv3ShippingTaskToFab,
+  demoteSsv3ShippingTaskToSpooling,
+  attachSsv3HierarchyFromManifest,
+  clearSsv3ExportFromSpoolingTask,
+} from '../utils/promoteSsv3ToFab';
 import { normalizeTimeEntry, prepareTimeEntryPayload } from '../utils/timeEntry';
 import {
   createDefaultEmployeeCredentials,
@@ -107,6 +141,7 @@ import {
   createDefaultOrgChartLevelSlots,
   createDefaultOrgTeams,
   defaultOrgCategoryForRole,
+  DEFAULT_VISIBILITY_DASHBOARD_JOB_LEVELS,
   migrateOrgTeamsToCategories,
   managersForOrgChartDepth,
   orgCategoryToTeamId,
@@ -117,6 +152,7 @@ import {
   inferOrgCategory,
   isOrgOwner,
   isValidReportingManager,
+  defaultDashboardEditPermissionsForCategory,
   type EmployeePermissionsMap,
   type EmployeeReportsToMap,
   normalizeEmployeeReportsTo,
@@ -125,6 +161,48 @@ import {
   wouldCreateReportingCycle,
   type OrgChartLevelSlotsMap,
 } from '../utils/orgChart';
+import {
+  accessControlRowIdForJobTitle,
+  backfillEmployeeJobTitleIds,
+  createDefaultEmployeeJobTitles,
+  findEmployeeJobTitle,
+  normalizeEmployeeJobTitles,
+  removeEmployeeFromAllDashboardRoles,
+  repairJobTitlePlacement,
+  resolveOrgCategoryForTitle,
+  type EmployeeJobTitleDef,
+} from '../utils/employeeJobs';
+
+function permissionsForJobTitle(title: EmployeeJobTitleDef): AppPermission[] {
+  const rowId = accessControlRowIdForJobTitle(title);
+  const cells =
+    DEFAULT_JOB_LEVEL_NAV_VISIBILITY[rowId] ?? DEFAULT_JOB_LEVEL_NAV_VISIBILITY['ops-unassigned']!;
+  const granted = new Set<AppPermission>(['view-org-chart', 'view-time-tracking']);
+  for (const [column, enabled] of Object.entries(cells) as [VisibilityNavColumn, boolean][]) {
+    if (enabled) granted.add(NAV_COLUMN_PERMISSION[column]);
+  }
+  const category = resolveOrgCategoryForTitle(title);
+  if (category === 'bim-manager' || category === 'operations-manager') {
+    granted.add('manage-org');
+    granted.add('manage-columns');
+    granted.add('view-activity-log');
+  }
+  if (category === 'bim-manager') {
+    granted.add('edit-budget-hours');
+  }
+  if (
+    category === 'plumbing-detailer' ||
+    category === 'mechanical-detailer' ||
+    category === 'sheet-metal-detailer' ||
+    category === 'jr-detailer'
+  ) {
+    granted.add('edit-budget-hours');
+  }
+  for (const permission of defaultDashboardEditPermissionsForCategory(category)) {
+    granted.add(permission);
+  }
+  return [...granted];
+}
 
 import {
 
@@ -212,6 +290,7 @@ import {
 } from '../utils/history';
 import { defaultStatusForBoard } from '../utils/taskStatus';
 import { devStoreSyncStorage } from '../utils/devStoreSyncStorage';
+import { ensureDemoPortfolio } from '../utils/ensureDemoPortfolio';
 import { normalizeTaskAssignees, taskHasAssignee } from '../utils/taskAssignees';
 import {
   applyAutoAssigneesToTask,
@@ -334,6 +413,7 @@ interface AppState {
 
   activityLog: ActivityLogEntry[];
   deletedColumnArchive: DeletedColumnArchive[];
+  deletedEmployeeArchive: DeletedEmployeeArchive[];
 
   /** User-saved column layouts for reuse when adding columns */
   savedSheetColumnTemplates: import('../types').SavedSheetColumnTemplate[];
@@ -355,6 +435,12 @@ interface AppState {
 
   clientsView: 'dashboard' | 'board';
 
+  /**
+   * When set, Field Dashboard focuses this project (job view for assigned field crew).
+   * Cleared when the user leaves Field or picks All projects.
+   */
+  fieldFocusProjectId: string | null;
+
   /** Signed-in employee — controls budget-hours editing and org chart access */
   currentUserId: string | null;
 
@@ -364,6 +450,12 @@ interface AppState {
   orgTeams: OrgTeam[];
 
   employeePermissions: EmployeePermissionsMap;
+
+  /** Job levels that automatically get Visibility Dashboard access (editable). */
+  visibilityDashboardJobLevels: OrgCategory[];
+
+  /** Editable defaults matrix on Visibility Dashboard (by job-level row id). */
+  jobLevelNavVisibility: JobLevelNavVisibilityMap;
 
   /** Maps employee id → manager employee id within their team */
   employeeReportsTo: EmployeeReportsToMap;
@@ -378,6 +470,9 @@ interface AppState {
   employeeCredentials: EmployeeCredentialsMap;
 
   dashboardAssignments?: DashboardAssignments;
+
+  /** Editable job title catalog (Employees promote / stage placement). */
+  employeeJobTitles: EmployeeJobTitleDef[];
 
   setActiveMainTab: (tab: MainTab) => void;
 
@@ -407,6 +502,11 @@ interface AppState {
   goToMainScreen: () => void;
 
   openProjectBoard: (clientId: string, projectId: string, boardType: ProjectBoardType) => void;
+
+  /** Jump to Field Dashboard focused on a specific job (for assigned field crew / PMs). */
+  openFieldJobDashboard: (projectId: string) => void;
+
+  setFieldFocusProjectId: (projectId: string | null) => void;
 
   addClient: (name: string) => void;
 
@@ -440,9 +540,23 @@ interface AppState {
 
   updateEmployee: (id: string, updates: Partial<Pick<Employee, 'name' | 'role' | 'orgCategory'>>) => void;
 
+  /** Promote / change job title (org category + ops dashboard role). */
+  changeEmployeeJob: (employeeId: string, jobTitleId: string) => void;
+
+  addJobTitle: (label: string, stageId: EmployeeJobTitleDef['stageId']) => string | null;
+
+  updateJobTitle: (
+    id: string,
+    updates: Partial<Pick<EmployeeJobTitleDef, 'label' | 'stageId' | 'orgCategory' | 'opsPlacement'>>
+  ) => void;
+
+  removeJobTitle: (id: string) => boolean;
+
   updateEmployeeEmail: (id: string, email: string) => void;
 
   removeEmployee: (id: string) => void;
+
+  restoreDeletedEmployee: (archiveId: string) => boolean;
 
   addOrgTeam: (name: string) => void;
 
@@ -464,6 +578,12 @@ interface AppState {
 
   setEmployeePermission: (employeeId: string, permission: AppPermission, enabled: boolean) => void;
 
+  setVisibilityDashboardJobLevel: (category: OrgCategory, enabled: boolean) => void;
+
+  setEmployeeNavVisibility: (employeeId: string, column: VisibilityNavColumn, enabled: boolean) => void;
+
+  setJobLevelNavVisibility: (rowId: string, column: VisibilityNavColumn, enabled: boolean) => void;
+
   assignDashboardMember: (dashboard: DashboardType, roleId: string, employeeId: string) => void;
 
   unassignDashboardMember: (dashboard: DashboardType, roleId: string, employeeId: string) => void;
@@ -477,6 +597,15 @@ interface AppState {
   addTask: (task: Omit<Task, 'id' | 'createdAt'>) => void;
 
   updateTask: (id: string, updates: Partial<Task>) => void;
+
+  /** Upsert Fab package/assembly tasks from an SSv3 boardroom-package.json export. */
+  importBoardroomPackageManifest: (
+    manifest: unknown,
+    exportFolder: string
+  ) => BoardroomPackageImportResult;
+
+  /** Remove nested SSv3 assemblies and export report attachments from a Spooling task. */
+  clearSsv3ExportFromTask: (taskId: string) => void;
 
   updateTasks: (ids: string[], updates: Partial<Task>) => void;
 
@@ -531,7 +660,8 @@ interface AppState {
     label: string,
     autoAssignTeam: 'detailers' | 'support' | null | undefined,
     projectId: string | null,
-    applyToAllDeliverables: boolean
+    applyToAllDeliverables: boolean,
+    autoAssignEmployeeId?: string | null
   ) => string | null;
 
   removeBoardTaskStatus: (
@@ -544,7 +674,12 @@ interface AppState {
   updateBoardTaskStatus: (
     boardType: ProjectBoardType,
     id: string,
-    updates: Partial<Pick<TaskStatusDefinition, 'label' | 'color' | 'countsAsComplete' | 'autoAssignTeam'>>,
+    updates: Partial<
+      Pick<
+        TaskStatusDefinition,
+        'label' | 'color' | 'countsAsComplete' | 'autoAssignTeam' | 'autoAssignEmployeeId'
+      >
+    >,
     projectId: string | null,
     applyToAllDeliverables: boolean
   ) => void;
@@ -775,33 +910,16 @@ function mergePersistedState(p: Partial<AppState>, current: AppState): AppState 
     p.employees ?? current.employees,
     p.tasks ?? current.tasks
   );
+  // Keep every persisted client/project/task. Never run pruneToClientTemplateOnly here —
+  // that wiped Demo Mechanical (and all shop progress) on every refresh/rehydrate.
   let clients = p.clients?.length ? p.clients : current.clients;
-  let projects = (p.projects?.length ? p.projects : current.projects).map(normalizeProject);
+  let projects = ensureDefaultProjectTeams(
+    (p.projects?.length ? p.projects : current.projects).map(normalizeProject)
+  );
   let taskGroups = p.taskGroups ?? current.taskGroups;
   let tasksOut = tasks.map(normalizeTaskFields);
   let customBoards = p.customBoards ?? current.customBoards ?? [];
-  let projectBoardTaskStatuses = normalizeProjectBoardTaskStatuses(
-    p.projectBoardTaskStatuses ?? current.projectBoardTaskStatuses
-  );
   let timeEntries = p.timeEntries ?? current.timeEntries ?? [];
-
-  const prunedPortfolio = pruneToClientTemplateOnly(
-    clients,
-    projects,
-    taskGroups,
-    tasksOut,
-    customBoards,
-    projectBoardTaskStatuses,
-    timeEntries,
-    getEmployeeIds(employees)
-  );
-  clients = prunedPortfolio.clients;
-  projects = ensureDefaultProjectTeams(prunedPortfolio.projects.map(normalizeProject));
-  taskGroups = prunedPortfolio.taskGroups;
-  tasksOut = prunedPortfolio.tasks.map(normalizeTaskFields);
-  customBoards = prunedPortfolio.customBoards;
-  projectBoardTaskStatuses = prunedPortfolio.projectBoardTaskStatuses;
-  timeEntries = prunedPortfolio.timeEntries;
 
   const templateProject =
     projects.find((project) => project.name === TEMPLATE_PROJECT_NAME || project.isTemplate) ??
@@ -861,10 +979,11 @@ function mergePersistedState(p: Partial<AppState>, current: AppState): AppState 
   );
 
   if (!clients.some((client) => client.id === navigation.activeClientId)) {
-    navigation.activeClientId = prunedPortfolio.activeClientId;
+    navigation.activeClientId = clients[0]?.id ?? null;
   }
   if (!projects.some((project) => project.id === navigation.activeProjectId)) {
-    navigation.activeProjectId = prunedPortfolio.activeProjectId;
+    const forClient = projects.find((project) => project.clientId === navigation.activeClientId);
+    navigation.activeProjectId = forClient?.id ?? projects[0]?.id ?? null;
   }
 
   const currentUserId = p.currentUserId ?? current.currentUserId ?? null;
@@ -926,8 +1045,44 @@ function mergePersistedState(p: Partial<AppState>, current: AppState): AppState 
   }
 
   if (
+    navigation.activeMainTab === 'weld-log-dashboard' &&
+    !canViewWeldLogDashboard(resolvedUserId, employees, employeePermissions)
+  ) {
+    navigation.activeMainTab = 'clients';
+  }
+
+  if (
     navigation.activeMainTab === 'activity-log' &&
     !canViewActivityLog(resolvedUserId, employees, employeePermissions)
+  ) {
+    navigation.activeMainTab = 'clients';
+  }
+
+  if (
+    navigation.activeMainTab === 'time-tracking' &&
+    !canViewTimeTracking(resolvedUserId, employees, employeePermissions)
+  ) {
+    navigation.activeMainTab = 'clients';
+  }
+
+  const visibilityDashboardJobLevels =
+    (p.visibilityDashboardJobLevels as OrgCategory[] | undefined) ??
+    (current.visibilityDashboardJobLevels as OrgCategory[] | undefined) ??
+    [...DEFAULT_VISIBILITY_DASHBOARD_JOB_LEVELS];
+
+  const jobLevelNavVisibility = normalizeJobLevelNavVisibility(
+    (p.jobLevelNavVisibility as JobLevelNavVisibilityMap | undefined) ??
+      (current.jobLevelNavVisibility as JobLevelNavVisibilityMap | undefined)
+  );
+
+  if (
+    navigation.activeMainTab === 'visibility-dashboard' &&
+    !canViewVisibilityDashboard(
+      resolvedUserId,
+      employees,
+      employeePermissions,
+      visibilityDashboardJobLevels
+    )
   ) {
     navigation.activeMainTab = 'clients';
   }
@@ -974,6 +1129,8 @@ function mergePersistedState(p: Partial<AppState>, current: AppState): AppState 
     currentUserId: resolvedUserId,
     orgTeams: p.orgTeams ?? current.orgTeams ?? createDefaultOrgTeams(employees),
     employeePermissions,
+    visibilityDashboardJobLevels,
+    jobLevelNavVisibility,
     timeEntries,
     employeeReportsTo: normalizeEmployeeReportsTo(p.employeeReportsTo ?? current.employeeReportsTo),
     orgChartLevelSlots: normalizeOrgChartLevelSlots(p.orgChartLevelSlots ?? current.orgChartLevelSlots),
@@ -1004,10 +1161,16 @@ function mergePersistedState(p: Partial<AppState>, current: AppState): AppState 
     ),
     dashboardAssignments:
       p.dashboardAssignments ?? current.dashboardAssignments ?? createDefaultDashboardAssignments(),
+    employeeJobTitles: normalizeEmployeeJobTitles(
+      (p.employeeJobTitles as EmployeeJobTitleDef[] | undefined) ?? current.employeeJobTitles
+    ),
     activityLog: Array.isArray(p.activityLog) ? p.activityLog : (current.activityLog ?? []),
     deletedColumnArchive: Array.isArray(p.deletedColumnArchive)
       ? p.deletedColumnArchive
       : (current.deletedColumnArchive ?? []),
+    deletedEmployeeArchive: Array.isArray(p.deletedEmployeeArchive)
+      ? p.deletedEmployeeArchive
+      : (current.deletedEmployeeArchive ?? []),
     savedSheetColumnTemplates: Array.isArray(p.savedSheetColumnTemplates)
       ? p.savedSheetColumnTemplates
       : (current.savedSheetColumnTemplates ?? []),
@@ -1436,6 +1599,8 @@ function resolvePersistedNavigation(
               ? 'shipping-dashboard'
               : rawMainTab === 'activity-log'
                 ? 'activity-log'
+                : rawMainTab === 'visibility-dashboard'
+                  ? 'visibility-dashboard'
               : rawMainTab === 'org-chart' || rawMainTab === 'permissions'
                 ? 'org-chart'
                 : 'clients';
@@ -1712,8 +1877,11 @@ function createRecoveryPersistedState(persisted: unknown, employees: Employee[])
     ]),
     orgTeams: createDefaultOrgTeams(employees),
     employeePermissions: createDefaultEmployeePermissions(employees),
+    visibilityDashboardJobLevels: [...DEFAULT_VISIBILITY_DASHBOARD_JOB_LEVELS],
+    jobLevelNavVisibility: normalizeJobLevelNavVisibility(undefined),
     activityLog: [],
     deletedColumnArchive: [],
+    deletedEmployeeArchive: [],
     savedSheetColumnTemplates: [],
     timeEntries: [],
     employeeReportsTo: createBimOrgChartReportsTo(),
@@ -1724,6 +1892,7 @@ function createRecoveryPersistedState(persisted: unknown, employees: Employee[])
     employeeAssigneeStyles: createDefaultEmployeeAssigneeStyles(employees.map((employee) => employee.id)),
     employeeCredentials: createDefaultEmployeeCredentials(employees.map((employee) => employee.id)),
     dashboardAssignments: createDefaultDashboardAssignments(),
+    employeeJobTitles: createDefaultEmployeeJobTitles(),
   };
 }
 
@@ -2588,6 +2757,285 @@ function runStoreMigration(persisted: unknown, version: number) {
           boardSheetColumnOrder = premade.boardSheetColumnOrder;
         }
 
+        if (version < 113) {
+          employees = mergeDepartmentStaff(employees);
+          dashboardAssignments = mergeDashboardAssignments(
+            dashboardAssignments,
+            createSeededDashboardAssignments()
+          );
+          employeeReportsTo = {
+            ...employeeReportsTo,
+            'emp-fab-8': employeeReportsTo['emp-fab-8']?.length
+              ? employeeReportsTo['emp-fab-8']
+              : ['emp-fab-1'],
+            'emp-fab-9': ['emp-fab-8'],
+            'emp-fab-10': ['emp-fab-8'],
+          };
+          const nextPermissions: EmployeePermissionsMap = { ...employeePermissions };
+          for (const staffId of ['emp-fab-8', 'emp-fab-9', 'emp-fab-10'] as const) {
+            const granted = new Set(nextPermissions[staffId] ?? []);
+            for (const permission of operationsDashboardPermissions(staffId)) {
+              granted.add(permission);
+            }
+            nextPermissions[staffId] = [...granted];
+          }
+          employeePermissions = nextPermissions;
+          const synced = syncEmployeeAuthAndColors(
+            employees.map((employee) => employee.id),
+            employeeAssigneeStyles,
+            employeeCredentials,
+            buildUniqueAssigneeStyles,
+            employees
+          );
+          employeeAssigneeStyles = synced.employeeAssigneeStyles;
+          employeeCredentials = synced.employeeCredentials;
+        }
+
+        let visibilityDashboardJobLevels =
+          (state.visibilityDashboardJobLevels as OrgCategory[] | undefined) ??
+          [...DEFAULT_VISIBILITY_DASHBOARD_JOB_LEVELS];
+
+        if (version < 114) {
+          visibilityDashboardJobLevels = [...DEFAULT_VISIBILITY_DASHBOARD_JOB_LEVELS];
+          const nextPermissions: EmployeePermissionsMap = { ...employeePermissions };
+          for (const employee of employees) {
+            const category = inferOrgCategory(employee);
+            if (
+              category === 'owner' ||
+              category === 'bim-manager' ||
+              category === 'operations-manager'
+            ) {
+              const granted = new Set(nextPermissions[employee.id] ?? []);
+              granted.add('view-visibility-dashboard');
+              nextPermissions[employee.id] = [...granted];
+            }
+          }
+          employeePermissions = nextPermissions;
+        }
+
+        let jobLevelNavVisibility = normalizeJobLevelNavVisibility(
+          state.jobLevelNavVisibility as JobLevelNavVisibilityMap | undefined
+        );
+
+        if (version < 115) {
+          jobLevelNavVisibility = normalizeJobLevelNavVisibility(undefined);
+        }
+
+        if (version < 116) {
+          jobLevelNavVisibility = normalizeJobLevelNavVisibility(undefined);
+          employeePermissions = syncOpsDashboardPermissionsFromDefaults(
+            employees,
+            employeePermissions,
+            dashboardAssignments,
+            jobLevelNavVisibility
+          );
+        }
+
+        if (version < 117) {
+          jobLevelNavVisibility = normalizeJobLevelNavVisibility(jobLevelNavVisibility);
+          const nextPermissions: EmployeePermissionsMap = { ...employeePermissions };
+          for (const employee of employees) {
+            const granted = new Set(nextPermissions[employee.id] ?? []);
+            granted.add('view-time-tracking');
+            nextPermissions[employee.id] = [...granted];
+          }
+          employeePermissions = nextPermissions;
+        }
+
+        let deletedEmployeeArchive =
+          (state.deletedEmployeeArchive as DeletedEmployeeArchive[] | undefined) ?? [];
+        let activityLog =
+          (state.activityLog as ActivityLogEntry[] | undefined) ?? [];
+
+        if (version < 118) {
+          // Re-seed missing BIM leadership (e.g. Priya Shah) after accidental roster deletes.
+          employees = buildBimOrgRoster(employees);
+          const seedReports = createBimOrgChartReportsTo();
+          employeeReportsTo = {
+            ...seedReports,
+            ...employeeReportsTo,
+            'emp-bim-mgr-1': employeeReportsTo['emp-bim-mgr-1']?.length
+              ? employeeReportsTo['emp-bim-mgr-1']
+              : seedReports['emp-bim-mgr-1'] ?? [JOE_VASQUEZ_ID],
+            'emp-ops-mgr-1': employeeReportsTo['emp-ops-mgr-1']?.length
+              ? employeeReportsTo['emp-ops-mgr-1']
+              : seedReports['emp-ops-mgr-1'] ?? [JOE_VASQUEZ_ID],
+          };
+          const defaults = createDefaultEmployeePermissions(employees);
+          const nextPermissions: EmployeePermissionsMap = { ...employeePermissions };
+          for (const employeeId of ['emp-bim-mgr-1', 'emp-ops-mgr-1'] as const) {
+            nextPermissions[employeeId] = [
+              ...new Set([...(nextPermissions[employeeId] ?? []), ...(defaults[employeeId] ?? [])]),
+            ];
+          }
+          employeePermissions = nextPermissions;
+          const synced = syncEmployeeAuthAndColors(
+            employees.map((employee) => employee.id),
+            employeeAssigneeStyles,
+            employeeCredentials,
+            buildUniqueAssigneeStyles,
+            employees
+          );
+          employeeAssigneeStyles = synced.employeeAssigneeStyles;
+          employeeCredentials = synced.employeeCredentials;
+        }
+
+        if (version < 119) {
+          // Force-restore seed leadership if deleted after v118 (Priya Shah / Derek Coleman).
+          const seedIds = ['emp-bim-mgr-1', 'emp-ops-mgr-1'] as const;
+          let nextArchive = [...deletedEmployeeArchive];
+          const nextPermissions: EmployeePermissionsMap = { ...employeePermissions };
+          let nextReports = { ...employeeReportsTo };
+          let nextStyles = { ...employeeAssigneeStyles };
+          let nextCredentials = { ...employeeCredentials };
+          const restoredNames: string[] = [];
+
+          for (const seedId of seedIds) {
+            if (employees.some((employee) => employee.id === seedId)) continue;
+
+            const archive = nextArchive.find(
+              (entry) => entry.employee.id === seedId && !entry.restoredAt
+            );
+            if (archive) {
+              employees = [...employees, { ...archive.employee }];
+              nextPermissions[seedId] = [...archive.permissions];
+              nextReports[seedId] = [...archive.reportsTo];
+              if (archive.assigneeStyle) nextStyles[seedId] = archive.assigneeStyle;
+              if (archive.credentials) nextCredentials[seedId] = archive.credentials;
+              nextArchive = nextArchive.map((entry) =>
+                entry.id === archive.id
+                  ? {
+                      ...entry,
+                      restoredAt: new Date().toISOString(),
+                      restoredById: null,
+                    }
+                  : entry
+              );
+              restoredNames.push(archive.employee.name);
+            }
+          }
+
+          const beforeIds = new Set(employees.map((employee) => employee.id));
+          employees = buildBimOrgRoster(employees);
+          for (const employee of employees) {
+            if (
+              (seedIds as readonly string[]).includes(employee.id) &&
+              !beforeIds.has(employee.id)
+            ) {
+              restoredNames.push(employee.name);
+            }
+          }
+
+          const seedReports = createBimOrgChartReportsTo();
+          const defaults = createDefaultEmployeePermissions(employees);
+          for (const seedId of seedIds) {
+            nextReports[seedId] = nextReports[seedId]?.length
+              ? nextReports[seedId]!
+              : seedReports[seedId] ?? [JOE_VASQUEZ_ID];
+            nextPermissions[seedId] = [
+              ...new Set([...(nextPermissions[seedId] ?? []), ...(defaults[seedId] ?? [])]),
+            ];
+          }
+
+          const synced = syncEmployeeAuthAndColors(
+            employees.map((employee) => employee.id),
+            nextStyles,
+            nextCredentials,
+            buildUniqueAssigneeStyles,
+            employees
+          );
+          employeePermissions = nextPermissions;
+          employeeReportsTo = nextReports;
+          employeeAssigneeStyles = synced.employeeAssigneeStyles;
+          employeeCredentials = synced.employeeCredentials;
+          deletedEmployeeArchive = nextArchive;
+
+          for (const name of [...new Set(restoredNames)]) {
+            const employee = employees.find((entry) => entry.name === name);
+            activityLog = logActivity(
+              activityLog,
+              {
+                actorId: null,
+                action: 'restored',
+                entityType: 'employee',
+                entityId: employee?.id ?? name,
+                summary: `Restored employee "${name}" to the roster`,
+                details: { name, reason: 'seed-leadership-repair' },
+              },
+              uuid
+            );
+          }
+        }
+
+        let employeeJobTitles = normalizeEmployeeJobTitles(
+          (state as { employeeJobTitles?: EmployeeJobTitleDef[] }).employeeJobTitles
+        );
+
+        if (version < 120) {
+          employeeJobTitles = createDefaultEmployeeJobTitles();
+          employees = backfillEmployeeJobTitleIds(employees, dashboardAssignments, employeeJobTitles);
+        } else {
+          employees = backfillEmployeeJobTitleIds(employees, dashboardAssignments, employeeJobTitles);
+        }
+
+        if (version < 121) {
+          // Nest fab workers under their dept managers for Fabrication workstations.
+          const fabWorkerReports: Record<string, string[]> = {
+            'emp-fab-5': ['emp-fab-2'],
+            'emp-fab-6': ['emp-fab-3'],
+            'emp-fab-7': ['emp-fab-4'],
+          };
+          employeeReportsTo = { ...employeeReportsTo };
+          for (const [workerId, managers] of Object.entries(fabWorkerReports)) {
+            const current = employeeReportsTo[workerId] ?? [];
+            if (current.length === 1 && current[0] === 'emp-fab-1') {
+              employeeReportsTo[workerId] = managers;
+            }
+          }
+        }
+
+        if (version < 122) {
+          const nextPermissions: EmployeePermissionsMap = { ...employeePermissions };
+          for (const employee of employees) {
+            const granted = new Set(nextPermissions[employee.id] ?? []);
+            for (const permission of defaultDashboardEditPermissionsForCategory(
+              inferOrgCategory(employee)
+            )) {
+              granted.add(permission);
+            }
+            nextPermissions[employee.id] = [...granted];
+          }
+          employeePermissions = nextPermissions;
+          jobLevelNavVisibility = normalizeJobLevelNavVisibility(undefined);
+        }
+
+        if (version < 123) {
+          const nextPermissions: EmployeePermissionsMap = { ...employeePermissions };
+          for (const employee of employees) {
+            const granted = new Set(nextPermissions[employee.id] ?? []);
+            for (const permission of operationsDashboardPermissions(employee.id)) {
+              granted.add(permission);
+            }
+            if (granted.has('view-fab-dashboard') || granted.has('edit-weld-log')) {
+              granted.add('view-weld-log-dashboard');
+            }
+            if (granted.has('view-field-dashboard')) {
+              granted.add('view-weld-log-dashboard');
+            }
+            const category = inferOrgCategory(employee);
+            if (
+              category === 'owner' ||
+              category === 'bim-manager' ||
+              category === 'operations-manager'
+            ) {
+              granted.add('view-weld-log-dashboard');
+            }
+            nextPermissions[employee.id] = [...granted];
+          }
+          employeePermissions = nextPermissions;
+          jobLevelNavVisibility = normalizeJobLevelNavVisibility(jobLevelNavVisibility);
+        }
+
         if (version < 110) {
           const nextPermissions: EmployeePermissionsMap = { ...employeePermissions };
           for (const employee of employees) {
@@ -2862,8 +3310,34 @@ function runStoreMigration(persisted: unknown, version: number) {
         }
 
         if (
+          resolvedNavigation.activeMainTab === 'weld-log-dashboard' &&
+          !canViewWeldLogDashboard(currentUserId, employees, employeePermissions)
+        ) {
+          resolvedNavigation.activeMainTab = 'clients';
+        }
+
+        if (
           resolvedNavigation.activeMainTab === 'activity-log' &&
           !canViewActivityLog(currentUserId, employees, employeePermissions)
+        ) {
+          resolvedNavigation.activeMainTab = 'clients';
+        }
+
+        if (
+          resolvedNavigation.activeMainTab === 'time-tracking' &&
+          !canViewTimeTracking(currentUserId, employees, employeePermissions)
+        ) {
+          resolvedNavigation.activeMainTab = 'clients';
+        }
+
+        if (
+          resolvedNavigation.activeMainTab === 'visibility-dashboard' &&
+          !canViewVisibilityDashboard(
+            currentUserId,
+            employees,
+            employeePermissions,
+            visibilityDashboardJobLevels
+          )
         ) {
           resolvedNavigation.activeMainTab = 'clients';
         }
@@ -2908,20 +3382,38 @@ function runStoreMigration(persisted: unknown, version: number) {
           currentUserId,
           orgTeams,
           employeePermissions,
+          visibilityDashboardJobLevels,
+          jobLevelNavVisibility,
           timeEntries,
           employeeReportsTo,
           orgChartLevelSlots,
           employeeAssigneeStyles,
           employeeCredentials,
           dashboardAssignments,
-          activityLog: (state.activityLog as ActivityLogEntry[] | undefined) ?? [],
+          employeeJobTitles,
+          activityLog,
           deletedColumnArchive:
             (state.deletedColumnArchive as DeletedColumnArchive[] | undefined) ?? [],
+          deletedEmployeeArchive,
           ...(migratedMainOverviewSectionColumnOrder
             ? { mainOverviewSectionColumnOrder: migratedMainOverviewSectionColumnOrder }
             : {}),
           ...resolvedNavigation,
         };
+}
+
+/** Blocks persist writes until rehydration finishes so default template state cannot wipe disk. */
+let storePersistHydrated = false;
+
+function markStorePersistHydrated() {
+  storePersistHydrated = true;
+  queueMicrotask(() => {
+    try {
+      ensureDemoPortfolio(useStore);
+    } catch (ensureError) {
+      console.error('ensureDemoPortfolio failed', ensureError);
+    }
+  });
 }
 
 export const useStore = create<AppState>()(
@@ -2979,6 +3471,7 @@ export const useStore = create<AppState>()(
 
         activityLog: [],
         deletedColumnArchive: [],
+        deletedEmployeeArchive: [],
 
         savedSheetColumnTemplates: [],
 
@@ -3001,6 +3494,8 @@ export const useStore = create<AppState>()(
 
         clientsView: 'board' as const,
 
+        fieldFocusProjectId: null as string | null,
+
         currentUserId: null,
 
         viewAsOriginalUserId: null,
@@ -3008,6 +3503,10 @@ export const useStore = create<AppState>()(
         orgTeams: createDefaultOrgTeams(seedEmployees),
 
         employeePermissions: createDefaultEmployeePermissions(seedEmployees),
+
+        visibilityDashboardJobLevels: [...DEFAULT_VISIBILITY_DASHBOARD_JOB_LEVELS],
+
+        jobLevelNavVisibility: normalizeJobLevelNavVisibility(undefined),
 
         employeeReportsTo: createBimOrgChartReportsTo(),
 
@@ -3027,6 +3526,8 @@ export const useStore = create<AppState>()(
         ),
 
         dashboardAssignments: createDefaultDashboardAssignments(),
+
+        employeeJobTitles: createDefaultEmployeeJobTitles(),
 
         setActiveMainTab: (tab) => {
           const state = get();
@@ -3057,6 +3558,33 @@ export const useStore = create<AppState>()(
           if (
             tab === 'shipping-dashboard' &&
             !canViewDashboard('shipping', state.currentUserId, state.employees, state.employeePermissions)
+          ) {
+            return;
+          }
+          if (
+            tab === 'weld-log-dashboard' &&
+            !canViewWeldLogDashboard(
+              state.currentUserId,
+              state.employees,
+              state.employeePermissions
+            )
+          ) {
+            return;
+          }
+          if (
+            tab === 'visibility-dashboard' &&
+            !canViewVisibilityDashboard(
+              state.currentUserId,
+              state.employees,
+              state.employeePermissions,
+              state.visibilityDashboardJobLevels
+            )
+          ) {
+            return;
+          }
+          if (
+            tab === 'time-tracking' &&
+            !canViewTimeTracking(state.currentUserId, state.employees, state.employeePermissions)
           ) {
             return;
           }
@@ -3125,8 +3653,19 @@ export const useStore = create<AppState>()(
               !canViewDashboard('fab', employeeId, employees, employeePermissions)) ||
             (tab === 'shipping-dashboard' &&
               !canViewDashboard('shipping', employeeId, employees, employeePermissions)) ||
+            (tab === 'weld-log-dashboard' &&
+              !canViewWeldLogDashboard(employeeId, employees, employeePermissions)) ||
             (tab === 'activity-log' &&
-              !canViewActivityLog(employeeId, employees, employeePermissions));
+              !canViewActivityLog(employeeId, employees, employeePermissions)) ||
+            (tab === 'time-tracking' &&
+              !canViewTimeTracking(employeeId, employees, employeePermissions)) ||
+            (tab === 'visibility-dashboard' &&
+              !canViewVisibilityDashboard(
+                employeeId,
+                employees,
+                employeePermissions,
+                get().visibilityDashboardJobLevels
+              ));
           const nextTab = restrictedTab ? 'clients' : tab;
 
           const credential = employeeCredentials[employeeId];
@@ -3199,8 +3738,19 @@ export const useStore = create<AppState>()(
               !canViewDashboard('fab', employeeId, employees, employeePermissions)) ||
             (activeMainTab === 'shipping-dashboard' &&
               !canViewDashboard('shipping', employeeId, employees, employeePermissions)) ||
+            (activeMainTab === 'weld-log-dashboard' &&
+              !canViewWeldLogDashboard(employeeId, employees, employeePermissions)) ||
             (activeMainTab === 'activity-log' &&
-              !canViewActivityLog(employeeId, employees, employeePermissions));
+              !canViewActivityLog(employeeId, employees, employeePermissions)) ||
+            (activeMainTab === 'time-tracking' &&
+              !canViewTimeTracking(employeeId, employees, employeePermissions)) ||
+            (activeMainTab === 'visibility-dashboard' &&
+              !canViewVisibilityDashboard(
+                employeeId,
+                employees,
+                employeePermissions,
+                state.visibilityDashboardJobLevels
+              ));
 
           set({
             viewAsOriginalUserId: originalUserId,
@@ -3237,7 +3787,14 @@ export const useStore = create<AppState>()(
           });
         },
 
+        openFieldJobDashboard: (projectId) => {
+          set({
+            activeMainTab: 'field-dashboard',
+            fieldFocusProjectId: projectId,
+          });
+        },
 
+        setFieldFocusProjectId: (projectId) => set({ fieldFocusProjectId: projectId }),
 
         addClient: (name) => {
 
@@ -3529,7 +4086,17 @@ export const useStore = create<AppState>()(
             throw new Error('A valid email is required to send a login invite.');
           }
           const category = orgCategory ?? defaultOrgCategoryForRole(role);
-          const employee: Employee = { id: uuid(), name, role, orgCategory: category };
+          const matchingTitle = get().employeeJobTitles.find(
+            (title) =>
+              resolveOrgCategoryForTitle(title) === category && !title.opsPlacement
+          );
+          const employee: Employee = {
+            id: uuid(),
+            name,
+            role,
+            orgCategory: category,
+            jobTitleId: matchingTitle?.id,
+          };
           const invitePassword = generateInvitePassword();
           const usedStyleKeys = new Set(
             Object.values(get().employeeAssigneeStyles).map(assigneeStyleKey)
@@ -3627,6 +4194,199 @@ export const useStore = create<AppState>()(
           });
         },
 
+        changeEmployeeJob: (employeeId, jobTitleId) => {
+          const state = get();
+          const title = findEmployeeJobTitle(state.employeeJobTitles, jobTitleId);
+          if (!title) return;
+
+          const existing = state.employees.find((employee) => employee.id === employeeId);
+          if (!existing || isOwnerEmployee(existing)) return;
+          if (isProtectedRosterEmployee(employeeId)) return;
+
+          const orgCategory = resolveOrgCategoryForTitle(title);
+          const nextRole = roleForOrgCategory(orgCategory);
+          const nextPermissions = permissionsForJobTitle(title);
+
+          set((s) => {
+            let assignments = s.dashboardAssignments ?? createDefaultDashboardAssignments();
+            assignments = removeEmployeeFromAllDashboardRoles(assignments, employeeId);
+            if (title.opsPlacement) {
+              const { dashboard, roleId } = title.opsPlacement;
+              const board = { ...(assignments[dashboard] as Record<string, string[]>) };
+              const current = board[roleId] ?? [];
+              if (!current.includes(employeeId)) {
+                board[roleId] = [...current, employeeId];
+              }
+              assignments = {
+                ...assignments,
+                [dashboard]: board,
+              } as DashboardAssignments;
+            }
+
+            const teamId = orgCategoryToTeamId(orgCategory);
+            const orgTeams = s.orgTeams.map((team) => {
+              const withoutEmployee = team.memberIds.filter((memberId) => memberId !== employeeId);
+              if (team.id === teamId) {
+                return { ...team, memberIds: [...withoutEmployee, employeeId] };
+              }
+              return { ...team, memberIds: withoutEmployee };
+            });
+
+            const activityLog = logActivity(
+              s.activityLog,
+              {
+                actorId: resolveActivityActorId(s.currentUserId, s.viewAsOriginalUserId),
+                action: 'updated',
+                entityType: 'employee',
+                entityId: employeeId,
+                summary: `Changed job for ${existing.name} to ${title.label}`,
+                details: {
+                  name: existing.name,
+                  job: title.label,
+                  orgCategory,
+                  stageId: title.stageId,
+                },
+              },
+              uuid
+            );
+
+            return {
+              employees: s.employees.map((employee) =>
+                employee.id === employeeId
+                  ? {
+                      ...employee,
+                      role: nextRole,
+                      orgCategory,
+                      jobTitleId: title.id,
+                    }
+                  : employee
+              ),
+              orgTeams,
+              dashboardAssignments: assignments,
+              employeePermissions: {
+                ...s.employeePermissions,
+                [employeeId]: nextPermissions,
+              },
+              activityLog,
+              projects: s.projects.map((project) => {
+                if (nextRole === 'detailer') {
+                  return {
+                    ...project,
+                    supportIds: project.supportIds.filter((sid) => sid !== employeeId),
+                  };
+                }
+                if (nextRole === 'support-specialist') {
+                  return {
+                    ...project,
+                    detailerIds: project.detailerIds.filter((did) => did !== employeeId),
+                  };
+                }
+                return {
+                  ...project,
+                  detailerIds: project.detailerIds.filter((did) => did !== employeeId),
+                  supportIds: project.supportIds.filter((sid) => sid !== employeeId),
+                };
+              }),
+            };
+          });
+        },
+
+        addJobTitle: (label, stageId) => {
+          const trimmed = label.trim();
+          if (!trimmed) return null;
+          const id = `job-${uuid()}`;
+          const draft = repairJobTitlePlacement({
+            id,
+            label: trimmed,
+            stageId,
+          });
+          set((s) => ({
+            employeeJobTitles: [...s.employeeJobTitles, draft],
+          }));
+          return id;
+        },
+
+        updateJobTitle: (id, updates) => {
+          set((s) => {
+            const existing = findEmployeeJobTitle(s.employeeJobTitles, id);
+            if (!existing) return s;
+
+            const next = repairJobTitlePlacement({
+              ...existing,
+              ...updates,
+              label:
+                updates.label !== undefined
+                  ? updates.label.trim() || existing.label
+                  : existing.label,
+              id: existing.id,
+            });
+
+            const orgCategory = resolveOrgCategoryForTitle(next);
+            const nextRole = roleForOrgCategory(orgCategory);
+            const nextPermissions = permissionsForJobTitle(next);
+
+            let assignments = s.dashboardAssignments ?? createDefaultDashboardAssignments();
+            const holders = s.employees.filter((employee) => employee.jobTitleId === id);
+
+            for (const holder of holders) {
+              assignments = removeEmployeeFromAllDashboardRoles(assignments, holder.id);
+              if (next.opsPlacement) {
+                const { dashboard, roleId } = next.opsPlacement;
+                const board = { ...(assignments[dashboard] as Record<string, string[]>) };
+                const current = board[roleId] ?? [];
+                if (!current.includes(holder.id)) {
+                  board[roleId] = [...current, holder.id];
+                }
+                assignments = {
+                  ...assignments,
+                  [dashboard]: board,
+                } as DashboardAssignments;
+              }
+            }
+
+            const holderIds = new Set(holders.map((employee) => employee.id));
+            const teamId = orgCategoryToTeamId(orgCategory);
+            const orgTeams = s.orgTeams.map((team) => {
+              let memberIds = team.memberIds.filter((memberId) => !holderIds.has(memberId));
+              if (team.id === teamId) {
+                memberIds = [...memberIds, ...holders.map((employee) => employee.id)];
+              }
+              return { ...team, memberIds };
+            });
+
+            const employeePermissions = { ...s.employeePermissions };
+            for (const holder of holders) {
+              employeePermissions[holder.id] = nextPermissions;
+            }
+
+            return {
+              employeeJobTitles: s.employeeJobTitles.map((title) =>
+                title.id === id ? next : title
+              ),
+              employees: s.employees.map((employee) =>
+                employee.jobTitleId === id
+                  ? { ...employee, role: nextRole, orgCategory, jobTitleId: id }
+                  : employee
+              ),
+              orgTeams,
+              dashboardAssignments: assignments,
+              employeePermissions,
+            };
+          });
+        },
+
+        removeJobTitle: (id) => {
+          const state = get();
+          if (state.employees.some((employee) => employee.jobTitleId === id)) {
+            return false;
+          }
+          if (!findEmployeeJobTitle(state.employeeJobTitles, id)) return false;
+          set((s) => ({
+            employeeJobTitles: s.employeeJobTitles.filter((title) => title.id !== id),
+          }));
+          return true;
+        },
+
         updateEmployeeEmail: (id, email) => {
           const trimmedEmail = email.trim();
           if (!isValidEmail(trimmedEmail)) return;
@@ -3649,45 +4409,151 @@ export const useStore = create<AppState>()(
         removeEmployee: (id) => {
           if (isProtectedRosterEmployee(id)) return;
 
-          set((s) => ({
-            employees: s.employees.filter((e) => e.id !== id),
-            tasks: s.tasks.map((t) =>
-              t.assigneeIds.includes(id)
-                ? { ...t, assigneeIds: t.assigneeIds.filter((aid) => aid !== id) }
-                : t
-            ),
-            projects: s.projects.map((p) => ({
-              ...p,
-              detailerIds: p.detailerIds.filter((did) => did !== id),
-              supportIds: p.supportIds.filter((sid) => sid !== id),
-              pmIds: p.pmIds.filter((pmId) => pmId !== id),
-            })),
-            orgTeams: s.orgTeams.map((team) => ({
-              ...team,
-              memberIds: team.memberIds.filter((memberId) => memberId !== id),
-            })),
-            employeePermissions: Object.fromEntries(
-              Object.entries(s.employeePermissions).filter(([employeeId]) => employeeId !== id)
-            ),
-            employeeReportsTo: Object.fromEntries(
-              Object.entries(s.employeeReportsTo)
-                .filter(([employeeId]) => employeeId !== id)
-                .map(([employeeId, managerIds]) => [
-                  employeeId,
-                  managerIds.filter((managerId) => managerId !== id),
-                ])
-            ),
-            orgChartLevelSlots: removeEmployeeFromOrgChartSlots(s.orgChartLevelSlots, id),
-            timeEntries: s.timeEntries.filter((entry) => entry.employeeId !== id),
-            employeeAssigneeStyles: Object.fromEntries(
-              Object.entries(s.employeeAssigneeStyles).filter(([employeeId]) => employeeId !== id)
-            ),
-            employeeCredentials: Object.fromEntries(
-              Object.entries(s.employeeCredentials).filter(([employeeId]) => employeeId !== id)
-            ),
-            currentUserId:
-              s.currentUserId === id ? null : s.currentUserId,
-          }));
+          set((s) => {
+            const employee = s.employees.find((entry) => entry.id === id);
+            if (!employee) return s;
+
+            const actorId = resolveActivityActorId(s.currentUserId, s.viewAsOriginalUserId);
+            const archiveId = uuid();
+            const activityLogId = uuid();
+            const archive: DeletedEmployeeArchive = {
+              id: archiveId,
+              deletedAt: new Date().toISOString(),
+              deletedById: actorId,
+              activityLogId,
+              employee: { ...employee },
+              permissions: [...(s.employeePermissions[id] ?? [])],
+              reportsTo: [...(s.employeeReportsTo[id] ?? [])],
+              assigneeStyle: s.employeeAssigneeStyles[id] ?? null,
+              credentials: s.employeeCredentials[id] ?? null,
+            };
+
+            const activityLog = logActivity(
+              s.activityLog,
+              {
+                actorId,
+                action: 'deleted',
+                entityType: 'employee',
+                entityId: id,
+                summary: `Removed employee "${employee.name}" from the roster`,
+                details: {
+                  name: employee.name,
+                  role: employee.role,
+                  orgCategory: employee.orgCategory ?? null,
+                },
+                archiveId,
+              },
+              () => activityLogId
+            );
+
+            return {
+              employees: s.employees.filter((e) => e.id !== id),
+              tasks: s.tasks.map((t) =>
+                t.assigneeIds.includes(id)
+                  ? { ...t, assigneeIds: t.assigneeIds.filter((aid) => aid !== id) }
+                  : t
+              ),
+              projects: s.projects.map((p) => ({
+                ...p,
+                detailerIds: p.detailerIds.filter((did) => did !== id),
+                supportIds: p.supportIds.filter((sid) => sid !== id),
+                pmIds: p.pmIds.filter((pmId) => pmId !== id),
+                assistantPmIds: (p.assistantPmIds ?? []).filter((pmId) => pmId !== id),
+                fieldIds: (p.fieldIds ?? []).filter((fieldId) => fieldId !== id),
+                fieldCrewIds: (p.fieldCrewIds ?? []).filter((fieldId) => fieldId !== id),
+              })),
+              orgTeams: s.orgTeams.map((team) => ({
+                ...team,
+                memberIds: team.memberIds.filter((memberId) => memberId !== id),
+              })),
+              employeePermissions: Object.fromEntries(
+                Object.entries(s.employeePermissions).filter(([employeeId]) => employeeId !== id)
+              ),
+              employeeReportsTo: Object.fromEntries(
+                Object.entries(s.employeeReportsTo)
+                  .filter(([employeeId]) => employeeId !== id)
+                  .map(([employeeId, managerIds]) => [
+                    employeeId,
+                    managerIds.filter((managerId) => managerId !== id),
+                  ])
+              ),
+              orgChartLevelSlots: removeEmployeeFromOrgChartSlots(s.orgChartLevelSlots, id),
+              timeEntries: s.timeEntries.filter((entry) => entry.employeeId !== id),
+              employeeAssigneeStyles: Object.fromEntries(
+                Object.entries(s.employeeAssigneeStyles).filter(([employeeId]) => employeeId !== id)
+              ),
+              employeeCredentials: Object.fromEntries(
+                Object.entries(s.employeeCredentials).filter(([employeeId]) => employeeId !== id)
+              ),
+              currentUserId: s.currentUserId === id ? null : s.currentUserId,
+              deletedEmployeeArchive: [archive, ...(s.deletedEmployeeArchive ?? [])],
+              activityLog,
+            };
+          });
+        },
+
+        restoreDeletedEmployee: (archiveId) => {
+          const state = get();
+          const archive = (state.deletedEmployeeArchive ?? []).find((entry) => entry.id === archiveId);
+          if (!archive || archive.restoredAt) return false;
+          if (state.employees.some((employee) => employee.id === archive.employee.id)) return false;
+
+          const actorId = resolveActivityActorId(state.currentUserId, state.viewAsOriginalUserId);
+          const employee = archive.employee;
+          const employeeIds = [...state.employees.map((entry) => entry.id), employee.id];
+
+          set((s) => {
+            const nextCredentials = { ...s.employeeCredentials };
+            if (archive.credentials) {
+              nextCredentials[employee.id] = archive.credentials;
+            }
+            const nextStyles = { ...s.employeeAssigneeStyles };
+            if (archive.assigneeStyle) {
+              nextStyles[employee.id] = archive.assigneeStyle;
+            }
+            const synced = syncEmployeeAuthAndColors(
+              employeeIds,
+              nextStyles,
+              nextCredentials,
+              buildUniqueAssigneeStyles,
+              [...s.employees, employee]
+            );
+
+            const activityLog = logActivity(
+              s.activityLog,
+              {
+                actorId,
+                action: 'restored',
+                entityType: 'employee',
+                entityId: employee.id,
+                summary: `Restored employee "${employee.name}" to the roster`,
+                details: { name: employee.name },
+                archiveId,
+              },
+              uuid
+            );
+
+            return {
+              employees: [...s.employees, employee],
+              employeePermissions: {
+                ...s.employeePermissions,
+                [employee.id]: [...archive.permissions],
+              },
+              employeeReportsTo: {
+                ...s.employeeReportsTo,
+                [employee.id]: [...archive.reportsTo],
+              },
+              employeeAssigneeStyles: synced.employeeAssigneeStyles,
+              employeeCredentials: synced.employeeCredentials,
+              deletedEmployeeArchive: (s.deletedEmployeeArchive ?? []).map((entry) =>
+                entry.id === archiveId
+                  ? { ...entry, restoredAt: new Date().toISOString(), restoredById: actorId }
+                  : entry
+              ),
+              activityLog,
+            };
+          });
+          return true;
         },
 
         addOrgTeam: (name) => {
@@ -3893,6 +4759,117 @@ export const useStore = create<AppState>()(
           });
         },
 
+        setVisibilityDashboardJobLevel: (category, enabled) => {
+          set((s) => {
+            const levels = new Set(s.visibilityDashboardJobLevels);
+            if (enabled) levels.add(category);
+            else levels.delete(category);
+            const activityLog = logActivity(
+              s.activityLog,
+              {
+                actorId: resolveActivityActorId(s.currentUserId, s.viewAsOriginalUserId),
+                action: 'updated',
+                entityType: 'permission',
+                entityId: 'visibility-dashboard',
+                summary: `${enabled ? 'Enabled' : 'Disabled'} Access Control for job level ${category}`,
+                details: { category, enabled },
+              },
+              uuid
+            );
+            return {
+              visibilityDashboardJobLevels: [...levels],
+              activityLog,
+            };
+          });
+        },
+
+        setEmployeeNavVisibility: (employeeId, column, enabled) => {
+          const permission = NAV_COLUMN_PERMISSION[column];
+          set((s) => {
+            const current = new Set(s.employeePermissions[employeeId] ?? []);
+            if (enabled) current.add(permission);
+            else current.delete(permission);
+            const employee = s.employees.find((entry) => entry.id === employeeId);
+            const activityLog = logActivity(
+              s.activityLog,
+              {
+                actorId: resolveActivityActorId(s.currentUserId, s.viewAsOriginalUserId),
+                action: 'updated',
+                entityType: 'permission',
+                entityId: employeeId,
+                summary: `${enabled ? 'Granted' : 'Revoked'} ${permission} for ${employee?.name ?? 'employee'}`,
+                details: { permission, enabled, column },
+              },
+              uuid
+            );
+            return {
+              employeePermissions: {
+                ...s.employeePermissions,
+                [employeeId]: [...current],
+              },
+              activityLog,
+            };
+          });
+        },
+
+        setJobLevelNavVisibility: (rowId, column, enabled) => {
+          set((s) => {
+            const permission = NAV_COLUMN_PERMISSION[column];
+            const nextDefaults = normalizeJobLevelNavVisibility(s.jobLevelNavVisibility);
+            nextDefaults[rowId] = {
+              ...(nextDefaults[rowId] ?? DEFAULT_JOB_LEVEL_NAV_VISIBILITY[rowId]!),
+              [column]: enabled,
+            };
+
+            const nextPermissions: EmployeePermissionsMap = { ...s.employeePermissions };
+            for (const employee of employeesForJobLevelRow(
+              rowId,
+              s.employees,
+              s.dashboardAssignments
+            )) {
+              const granted = new Set(nextPermissions[employee.id] ?? []);
+              if (enabled) granted.add(permission);
+              else granted.delete(permission);
+              nextPermissions[employee.id] = [...granted];
+            }
+
+            let visibilityDashboardJobLevels = s.visibilityDashboardJobLevels;
+            const categoryRows: OrgCategory[] = [
+              'owner',
+              'bim-manager',
+              'operations-manager',
+              'support-manager',
+              'support-specialist',
+            ];
+            if (column === 'visibility' && (categoryRows as string[]).includes(rowId)) {
+              const levels = new Set(visibilityDashboardJobLevels);
+              if (enabled) levels.add(rowId as OrgCategory);
+              else levels.delete(rowId as OrgCategory);
+              visibilityDashboardJobLevels = [...levels];
+            }
+
+            const activityLog = logActivity(
+              s.activityLog,
+              {
+                actorId: resolveActivityActorId(s.currentUserId, s.viewAsOriginalUserId),
+                action: 'updated',
+                entityType: 'permission',
+                entityId: rowId,
+                summary: `${enabled ? 'Enabled' : 'Disabled'} ${column} default for ${rowId}`,
+                details: { rowId, column, enabled },
+              },
+              uuid
+            );
+
+            return {
+              jobLevelNavVisibility: nextDefaults,
+              employeePermissions: nextPermissions,
+              visibilityDashboardJobLevels,
+              activityLog,
+            };
+          });
+        },
+
         assignDashboardMember: (dashboard, roleId, employeeId) => {
           set((s) => {
             const assignments = s.dashboardAssignments ?? createDefaultDashboardAssignments();
@@ -4058,11 +5035,327 @@ export const useStore = create<AppState>()(
           });
         },
 
+        importBoardroomPackageManifest: (rawManifest, exportFolder) => {
+          const manifest = parseBoardroomPackageManifest(rawManifest);
+          const folder = exportFolder.trim();
+          if (!folder) {
+            throw new Error('Export folder path is required.');
+          }
+
+          const state = get();
+          const project = findProjectForManifest(state.projects, manifest);
+          if (!project) {
+            throw new Error(
+              `Boardroom project id "${manifest.boardroomProject.id}" was not found. Start BIM Boardroom and pick a live project in SSv3.`
+            );
+          }
+
+          const spoolingTask = findSpoolingTaskForManifest(state.tasks, manifest);
+          if (!spoolingTask) {
+            throw new Error(
+              `Spooling task "${manifest.boardroomTask.id}" was not found on the Spooling board for this project. Pick an existing Spooling task in SSv3.`
+            );
+          }
+
+          if (isSsv3ExportLocked(spoolingTask) && spoolingTaskHasSsv3Export(spoolingTask)) {
+            throw new Error(
+              `Cannot replace the SSv3 export on "${spoolingTask.title}" while it is Ready for Fab or already on the Fab board. Move the status back first, or clear after moving it off Fab.`
+            );
+          }
+
+          const incomingExportedAt = manifest.exportedAt ?? '';
+          const existingExportedAt = spoolingTask.customFields?.[SSV3_FIELD.exportedAt] ?? '';
+          const existingFolder = spoolingTask.customFields?.[SSV3_FIELD.exportFolder] ?? '';
+          if (
+            spoolingTaskHasSsv3Export(spoolingTask) &&
+            incomingExportedAt &&
+            existingExportedAt === incomingExportedAt &&
+            existingFolder === folder
+          ) {
+            // Same export already attached — do not wipe shop progress on watcher/startup.
+            return {
+              projectId: project.id,
+              spoolingTaskId: spoolingTask.id,
+              packagesAttached: manifest.packages.length,
+              promotedToFab: false,
+              packagesUpserted: 0,
+              assembliesUpserted: 0,
+            };
+          }
+
+          let result: BoardroomPackageImportResult = {
+            projectId: project.id,
+            spoolingTaskId: spoolingTask.id,
+            packagesAttached: manifest.packages.length,
+            promotedToFab: false,
+            packagesUpserted: 0,
+            assembliesUpserted: 0,
+          };
+
+          set((s) => {
+            const history = pushHistory(s);
+            const actorId = resolveActivityActorId(s.currentUserId, s.viewAsOriginalUserId);
+            let activityLog = s.activityLog;
+
+            const priorRoot = s.tasks.find((task) => task.id === spoolingTask.id) ?? spoolingTask;
+            const priorStatusByRevitId = new Map<string, { status: string; assigneeIds: string[] }>();
+            const treeIds = new Set<string>([priorRoot.id]);
+            let grew = true;
+            while (grew) {
+              grew = false;
+              for (const task of s.tasks) {
+                if (task.parentTaskId && treeIds.has(task.parentTaskId) && !treeIds.has(task.id)) {
+                  treeIds.add(task.id);
+                  grew = true;
+                }
+              }
+            }
+            for (const task of s.tasks) {
+              if (!treeIds.has(task.id)) continue;
+              if (task.customFields?.[SSV3_FIELD.kind] !== SSV3_KIND_ASSEMBLY) continue;
+              const revitId = task.customFields?.[SSV3_FIELD.revitElementId];
+              if (!revitId) continue;
+              priorStatusByRevitId.set(revitId, {
+                status: task.status,
+                assigneeIds: [...(task.assigneeIds ?? [])],
+              });
+            }
+
+            const wiped = clearSsv3ExportFromSpoolingTask(
+              spoolingTask,
+              s.tasks,
+              s.taskAttachments
+            );
+            let tasks = wiped.tasks;
+            let taskAttachments = wiped.taskAttachments;
+
+            tasks = tasks.map((task) =>
+              task.id === spoolingTask.id
+                ? {
+                    ...task,
+                    customFields: buildSpoolingExportCustomFields(
+                      task.customFields,
+                      manifest,
+                      folder
+                    ),
+                  }
+                : task
+            );
+
+            let attached = tasks.find((task) => task.id === spoolingTask.id)!;
+            let projects = s.projects;
+            let packagesUpserted = 0;
+            let assembliesUpserted = 0;
+            let promotedToFab = false;
+
+            const nested = attachSsv3HierarchyFromManifest(attached, manifest, {
+              projects,
+              tasks,
+              taskGroups: s.taskGroups,
+              boardTaskStatuses: s.boardTaskStatuses,
+              projectBoardTaskStatuses: s.projectBoardTaskStatuses,
+            });
+            projects = nested.projects;
+            tasks = nested.tasks;
+            packagesUpserted = nested.packagesUpserted;
+            assembliesUpserted = nested.assembliesUpserted;
+
+            if (priorStatusByRevitId.size > 0) {
+              tasks = tasks.map((task) => {
+                if (task.customFields?.[SSV3_FIELD.kind] !== SSV3_KIND_ASSEMBLY) return task;
+                const revitId = task.customFields?.[SSV3_FIELD.revitElementId];
+                if (!revitId) return task;
+                const prior = priorStatusByRevitId.get(revitId);
+                if (!prior) return task;
+                return {
+                  ...task,
+                  status: prior.status,
+                  assigneeIds: prior.assigneeIds.length ? prior.assigneeIds : task.assigneeIds,
+                };
+              });
+            }
+
+            attached = tasks.find((task) => task.id === spoolingTask.id)!;
+
+            if (
+              attached.boardType === 'spooling' &&
+              attached.status === 'ready-for-fab' &&
+              spoolingTaskHasSsv3Export(attached)
+            ) {
+              const promoted = promoteSsv3SpoolingTaskToFab(attached, {
+                projects,
+                tasks,
+                taskGroups: s.taskGroups,
+                boardTaskStatuses: s.boardTaskStatuses,
+                projectBoardTaskStatuses: s.projectBoardTaskStatuses,
+              });
+              projects = promoted.projects;
+              tasks = promoted.tasks;
+              packagesUpserted = promoted.packagesUpserted;
+              assembliesUpserted = promoted.assembliesUpserted;
+              promotedToFab = promoted.moved;
+            }
+
+            activityLog = logActivity(
+              activityLog,
+              {
+                actorId,
+                action: 'updated',
+                entityType: 'task',
+                entityId: spoolingTask.id,
+                summary: wiped.cleared
+                  ? `Replaced SSv3 export under Spooling task "${attached.title}"`
+                  : `Attached SSv3 export under Spooling task "${attached.title}"`,
+                details: {
+                  board: attached.boardType,
+                  packages: manifest.packages.map((p) => p.sPackage).join(', '),
+                  promotedToFab,
+                  replacedPriorExport: wiped.cleared,
+                },
+              },
+              uuid
+            );
+
+            const exportFiles = filterBoardroomPackageAttachmentFiles(manifest.files);
+
+            const sep = folder.includes('\\') ? '\\' : '/';
+            const base = folder.replace(/[/\\]+$/, '');
+            const now = new Date().toISOString();
+            for (const file of exportFiles) {
+              const fullPath = `${base}${sep}${file.fileName}`;
+              const storageId = `boardroom-abs:${fullPath}`;
+              const mimeType =
+                file.type === 'pdf'
+                  ? 'application/pdf'
+                  : file.type === 'xlsx'
+                    ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                    : file.type === 'pcf'
+                      ? 'text/plain'
+                      : 'application/octet-stream';
+              const existing = taskAttachments.find(
+                (attachment) =>
+                  attachment.taskId === spoolingTask.id &&
+                  attachment.fileName.toLowerCase() === file.fileName.toLowerCase()
+              );
+              if (existing) {
+                const versionId = uuid();
+                const prior =
+                  existing.versions.find((v) => v.id === existing.currentVersionId)?.version ??
+                  existing.versions.length;
+                taskAttachments = taskAttachments.map((attachment) =>
+                  attachment.id === existing.id
+                    ? {
+                        ...attachment,
+                        currentVersionId: versionId,
+                        versions: existing.versions.map((v) =>
+                          v.id === existing.currentVersionId
+                            ? {
+                                id: versionId,
+                                version: prior,
+                                fileName: file.fileName,
+                                mimeType,
+                                sizeBytes: 0,
+                                storageId,
+                                uploadedAt: now,
+                                uploadedById: actorId,
+                              }
+                            : v
+                        ),
+                      }
+                    : attachment
+                );
+              } else {
+                const versionId = uuid();
+                taskAttachments.push({
+                  id: uuid(),
+                  taskId: spoolingTask.id,
+                  fileName: file.fileName,
+                  currentVersionId: versionId,
+                  versions: [
+                    {
+                      id: versionId,
+                      version: 1,
+                      fileName: file.fileName,
+                      mimeType,
+                      sizeBytes: 0,
+                      storageId,
+                      uploadedAt: now,
+                      uploadedById: actorId,
+                    },
+                  ],
+                });
+              }
+            }
+
+            result = {
+              projectId: project.id,
+              spoolingTaskId: spoolingTask.id,
+              packagesAttached: manifest.packages.length,
+              promotedToFab,
+              packagesUpserted,
+              assembliesUpserted,
+            };
+
+            return { ...history, projects, tasks, activityLog, taskAttachments };
+          });
+
+          return result;
+        },
+
+        clearSsv3ExportFromTask: (taskId) => {
+          const state = get();
+          const task = state.tasks.find((entry) => entry.id === taskId);
+          if (!task) {
+            throw new Error('Task not found.');
+          }
+          if (task.boardType !== 'spooling') {
+            throw new Error('Clear SSv3 export is only available on Spooling board tasks.');
+          }
+          if (!spoolingTaskHasSsv3Export(task)) {
+            throw new Error('This task has no SSv3 export to clear.');
+          }
+          if (isSsv3ExportLocked(task)) {
+            throw new Error(
+              `Cannot clear the SSv3 export on "${task.title}" while it is Ready for Fab or already on the Fab board. Move the status back first.`
+            );
+          }
+
+          set((s) => {
+            const history = pushHistory(s);
+            const root = s.tasks.find((entry) => entry.id === taskId);
+            if (!root) return s;
+            const wiped = clearSsv3ExportFromSpoolingTask(root, s.tasks, s.taskAttachments);
+            if (!wiped.cleared) return s;
+            const activityLog = logActivity(
+              s.activityLog,
+              {
+                actorId: resolveActivityActorId(s.currentUserId, s.viewAsOriginalUserId),
+                action: 'updated',
+                entityType: 'task',
+                entityId: taskId,
+                summary: `Cleared SSv3 export from Spooling task "${root.title}"`,
+                details: {
+                  removedAssemblies: wiped.removedTaskCount,
+                  removedAttachments: wiped.removedAttachmentCount,
+                },
+              },
+              uuid
+            );
+            return {
+              ...history,
+              tasks: wiped.tasks,
+              taskAttachments: wiped.taskAttachments,
+              activityLog,
+            };
+          });
+        },
+
         updateTask: (id, updates) => {
           set((s) => {
             const actorId = resolveActivityActorId(s.currentUserId, s.viewAsOriginalUserId);
             let activityLog = s.activityLog;
-            const tasks = s.tasks.map((t) => {
+            let projects = s.projects;
+            let tasks = s.tasks.map((t) => {
               if (t.id !== id) return t;
               const enriched = enrichTaskUpdates(
                 t,
@@ -4106,15 +5399,191 @@ export const useStore = create<AppState>()(
               }
               return next;
             });
-            return activityLog === s.activityLog ? { tasks } : { tasks, activityLog };
+
+            const updated = tasks.find((t) => t.id === id);
+            if (
+              updated &&
+              updates.status === 'ready-for-fab' &&
+              updated.boardType === 'spooling' &&
+              spoolingTaskHasSsv3Export(updated)
+            ) {
+              const promoted = promoteSsv3SpoolingTaskToFab(updated, {
+                projects,
+                tasks,
+                taskGroups: s.taskGroups,
+                boardTaskStatuses: s.boardTaskStatuses,
+                projectBoardTaskStatuses: s.projectBoardTaskStatuses,
+              });
+              projects = promoted.projects;
+              tasks = promoted.tasks;
+            } else if (
+              updated &&
+              updates.status === 'spooling' &&
+              updated.boardType === 'fab' &&
+              !updated.parentTaskId &&
+              spoolingTaskHasSsv3Export(updated)
+            ) {
+              const demoted = demoteSsv3FabTaskToSpooling(updated, {
+                projects,
+                tasks,
+                taskGroups: s.taskGroups,
+                boardTaskStatuses: s.boardTaskStatuses,
+                projectBoardTaskStatuses: s.projectBoardTaskStatuses,
+              });
+              projects = demoted.projects;
+              tasks = demoted.tasks;
+              if (demoted.moved) {
+                activityLog = logActivity(
+                  activityLog,
+                  {
+                    actorId,
+                    action: 'status_changed',
+                    entityType: 'task',
+                    entityId: id,
+                    summary: `Moved "${updated.title}" back to Spooling`,
+                    details: { from: 'fab', to: 'spooling' },
+                  },
+                  uuid
+                );
+              }
+            } else if (
+              updated &&
+              updates.status === 'ready-to-ship' &&
+              updated.boardType === 'fab' &&
+              !updated.parentTaskId &&
+              spoolingTaskHasSsv3Export(updated)
+            ) {
+              const shipped = promoteSsv3FabTaskToShipping(updated, {
+                projects,
+                tasks,
+                taskGroups: s.taskGroups,
+                boardTaskStatuses: s.boardTaskStatuses,
+                projectBoardTaskStatuses: s.projectBoardTaskStatuses,
+              });
+              projects = shipped.projects;
+              tasks = shipped.tasks;
+              if (shipped.moved) {
+                activityLog = logActivity(
+                  activityLog,
+                  {
+                    actorId,
+                    action: 'status_changed',
+                    entityType: 'task',
+                    entityId: id,
+                    summary: `Moved "${updated.title}" to Shipping`,
+                    details: { from: 'fab', to: 'shipping' },
+                  },
+                  uuid
+                );
+              }
+            } else if (
+              updated &&
+              updates.status === 'received-field' &&
+              updated.boardType === 'shipping' &&
+              !updated.parentTaskId &&
+              spoolingTaskHasSsv3Export(updated)
+            ) {
+              const handed = promoteSsv3ShippingTaskToField(updated, {
+                projects,
+                tasks,
+                taskGroups: s.taskGroups,
+                boardTaskStatuses: s.boardTaskStatuses,
+                projectBoardTaskStatuses: s.projectBoardTaskStatuses,
+              });
+              projects = handed.projects;
+              tasks = handed.tasks;
+              if (handed.moved) {
+                activityLog = logActivity(
+                  activityLog,
+                  {
+                    actorId,
+                    action: 'status_changed',
+                    entityType: 'task',
+                    entityId: id,
+                    summary: `Moved "${updated.title}" to Field`,
+                    details: { from: 'shipping', to: 'field' },
+                  },
+                  uuid
+                );
+              }
+            } else if (
+              updated &&
+              updates.status === 'return-to-fab' &&
+              updated.boardType === 'shipping' &&
+              !updated.parentTaskId &&
+              spoolingTaskHasSsv3Export(updated)
+            ) {
+              const demoted = demoteSsv3ShippingTaskToFab(updated, {
+                projects,
+                tasks,
+                taskGroups: s.taskGroups,
+                boardTaskStatuses: s.boardTaskStatuses,
+                projectBoardTaskStatuses: s.projectBoardTaskStatuses,
+              });
+              projects = demoted.projects;
+              tasks = demoted.tasks;
+              if (demoted.moved) {
+                activityLog = logActivity(
+                  activityLog,
+                  {
+                    actorId,
+                    action: 'status_changed',
+                    entityType: 'task',
+                    entityId: id,
+                    summary: `Returned "${updated.title}" to Fab`,
+                    details: { from: 'shipping', to: 'fab' },
+                  },
+                  uuid
+                );
+              }
+            } else if (
+              updated &&
+              updates.status === 'spooling' &&
+              updated.boardType === 'shipping' &&
+              !updated.parentTaskId &&
+              spoolingTaskHasSsv3Export(updated)
+            ) {
+              const demoted = demoteSsv3ShippingTaskToSpooling(updated, {
+                projects,
+                tasks,
+                taskGroups: s.taskGroups,
+                boardTaskStatuses: s.boardTaskStatuses,
+                projectBoardTaskStatuses: s.projectBoardTaskStatuses,
+              });
+              projects = demoted.projects;
+              tasks = demoted.tasks;
+              if (demoted.moved) {
+                activityLog = logActivity(
+                  activityLog,
+                  {
+                    actorId,
+                    action: 'status_changed',
+                    entityType: 'task',
+                    entityId: id,
+                    summary: `Returned "${updated.title}" to Spooling`,
+                    details: { from: 'shipping', to: 'spooling' },
+                  },
+                  uuid
+                );
+              }
+            }
+
+            const projectsChanged = projects !== s.projects;
+            if (activityLog === s.activityLog && !projectsChanged) {
+              return { tasks };
+            }
+            return projectsChanged
+              ? { tasks, projects, activityLog }
+              : { tasks, activityLog };
           });
         },
 
         updateTasks: (ids, updates) => {
           const idSet = new Set(ids);
           if (idSet.size === 0) return;
-          set((s) => ({
-            tasks: s.tasks.map((t) => {
+          set((s) => {
+            let projects = s.projects;
+            let tasks = s.tasks.map((t) => {
               if (!idSet.has(t.id)) return t;
               const enriched = enrichTaskUpdates(
                 t,
@@ -4125,15 +5594,135 @@ export const useStore = create<AppState>()(
                 s.projectBoardTaskStatuses
               );
               return { ...t, ...enriched };
-            }),
-          }));
+            });
+
+            if (updates.status === 'ready-for-fab') {
+              for (const id of idSet) {
+                const updated = tasks.find((t) => t.id === id);
+                if (
+                  updated &&
+                  updated.boardType === 'spooling' &&
+                  spoolingTaskHasSsv3Export(updated)
+                ) {
+                  const promoted = promoteSsv3SpoolingTaskToFab(updated, {
+                    projects,
+                    tasks,
+                    taskGroups: s.taskGroups,
+                    boardTaskStatuses: s.boardTaskStatuses,
+                    projectBoardTaskStatuses: s.projectBoardTaskStatuses,
+                  });
+                  projects = promoted.projects;
+                  tasks = promoted.tasks;
+                }
+              }
+            } else if (updates.status === 'spooling') {
+              for (const id of idSet) {
+                const updated = tasks.find((t) => t.id === id);
+                if (
+                  updated &&
+                  updated.boardType === 'fab' &&
+                  !updated.parentTaskId &&
+                  spoolingTaskHasSsv3Export(updated)
+                ) {
+                  const demoted = demoteSsv3FabTaskToSpooling(updated, {
+                    projects,
+                    tasks,
+                    taskGroups: s.taskGroups,
+                    boardTaskStatuses: s.boardTaskStatuses,
+                    projectBoardTaskStatuses: s.projectBoardTaskStatuses,
+                  });
+                  projects = demoted.projects;
+                  tasks = demoted.tasks;
+                } else if (
+                  updated &&
+                  updated.boardType === 'shipping' &&
+                  !updated.parentTaskId &&
+                  spoolingTaskHasSsv3Export(updated)
+                ) {
+                  const demoted = demoteSsv3ShippingTaskToSpooling(updated, {
+                    projects,
+                    tasks,
+                    taskGroups: s.taskGroups,
+                    boardTaskStatuses: s.boardTaskStatuses,
+                    projectBoardTaskStatuses: s.projectBoardTaskStatuses,
+                  });
+                  projects = demoted.projects;
+                  tasks = demoted.tasks;
+                }
+              }
+            } else if (updates.status === 'ready-to-ship') {
+              for (const id of idSet) {
+                const updated = tasks.find((t) => t.id === id);
+                if (
+                  updated &&
+                  updated.boardType === 'fab' &&
+                  !updated.parentTaskId &&
+                  spoolingTaskHasSsv3Export(updated)
+                ) {
+                  const shipped = promoteSsv3FabTaskToShipping(updated, {
+                    projects,
+                    tasks,
+                    taskGroups: s.taskGroups,
+                    boardTaskStatuses: s.boardTaskStatuses,
+                    projectBoardTaskStatuses: s.projectBoardTaskStatuses,
+                  });
+                  projects = shipped.projects;
+                  tasks = shipped.tasks;
+                }
+              }
+            } else if (updates.status === 'received-field') {
+              for (const id of idSet) {
+                const updated = tasks.find((t) => t.id === id);
+                if (
+                  updated &&
+                  updated.boardType === 'shipping' &&
+                  !updated.parentTaskId &&
+                  spoolingTaskHasSsv3Export(updated)
+                ) {
+                  const handed = promoteSsv3ShippingTaskToField(updated, {
+                    projects,
+                    tasks,
+                    taskGroups: s.taskGroups,
+                    boardTaskStatuses: s.boardTaskStatuses,
+                    projectBoardTaskStatuses: s.projectBoardTaskStatuses,
+                  });
+                  projects = handed.projects;
+                  tasks = handed.tasks;
+                }
+              }
+            } else if (updates.status === 'return-to-fab') {
+              for (const id of idSet) {
+                const updated = tasks.find((t) => t.id === id);
+                if (
+                  updated &&
+                  updated.boardType === 'shipping' &&
+                  !updated.parentTaskId &&
+                  spoolingTaskHasSsv3Export(updated)
+                ) {
+                  const demoted = demoteSsv3ShippingTaskToFab(updated, {
+                    projects,
+                    tasks,
+                    taskGroups: s.taskGroups,
+                    boardTaskStatuses: s.boardTaskStatuses,
+                    projectBoardTaskStatuses: s.projectBoardTaskStatuses,
+                  });
+                  projects = demoted.projects;
+                  tasks = demoted.tasks;
+                }
+              }
+            }
+
+            return projects !== s.projects ? { tasks, projects } : { tasks };
+          });
         },
 
         updateTasksWith: (ids, updater) => {
           const idSet = new Set(ids);
           if (idSet.size === 0) return;
-          set((s) => ({
-            tasks: s.tasks.map((t) => {
+          set((s) => {
+            let projects = s.projects;
+            const previousById = new Map(s.tasks.map((t) => [t.id, t]));
+            let tasks = s.tasks.map((t) => {
               if (!idSet.has(t.id)) return t;
               const rawUpdates = updater(t);
               const enriched = enrichTaskUpdates(
@@ -4145,8 +5734,123 @@ export const useStore = create<AppState>()(
                 s.projectBoardTaskStatuses
               );
               return { ...t, ...enriched };
-            }),
-          }));
+            });
+
+            for (const id of idSet) {
+              const previous = previousById.get(id);
+              const updated = tasks.find((t) => t.id === id);
+              if (
+                previous &&
+                updated &&
+                previous.status !== 'ready-for-fab' &&
+                updated.status === 'ready-for-fab' &&
+                updated.boardType === 'spooling' &&
+                spoolingTaskHasSsv3Export(updated)
+              ) {
+                const promoted = promoteSsv3SpoolingTaskToFab(updated, {
+                  projects,
+                  tasks,
+                  taskGroups: s.taskGroups,
+                  boardTaskStatuses: s.boardTaskStatuses,
+                  projectBoardTaskStatuses: s.projectBoardTaskStatuses,
+                });
+                projects = promoted.projects;
+                tasks = promoted.tasks;
+              } else if (
+                previous &&
+                updated &&
+                previous.status !== 'spooling' &&
+                updated.status === 'spooling' &&
+                updated.boardType === 'fab' &&
+                !updated.parentTaskId &&
+                spoolingTaskHasSsv3Export(updated)
+              ) {
+                const demoted = demoteSsv3FabTaskToSpooling(updated, {
+                  projects,
+                  tasks,
+                  taskGroups: s.taskGroups,
+                  boardTaskStatuses: s.boardTaskStatuses,
+                  projectBoardTaskStatuses: s.projectBoardTaskStatuses,
+                });
+                projects = demoted.projects;
+                tasks = demoted.tasks;
+              } else if (
+                previous &&
+                updated &&
+                previous.status !== 'spooling' &&
+                updated.status === 'spooling' &&
+                updated.boardType === 'shipping' &&
+                !updated.parentTaskId &&
+                spoolingTaskHasSsv3Export(updated)
+              ) {
+                const demoted = demoteSsv3ShippingTaskToSpooling(updated, {
+                  projects,
+                  tasks,
+                  taskGroups: s.taskGroups,
+                  boardTaskStatuses: s.boardTaskStatuses,
+                  projectBoardTaskStatuses: s.projectBoardTaskStatuses,
+                });
+                projects = demoted.projects;
+                tasks = demoted.tasks;
+              } else if (
+                previous &&
+                updated &&
+                previous.status !== 'ready-to-ship' &&
+                updated.status === 'ready-to-ship' &&
+                updated.boardType === 'fab' &&
+                !updated.parentTaskId &&
+                spoolingTaskHasSsv3Export(updated)
+              ) {
+                const shipped = promoteSsv3FabTaskToShipping(updated, {
+                  projects,
+                  tasks,
+                  taskGroups: s.taskGroups,
+                  boardTaskStatuses: s.boardTaskStatuses,
+                  projectBoardTaskStatuses: s.projectBoardTaskStatuses,
+                });
+                projects = shipped.projects;
+                tasks = shipped.tasks;
+              } else if (
+                previous &&
+                updated &&
+                previous.status !== 'received-field' &&
+                updated.status === 'received-field' &&
+                updated.boardType === 'shipping' &&
+                !updated.parentTaskId &&
+                spoolingTaskHasSsv3Export(updated)
+              ) {
+                const handed = promoteSsv3ShippingTaskToField(updated, {
+                  projects,
+                  tasks,
+                  taskGroups: s.taskGroups,
+                  boardTaskStatuses: s.boardTaskStatuses,
+                  projectBoardTaskStatuses: s.projectBoardTaskStatuses,
+                });
+                projects = handed.projects;
+                tasks = handed.tasks;
+              } else if (
+                previous &&
+                updated &&
+                previous.status !== 'return-to-fab' &&
+                updated.status === 'return-to-fab' &&
+                updated.boardType === 'shipping' &&
+                !updated.parentTaskId &&
+                spoolingTaskHasSsv3Export(updated)
+              ) {
+                const demoted = demoteSsv3ShippingTaskToFab(updated, {
+                  projects,
+                  tasks,
+                  taskGroups: s.taskGroups,
+                  boardTaskStatuses: s.boardTaskStatuses,
+                  projectBoardTaskStatuses: s.projectBoardTaskStatuses,
+                });
+                projects = demoted.projects;
+                tasks = demoted.tasks;
+              }
+            }
+
+            return projects !== s.projects ? { tasks, projects } : { tasks };
+          });
         },
 
         refreshTasksAutoAssign: (ids) => {
@@ -4375,7 +6079,14 @@ export const useStore = create<AppState>()(
           return boardId;
         },
 
-        addBoardTaskStatus: (boardType, label, autoAssignTeam, projectId, applyToAllDeliverables) => {
+        addBoardTaskStatus: (
+          boardType,
+          label,
+          autoAssignTeam,
+          projectId,
+          applyToAllDeliverables,
+          autoAssignEmployeeId
+        ) => {
           if (isRfiBoardStatusListLocked(boardType)) return null;
           const trimmed = label.trim();
           if (!trimmed) return null;
@@ -4395,6 +6106,9 @@ export const useStore = create<AppState>()(
                 color: pickNewStatusColor(current.length),
                 countsAsComplete: false,
                 ...(autoAssignTeam !== undefined ? { autoAssignTeam } : {}),
+                ...(autoAssignEmployeeId !== undefined
+                  ? { autoAssignEmployeeId }
+                  : {}),
               },
             ];
             return commitBoardTaskStatusList(
@@ -5705,7 +7419,7 @@ export const useStore = create<AppState>()(
 
       name: 'bim-task-board-storage',
 
-      version: 112,
+      version: 123,
 
       migrate: (persisted, version) => {
         try {
@@ -5714,6 +7428,13 @@ export const useStore = create<AppState>()(
           console.error('Store migration failed', error);
           return createRecoveryPersistedState(persisted, seedEmployees);
         }
+      },
+
+      onRehydrateStorage: () => (_state, error) => {
+        if (error) {
+          console.error('Store rehydration failed', error);
+        }
+        markStorePersistHydrated();
       },
 
       partialize: (state) => ({
@@ -5770,6 +7491,10 @@ export const useStore = create<AppState>()(
 
         employeePermissions: state.employeePermissions,
 
+        visibilityDashboardJobLevels: state.visibilityDashboardJobLevels,
+
+        jobLevelNavVisibility: state.jobLevelNavVisibility,
+
         timeEntries: state.timeEntries,
 
         employeeReportsTo: state.employeeReportsTo,
@@ -5782,9 +7507,13 @@ export const useStore = create<AppState>()(
 
         dashboardAssignments: state.dashboardAssignments,
 
+        employeeJobTitles: state.employeeJobTitles,
+
         activityLog: state.activityLog,
 
         deletedColumnArchive: state.deletedColumnArchive,
+
+        deletedEmployeeArchive: state.deletedEmployeeArchive,
 
         savedSheetColumnTemplates: state.savedSheetColumnTemplates,
 
@@ -5802,15 +7531,37 @@ export const useStore = create<AppState>()(
         }
       },
 
-      storage: createJSONStorage(() =>
-        import.meta.env.DEV ? devStoreSyncStorage : localStorage
-      ),
+      storage: createJSONStorage(() => {
+        const base = import.meta.env.DEV ? devStoreSyncStorage : localStorage;
+        return {
+          getItem: (name) => base.getItem(name),
+          setItem: (name, value) => {
+            if (!storePersistHydrated) {
+              return undefined as unknown as void;
+            }
+            return base.setItem(name, value);
+          },
+          removeItem: (name) => base.removeItem(name),
+        };
+      }),
 
     }
 
   )
 
   );
+
+if (useStore.persist.hasHydrated()) {
+  markStorePersistHydrated();
+} else {
+  useStore.persist.onFinishHydration(() => {
+    markStorePersistHydrated();
+  });
+  // Safety for HMR / slow hydrate — never leave writes permanently blocked.
+  setTimeout(() => {
+    if (!storePersistHydrated) markStorePersistHydrated();
+  }, 3000);
+}
 
 export function saveNavigationForReload(): void {
   const state = useStore.getState();

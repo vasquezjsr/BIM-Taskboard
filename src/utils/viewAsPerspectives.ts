@@ -1,5 +1,7 @@
 import type { Employee } from '../types';
 import { ORG_CATEGORIES } from '../types';
+import { FAB_DASHBOARD_ROLES } from '../data/dashboards';
+import { createSeededDashboardAssignments } from '../data/departmentStaff';
 import { inferOrgCategory } from './orgChart';
 
 export interface ViewAsOption {
@@ -17,9 +19,6 @@ const OPERATIONS_PERSPECTIVES: { label: string; employeeId: string }[] = [
   { label: 'Assistant PM', employeeId: 'emp-pm-2' },
   { label: 'Site Superintendent', employeeId: 'emp-field-1' },
   { label: 'Field Foreman', employeeId: 'emp-field-2' },
-  { label: 'Fab Shop Super', employeeId: 'emp-fab-1' },
-  { label: 'Fab Dept Manager', employeeId: 'emp-fab-2' },
-  { label: 'Fab Worker', employeeId: 'emp-fab-5' },
   { label: 'Shipping Manager', employeeId: 'emp-ship-1' },
   { label: 'Shipping Worker', employeeId: 'emp-ship-2' },
 ];
@@ -52,6 +51,7 @@ export function buildViewAsGroups(employees: Employee[]): ViewAsGroup[] {
   const opsOptions = OPERATIONS_PERSPECTIVES.flatMap((perspective) => {
     const employee = byId.get(perspective.employeeId);
     if (!employee) return [];
+    usedIds.add(employee.id);
     return [
       {
         employeeId: employee.id,
@@ -61,7 +61,27 @@ export function buildViewAsGroups(employees: Employee[]): ViewAsGroup[] {
   });
 
   if (opsOptions.length > 0) {
-    groups.push({ label: 'PM, Field, Fab & Shipping', options: opsOptions });
+    groups.push({ label: 'PM, Field & Shipping', options: opsOptions });
+  }
+
+  const fabAssignments = createSeededDashboardAssignments().fab;
+  const fabOptions: ViewAsOption[] = [];
+  const fabSeen = new Set<string>();
+  for (const role of FAB_DASHBOARD_ROLES) {
+    for (const id of fabAssignments[role.id] ?? []) {
+      if (fabSeen.has(id)) continue;
+      const employee = byId.get(id);
+      if (!employee) continue;
+      fabSeen.add(id);
+      fabOptions.push({
+        employeeId: employee.id,
+        label: `${role.label} — ${employee.name}`,
+      });
+    }
+  }
+
+  if (fabOptions.length > 0) {
+    groups.push({ label: 'Fab Shop', options: fabOptions });
   }
 
   return groups;

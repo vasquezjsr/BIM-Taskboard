@@ -22,13 +22,69 @@ export const DELIVERABLES_STATUS_ASSIGNEES: Record<string, 'detailers' | 'suppor
   complete: 'detailers',
 };
 
-export type StatusAutoAssignChoice = 'none' | 'detailers' | 'support';
+export type StatusAutoAssignChoice = 'none' | 'detailers' | 'support' | `person:${string}`;
 
-export const STATUS_AUTO_ASSIGN_OPTIONS: { id: StatusAutoAssignChoice; label: string }[] = [
+export const STATUS_AUTO_ASSIGN_TEAM_OPTIONS: { id: StatusAutoAssignChoice; label: string }[] = [
   { id: 'none', label: 'None (manual)' },
   { id: 'detailers', label: 'Detailers' },
   { id: 'support', label: 'Support Team' },
 ];
+
+/** @deprecated Prefer STATUS_AUTO_ASSIGN_TEAM_OPTIONS + people options from buildStatusAutoAssignOptions */
+export const STATUS_AUTO_ASSIGN_OPTIONS = STATUS_AUTO_ASSIGN_TEAM_OPTIONS;
+
+const PERSON_PREFIX = 'person:';
+
+export function personAutoAssignChoice(employeeId: string): StatusAutoAssignChoice {
+  return `${PERSON_PREFIX}${employeeId}` as StatusAutoAssignChoice;
+}
+
+export function isPersonAutoAssignChoice(choice: string): choice is `person:${string}` {
+  return choice.startsWith(PERSON_PREFIX) && choice.length > PERSON_PREFIX.length;
+}
+
+export function autoAssignTeamToStoreValue(
+  choice: StatusAutoAssignChoice | string
+): 'detailers' | 'support' | null {
+  if (choice === 'detailers') return 'detailers';
+  if (choice === 'support') return 'support';
+  return null;
+}
+
+export function autoAssignEmployeeIdToStoreValue(
+  choice: StatusAutoAssignChoice | string
+): string | null {
+  if (isPersonAutoAssignChoice(choice)) {
+    return choice.slice(PERSON_PREFIX.length);
+  }
+  return null;
+}
+
+export function autoAssignChoiceFromStatus(
+  autoAssignTeam: 'detailers' | 'support' | null | undefined,
+  autoAssignEmployeeId?: string | null
+): StatusAutoAssignChoice {
+  if (autoAssignEmployeeId) return personAutoAssignChoice(autoAssignEmployeeId);
+  if (autoAssignTeam === 'detailers') return 'detailers';
+  if (autoAssignTeam === 'support') return 'support';
+  return 'none';
+}
+
+export function buildStatusAutoAssignOptions(
+  employees: { id: string; name: string }[]
+): { id: StatusAutoAssignChoice; label: string; group: 'team' | 'people' }[] {
+  const people = [...employees]
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
+    .map((employee) => ({
+      id: personAutoAssignChoice(employee.id),
+      label: employee.name,
+      group: 'people' as const,
+    }));
+  return [
+    ...STATUS_AUTO_ASSIGN_TEAM_OPTIONS.map((option) => ({ ...option, group: 'team' as const })),
+    ...people,
+  ];
+}
 
 const LEGACY_DELIVERABLES_STATUS_MAP: Record<string, string> = {
   'not-ready': 'not-started',
@@ -46,22 +102,6 @@ export function isDeliverablesStatus(status: string): boolean {
 export function migrateDeliverablesTaskStatus(status: string): string {
   if (isDeliverablesStatus(status)) return status;
   return LEGACY_DELIVERABLES_STATUS_MAP[status] ?? 'not-started';
-}
-
-export function autoAssignTeamToStoreValue(
-  choice: StatusAutoAssignChoice
-): 'detailers' | 'support' | null {
-  if (choice === 'detailers') return 'detailers';
-  if (choice === 'support') return 'support';
-  return null;
-}
-
-export function autoAssignChoiceFromStatus(
-  autoAssignTeam: 'detailers' | 'support' | null | undefined
-): StatusAutoAssignChoice {
-  if (autoAssignTeam === 'detailers') return 'detailers';
-  if (autoAssignTeam === 'support') return 'support';
-  return 'none';
 }
 
 function projectForTask(task: Pick<Task, 'projectId'>, projects: Project[]): Project | undefined {
@@ -114,6 +154,17 @@ export function resolveAutoAssigneeIds(
   if (!project) return null;
 
   const board = statusBoardForTask(task, taskGroups);
+  const statuses = getBoardTaskStatuses(
+    board,
+    boardTaskStatuses,
+    task.projectId,
+    projectBoardTaskStatuses
+  );
+  const def = statuses.find((s) => s.id === task.status);
+  if (def?.autoAssignEmployeeId) {
+    return [def.autoAssignEmployeeId];
+  }
+
   const team = resolveStatusAutoAssignTeam(
     board,
     task.status,

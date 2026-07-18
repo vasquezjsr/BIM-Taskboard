@@ -14,6 +14,8 @@ export const FIELD_DASHBOARD_ROLES = [
 
 export const FAB_DASHBOARD_ROLES = [
   { id: 'shop-super' as const, label: 'Shop Super' },
+  { id: 'warehouse-lead' as const, label: 'Warehouse Lead' },
+  { id: 'warehouse-worker' as const, label: 'Warehouse Worker' },
   { id: 'dept-manager-mech' as const, label: 'Shop Dept Manager (Mech)' },
   { id: 'dept-manager-plmb' as const, label: 'Shop Dept Manager (Plmb)' },
   { id: 'dept-manager-hvac' as const, label: 'Shop Dept Manager (HVAC)' },
@@ -31,7 +33,7 @@ export const DASHBOARD_META: Record<
 > = {
   pm: { label: 'PM Dashboard', permission: 'view-pm-dashboard', boardType: 'project-managers' },
   field: { label: 'Field Dashboard', permission: 'view-field-dashboard', boardType: 'field' },
-  fab: { label: 'Fab Dashboard', permission: 'view-fab-dashboard', boardType: 'fab' },
+  fab: { label: 'Shop Dashboard', permission: 'view-fab-dashboard', boardType: 'fab' },
   shipping: { label: 'Shipping Dashboard', permission: 'view-shipping-dashboard', boardType: 'shipping' },
 };
 

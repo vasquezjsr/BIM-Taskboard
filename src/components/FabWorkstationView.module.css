@@ -1,0 +1,950 @@
+﻿.wrapper {
+  padding: 16px 20px 28px;
+  max-width: none;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+
+.headerText {
+  min-width: 0;
+}
+
+.title {
+  margin: 0 0 6px;
+  font-size: 1.35rem;
+  font-weight: 600;
+}
+
+.subtitle {
+  margin: 0;
+  color: var(--text-secondary, #9ba3b8);
+  font-size: 0.9rem;
+}
+
+.headerActions {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.projectFilterField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 220px;
+  max-width: 360px;
+}
+
+.projectFilterLabel {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.projectFilterSelect {
+  width: 100%;
+  padding: 7px 10px;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.actingAsField {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.actingAsLabel {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary, #9ba3b8);
+}
+
+.actingAsSelect,
+.assignSelect {
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(15, 23, 42, 0.55);
+  color: inherit;
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 0.78rem;
+  max-width: 220px;
+  min-width: 9rem;
+}
+
+.assignField {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0 0 8px;
+}
+
+.assignLabel {
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary, #9ba3b8);
+}
+
+.assignField .assignSelect {
+  width: 100%;
+  max-width: none;
+}
+
+.assignSelectPlaceholder {
+  display: inline-block;
+  min-width: 9rem;
+}
+
+.assignReadout {
+  display: block;
+  margin: 0 0 6px;
+  font-size: 0.72rem;
+  color: var(--text-secondary, #9ba3b8);
+}
+
+.assignReadoutInline {
+  font-size: 0.72rem;
+  color: var(--text-secondary, #9ba3b8);
+  white-space: nowrap;
+}
+
+.packageWorkerField {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.packageWorkerLabel {
+  font-size: 0.78rem;
+  color: var(--text-secondary, #9ba3b8);
+}
+
+.collabBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.collabBtn {
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(15, 23, 42, 0.55);
+  color: inherit;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.collabBtn:hover {
+  border-color: var(--level4-accent, #7dd3fc);
+  color: var(--level4-accent, #7dd3fc);
+}
+
+.clockStripActive {
+  opacity: 1;
+}
+
+.clockBtnActive {
+  border-color: var(--level4-accent, #7dd3fc);
+  color: var(--level4-accent, #7dd3fc);
+  cursor: pointer;
+}
+
+.clockBtnActive:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.clockHint {
+  font-size: 0.72rem;
+  color: #86efac;
+}
+
+.importBtn {
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  background: rgba(15, 23, 42, 0.55);
+  color: inherit;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.importBtn:hover:not(:disabled) {
+  border-color: var(--level4-accent, #7dd3fc);
+  color: var(--level4-accent, #7dd3fc);
+}
+
+.importBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.hiddenInput {
+  display: none;
+}
+
+.scanStatus {
+  margin: 0 0 10px;
+  font-size: 0.8rem;
+  color: var(--text-secondary, #9ba3b8);
+}
+
+.error {
+  margin: 0 0 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(127, 29, 29, 0.35);
+  border: 1px solid rgba(252, 165, 165, 0.35);
+  color: #fecaca;
+  font-size: 0.85rem;
+}
+
+.layout {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  gap: 0;
+  align-items: stretch;
+}
+
+.packageList,
+.detail,
+.viewer {
+  background: var(--surface-2, rgba(30, 41, 59, 0.6));
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: var(--radius-md, 10px);
+  padding: 12px 14px;
+  min-height: 0;
+  overflow: auto;
+}
+
+.packageList {
+  width: var(--fab-packages-width, 280px);
+  flex: 0 0 var(--fab-packages-width, 280px);
+  max-width: 50%;
+}
+
+.detail {
+  width: var(--fab-detail-width, 520px);
+  flex: 0 0 var(--fab-detail-width, 520px);
+  max-width: 70%;
+}
+
+.viewer {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex: 1 1 0;
+  min-width: 220px;
+}
+
+.paneSplitter {
+  flex: 0 0 8px;
+  width: 8px;
+  margin: 0 2px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  cursor: col-resize;
+  position: relative;
+  align-self: stretch;
+}
+
+.paneSplitter::before {
+  content: '';
+  position: absolute;
+  top: 12%;
+  bottom: 12%;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.35);
+}
+
+.paneSplitter:hover::before,
+.paneSplitter:focus-visible::before {
+  background: var(--level2-accent, #86efac);
+  width: 3px;
+}
+
+.paneSplitter:focus-visible {
+  outline: 2px solid var(--level2-accent, #86efac);
+  outline-offset: 1px;
+}
+
+.paneTitle,
+.detailTitle {
+  margin: 0 0 10px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--level2-accent, #86efac);
+}
+
+.detailTitle {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 1rem;
+  color: inherit;
+  margin-bottom: 4px;
+}
+
+.detailHeader {
+  margin-bottom: 14px;
+}
+
+.detailMeta {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--text-secondary, #9ba3b8);
+  line-height: 1.35;
+}
+
+.list,
+.assemblyList,
+.fileList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.packageItem,
+.packageItemActive {
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(15, 23, 42, 0.45);
+  border-radius: 8px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.packageItemActive {
+  border-color: var(--level4-accent, #7dd3fc);
+  background: rgba(14, 116, 144, 0.22);
+}
+
+.packageSelectBtn,
+.rowSelectBtn {
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.packageSelectBtn:hover .packageName,
+.rowSelectBtn:hover .assemblyTitle,
+.rowSelectBtn:hover .fileName {
+  color: var(--level4-accent, #7dd3fc);
+}
+
+.packageName {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.packageMeta {
+  font-size: 0.72rem;
+  color: var(--text-secondary, #9ba3b8);
+}
+
+.assemblyProgress {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-primary, #e2e8f0);
+}
+
+.statusField {
+  display: block;
+}
+
+.statusSelect {
+  width: 100%;
+  max-width: 100%;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  border: 1px solid;
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: rgba(15, 23, 42, 0.65);
+  cursor: pointer;
+}
+
+.assemblyRow .statusSelect,
+.assemblyRowActive .statusSelect,
+.fileRow .statusSelect {
+  width: auto;
+  min-width: 7.5rem;
+  flex-shrink: 0;
+}
+
+.empty {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-secondary, #9ba3b8);
+}
+
+.fabricationPicker {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 24px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.detailSection {
+  margin-bottom: 16px;
+}
+
+.sectionHeading {
+  margin: 0 0 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary, #9ba3b8);
+}
+
+.assemblyRow,
+.assemblyRowActive {
+  display: grid;
+  grid-template-columns: minmax(6rem, 1fr) minmax(9rem, 11rem) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px solid transparent;
+  color: inherit;
+}
+
+.fileRow,
+.fileRowActive {
+  display: grid;
+  grid-template-columns: minmax(8rem, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px solid transparent;
+  color: inherit;
+}
+
+.assemblyRow .assignSelect,
+.assemblyRowActive .assignSelect {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+}
+
+.assemblyRowActive,
+.fileRowActive {
+  border-color: var(--level4-accent, #7dd3fc);
+  background: rgba(14, 116, 144, 0.2);
+}
+
+.assemblyTitle,
+.fileName {
+  font-size: 0.84rem;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: normal;
+}
+
+.rowHint,
+.fileType {
+  font-size: 0.7rem;
+  color: var(--text-secondary, #9ba3b8);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: normal;
+}
+
+.openBtn,
+.ghostBtn {
+  flex-shrink: 0;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: transparent;
+  color: inherit;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.openBtn:hover,
+.ghostBtn:hover {
+  border-color: var(--level4-accent, #7dd3fc);
+  color: var(--level4-accent, #7dd3fc);
+}
+
+.clockStrip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px dashed rgba(148, 163, 184, 0.35);
+  background: rgba(15, 23, 42, 0.35);
+  opacity: 0.85;
+}
+
+.clockLabel {
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.clockActions {
+  display: flex;
+  gap: 6px;
+}
+
+.clockBtn {
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: transparent;
+  color: var(--text-secondary, #9ba3b8);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 0.75rem;
+  cursor: not-allowed;
+}
+
+.comingSoon {
+  font-size: 0.72rem;
+  color: var(--text-secondary, #9ba3b8);
+  font-style: italic;
+}
+
+.viewerHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+  flex-shrink: 0;
+}
+
+.viewerHeader .paneTitle {
+  margin: 0;
+}
+
+.viewerActions {
+  display: flex;
+  gap: 6px;
+}
+
+.viewerEmpty {
+  margin: auto;
+  text-align: center;
+  max-width: 280px;
+  font-size: 0.9rem;
+  color: var(--text-secondary, #9ba3b8);
+  line-height: 1.45;
+}
+
+.viewerMeta {
+  flex-shrink: 0;
+  margin-bottom: 10px;
+}
+
+.viewerTitle {
+  margin: 0 0 2px;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.viewerSub {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--text-secondary, #9ba3b8);
+}
+
+.viewerError {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(127, 29, 29, 0.28);
+  border: 1px solid rgba(252, 165, 165, 0.3);
+  color: #fecaca;
+  font-size: 0.82rem;
+  flex-shrink: 0;
+}
+
+.zoomBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  flex-shrink: 0;
+}
+
+.zoomBtn {
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(15, 23, 42, 0.55);
+  color: inherit;
+  border-radius: 6px;
+  min-width: 28px;
+  padding: 4px 8px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.zoomBtn:hover {
+  border-color: var(--level4-accent, #7dd3fc);
+  color: var(--level4-accent, #7dd3fc);
+}
+
+.zoomLabel {
+  min-width: 3.2rem;
+  text-align: center;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary, #9ba3b8);
+}
+
+.zoomHint {
+  margin-left: 4px;
+  font-size: 0.72rem;
+  color: var(--text-secondary, #9ba3b8);
+}
+
+.viewerStage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 8px;
+  background: #0b1220;
+  cursor: grab;
+  touch-action: none;
+}
+
+.viewerStage:active {
+  cursor: grabbing;
+}
+
+.viewerTransform {
+  width: 100%;
+  height: 100%;
+  transform-origin: center center;
+  will-change: transform;
+}
+
+.viewerBody {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: 10px;
+}
+
+.pdfStage {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 280px;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 8px;
+  background: #525659;
+}
+
+.pdfCanvas {
+  display: none;
+}
+
+.pdfStatus {
+  display: none;
+}
+
+.previewFrame {
+  width: 100%;
+  height: 100%;
+  min-height: 420px;
+  border: none;
+  background: #525659;
+  pointer-events: none;
+}
+
+.previewFrameInteractive {
+  width: 100%;
+  height: 100%;
+  min-height: 280px;
+  border: none;
+  background: #525659;
+}
+
+.weldLogPanel {
+  flex: 1;
+  min-height: 180px;
+  max-height: 42%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.55);
+  padding: 10px 12px;
+  overflow: hidden;
+}
+
+.weldLogCollapsed {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.7);
+}
+
+.weldLogCollapsedTitle {
+  font-size: 0.8rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--level4-accent, #7dd3fc);
+}
+
+.weldLogToggle {
+  flex-shrink: 0;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(15, 23, 42, 0.55);
+  color: inherit;
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.weldLogToggle:hover {
+  border-color: var(--level4-accent, #7dd3fc);
+  color: var(--level4-accent, #7dd3fc);
+}
+
+.weldLogHeader {
+  flex-shrink: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.weldLogHeaderText {
+  min-width: 0;
+}
+
+.weldLogTitle {
+  margin: 0 0 2px;
+  font-size: 0.85rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--level4-accent, #7dd3fc);
+}
+
+.weldLogHint {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--text-secondary, #9ba3b8);
+  line-height: 1.35;
+}
+
+.weldSaveMsg {
+  margin: 0;
+  font-size: 0.75rem;
+  color: #86efac;
+}
+
+.weldTableWrap {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  border-radius: 6px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.weldTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+
+.weldTable th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  text-align: left;
+  padding: 8px 10px;
+  background: #1e293b;
+  color: #e2e8f0;
+  font-weight: 600;
+  white-space: nowrap;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.3);
+}
+
+.weldTable td {
+  padding: 0;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+  vertical-align: stretch;
+}
+
+.weldCellReadonly {
+  padding: 8px 10px;
+  color: #cbd5e1;
+  white-space: nowrap;
+}
+
+.weldCellTap,
+.weldCellFilled {
+  display: block;
+  width: 100%;
+  min-height: 36px;
+  padding: 8px 10px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.weldCellTap {
+  color: #fde68a;
+  background: rgba(250, 204, 21, 0.08);
+}
+
+.weldCellTap:hover,
+.weldCellTap:focus-visible {
+  background: rgba(250, 204, 21, 0.18);
+  outline: none;
+}
+
+.weldCellFilled {
+  color: #e2e8f0;
+}
+
+.weldCellFilled:hover,
+.weldCellFilled:focus-visible {
+  background: rgba(125, 211, 252, 0.12);
+  outline: none;
+}
+
+.weldCellReadonly:disabled,
+.weldCellTap:disabled,
+.weldCellFilled:disabled {
+  cursor: default;
+  opacity: 0.85;
+}
+
+.previewImage {
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  margin: 0 auto;
+  display: block;
+  border-radius: 8px;
+  pointer-events: none;
+  user-select: none;
+}
+
+.previewText {
+  margin: 0;
+  padding: 12px;
+  font-size: 0.78rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #e2e8f0;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 900px) {
+  .layout {
+    flex-direction: column;
+  }
+
+  .packageList,
+  .detail {
+    width: 100% !important;
+    flex: 0 0 auto !important;
+    max-width: none;
+  }
+
+  .paneSplitter {
+    display: none;
+  }
+
+  .viewer {
+    min-height: 360px;
+    min-width: 0;
+  }
+
+  .header {
+    flex-direction: column;
+  }
+}

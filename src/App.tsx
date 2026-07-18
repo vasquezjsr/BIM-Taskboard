@@ -16,9 +16,13 @@ import { OrgChartView } from './components/OrgChartView';
 
 import { TimeTrackingView } from './components/TimeTrackingView';
 
-import { DepartmentDashboardView } from './components/DepartmentDashboardView';
+import { FabWorkstationView } from './components/FabWorkstationView';
+import { FieldWorkstationView } from './components/FieldWorkstationView';
+import { ShippingWorkstationView } from './components/ShippingWorkstationView';
+import { WeldLogDashboardView } from './components/WeldLogDashboardView';
 
 import { OwnerDashboardView } from './components/OwnerDashboardView';
+import { VisibilityDashboardView } from './components/VisibilityDashboardView';
 import { ActivityLogView } from './components/ActivityLogView';
 
 import { PMDashboardView } from './components/PMDashboardView';
@@ -30,6 +34,7 @@ import { ReportsDialog } from './components/ReportsDialog';
 import { ViewAsPicker } from './components/ViewAsPicker';
 
 import { canAccessOrgChart } from './utils/permissions';
+import { useBoardroomExportWatcher } from './hooks/useBoardroomExportWatcher';
 
 import styles from './App.module.css';
 
@@ -74,6 +79,8 @@ function App() {
   const [storeReady, setStoreReady] = useState(() => useStore.persist.hasHydrated());
   const [hydrationTimedOut, setHydrationTimedOut] = useState(false);
   const [showReports, setShowReports] = useState(false);
+
+  useBoardroomExportWatcher();
 
 
 
@@ -301,15 +308,19 @@ function App() {
 
         {activeMainTab === 'activity-log' && <ActivityLogView />}
 
+        {activeMainTab === 'visibility-dashboard' && <VisibilityDashboardView />}
+
         {activeMainTab === 'owner-dashboard' && <OwnerDashboardView />}
 
         {activeMainTab === 'pm-dashboard' && <PMDashboardView />}
 
-        {activeMainTab === 'field-dashboard' && <DepartmentDashboardView dashboard="field" />}
+        {activeMainTab === 'field-dashboard' && <FieldWorkstationView />}
 
-        {activeMainTab === 'fab-dashboard' && <DepartmentDashboardView dashboard="fab" />}
+        {activeMainTab === 'fab-dashboard' && <FabWorkstationView />}
 
-        {activeMainTab === 'shipping-dashboard' && <DepartmentDashboardView dashboard="shipping" />}
+        {activeMainTab === 'weld-log-dashboard' && <WeldLogDashboardView />}
+
+        {activeMainTab === 'shipping-dashboard' && <ShippingWorkstationView />}
 
       </main>
 

@@ -7,22 +7,27 @@
     "dev": "concurrently -k -n 5173,5174 \"vite --port 5173 --strictPort\" \"vite --port 5174 --strictPort\"",
     "build": "tsc && vite build && tsc -p tsconfig.electron.json",
     "preview": "vite preview",
-    "electron:dev": "tsc -p tsconfig.electron.json && concurrently -k -n vite5173,vite5174,electron \"vite --port 5173 --strictPort\" \"vite --port 5174 --strictPort\" \"wait-on http://localhost:5173 && electron . --dev\"",
+    "electron:dev": "tsc -p tsconfig.electron.json && concurrently -k -n vite5173,vite5174,electron \"vite --port 5173 --strictPort\" \"vite --port 5174 --strictPort\" \"wait-on http://localhost:5173 && electron . --dev --remote-debugging-port=9222\"",
     "electron:start": "electron .",
-    "electron:build": "npm run build && electron-builder"
+    "electron:build": "npm run build && electron-builder",
+    "docs:operations-notebook": "node scripts/generate-order-of-operations-notebook.mjs",
+    "docs:instructions-notebook": "node scripts/generate-boardroom-instructions-notebook.mjs"
   },
   "build": {
     "appId": "com.bim.taskboard",
     "productName": "BIM Boardroom",
     "directories": {
-      "output": "release"
+      "output": "release",
+      "buildResources": "build"
     },
+    "icon": "build/icon.png",
     "files": [
       "dist/**/*",
       "dist-electron/**/*"
     ],
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "build/icon.png"
     }
   },
   "dependencies": {
@@ -31,9 +36,12 @@
     "@dnd-kit/utilities": "^3.2.2",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^6.1.200",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "uuid": "^11.1.0",
+    "xlsx": "^0.18.5",
     "zustand": "^5.0.5"
   },
   "devDependencies": {

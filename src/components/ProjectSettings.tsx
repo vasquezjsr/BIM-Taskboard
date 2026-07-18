@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore } from '../store/useStore';
 import type { Employee, EmployeeRole, Project, ProjectSettingsUpdate } from '../types';
 import { REVIT_YEAR_OPTIONS } from '../types';
-import { canEditBudgetHours } from '../utils/permissions';
+import { createDefaultDashboardAssignments } from '../data/dashboards';
+import { canEditBudgetHours, canEditClientsProjects } from '../utils/permissions';
 import { canAssignDetailerTrade } from '../utils/orgChart';
 import styles from './ProjectSettings.module.css';
 
@@ -25,22 +26,33 @@ function MemberPicker({
   memberIds,
   employees,
   onToggle,
+  disabled,
+  poolEmployees,
 }: {
   label: string;
-  role: EmployeeRole;
+  role?: EmployeeRole;
   chipClass: string;
   memberIds: string[];
   employees: Employee[];
   onToggle: (ids: string[]) => void;
+  disabled?: boolean;
+  /** When set, replaces role-based pool filtering. */
+  poolEmployees?: Employee[];
 }) {
-  const pool = employees.filter((e) =>
-    role === 'detailer' ? canAssignDetailerTrade(e) : e.role === role
-  );
+  const pool =
+    poolEmployees ??
+    employees.filter((e) =>
+      role === 'detailer' ? canAssignDetailerTrade(e) : e.role === role
+    );
 
   return (
     <div className={styles.section}>
       <span className={styles.sectionLabel}>{label}</span>
-      <p className={styles.sectionHint}>Click names to assign or remove from this project.</p>
+      <p className={styles.sectionHint}>
+        {disabled
+          ? 'View only — you need Edit clients & projects to change the team.'
+          : 'Click names to assign or remove from this project.'}
+      </p>
       {pool.length > 0 ? (
         <div className={styles.chipRow}>
           {pool.map((emp) => {
@@ -50,6 +62,7 @@ function MemberPicker({
                 key={emp.id}
                 type="button"
                 className={`${styles.chip} ${chipClass} ${selected ? styles.chipSelected : ''}`}
+                disabled={disabled}
                 onClick={() => onToggle(toggleMember(memberIds, emp.id))}
               >
                 {selected && <span className={styles.checkMark}>✓</span>}
@@ -68,10 +81,46 @@ function MemberPicker({
 export function ProjectSettings({ project, employees, onUpdate, onClose }: ProjectSettingsProps) {
   const currentUserId = useStore((s) => s.currentUserId);
   const employeePermissions = useStore((s) => s.employeePermissions);
+  const dashboardAssignments = useStore(
+    (s) => s.dashboardAssignments ?? createDefaultDashboardAssignments()
+  );
   const canEditBudget = canEditBudgetHours(currentUserId, employees, employeePermissions);
+  const canEditProject = canEditClientsProjects(currentUserId, employees, employeePermissions);
   const spent = project.totalHoursSpent ?? 0;
   const budget = project.budgetHours;
   const [nameDraft, setNameDraft] = useState(project.name);
+
+  const fieldCrewPool = useMemo(() => {
+    const fieldIds = new Set(Object.values(dashboardAssignments.field).flatMap((ids) => ids));
+    return employees
+      .filter((employee) => fieldIds.has(employee.id))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [employees, dashboardAssignments]);
+
+  const fieldLeadPool = useMemo(() => {
+    const ids = new Set([
+      ...(dashboardAssignments.field['site-superintendent'] ?? []),
+      ...(dashboardAssignments.field.foreman ?? []),
+      ...(dashboardAssignments.field['crew-lead'] ?? []),
+    ]);
+    return employees
+      .filter((employee) => ids.has(employee.id))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [employees, dashboardAssignments]);
+
+  const pmPool = useMemo(() => {
+    const ids = new Set(dashboardAssignments.pm['project-manager'] ?? []);
+    return employees
+      .filter((employee) => ids.has(employee.id))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [employees, dashboardAssignments]);
+
+  const assistantPmPool = useMemo(() => {
+    const ids = new Set(dashboardAssignments.pm['assistant-pm'] ?? []);
+    return employees
+      .filter((employee) => ids.has(employee.id))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [employees, dashboardAssignments]);
 
   useEffect(() => {
     setNameDraft(project.name);
@@ -110,8 +159,10 @@ export function ProjectSettings({ project, employees, onUpdate, onClose }: Proje
               type="text"
               className={styles.input}
               value={nameDraft}
+              disabled={!canEditProject}
               onChange={(e) => setNameDraft(e.target.value)}
               onBlur={() => {
+                if (!canEditProject) return;
                 const trimmed = nameDraft.trim();
                 if (trimmed && trimmed !== project.name) {
                   onUpdate({ name: trimmed });
@@ -136,7 +187,9 @@ export function ProjectSettings({ project, employees, onUpdate, onClose }: Proje
               defaultValue={project.jobCode ?? ''}
               key={`${project.id}-jobCode-${project.jobCode ?? ''}`}
               placeholder="e.g. TMPL or 24-1847"
+              disabled={!canEditProject}
               onBlur={(e) => {
+                if (!canEditProject) return;
                 const trimmed = e.target.value.trim();
                 const next = trimmed || null;
                 if (next !== (project.jobCode ?? null)) {
@@ -153,6 +206,7 @@ export function ProjectSettings({ project, employees, onUpdate, onClose }: Proje
             chipClass={styles.detailerChip}
             memberIds={project.detailerIds}
             employees={employees}
+            disabled={!canEditProject}
             onToggle={(detailerIds) => onUpdate({ detailerIds })}
           />
 
@@ -162,7 +216,48 @@ export function ProjectSettings({ project, employees, onUpdate, onClose }: Proje
             chipClass={styles.supportChip}
             memberIds={project.supportIds}
             employees={employees}
+            disabled={!canEditProject}
             onToggle={(supportIds) => onUpdate({ supportIds })}
+          />
+
+          <MemberPicker
+            label="Project Managers"
+            chipClass={styles.fieldChip}
+            memberIds={project.pmIds ?? []}
+            employees={employees}
+            poolEmployees={pmPool}
+            disabled={!canEditProject}
+            onToggle={(pmIds) => onUpdate({ pmIds })}
+          />
+
+          <MemberPicker
+            label="Assistant PMs"
+            chipClass={styles.fieldChip}
+            memberIds={project.assistantPmIds ?? []}
+            employees={employees}
+            poolEmployees={assistantPmPool}
+            disabled={!canEditProject}
+            onToggle={(assistantPmIds) => onUpdate({ assistantPmIds })}
+          />
+
+          <MemberPicker
+            label="Field Super / lead"
+            chipClass={styles.fieldChip}
+            memberIds={project.fieldIds ?? []}
+            employees={employees}
+            poolEmployees={fieldLeadPool}
+            disabled={!canEditProject}
+            onToggle={(fieldIds) => onUpdate({ fieldIds })}
+          />
+
+          <MemberPicker
+            label="Field crew"
+            chipClass={styles.fieldChip}
+            memberIds={project.fieldCrewIds ?? []}
+            employees={employees}
+            poolEmployees={fieldCrewPool}
+            disabled={!canEditProject}
+            onToggle={(fieldCrewIds) => onUpdate({ fieldCrewIds })}
           />
 
           <div className={styles.metaSection}>
@@ -175,6 +270,7 @@ export function ProjectSettings({ project, employees, onUpdate, onClose }: Proje
                     type="radio"
                     name={`billing-${project.id}`}
                     checked={project.billingType === 'lump-sum'}
+                    disabled={!canEditProject}
                     onChange={() => onUpdate({ billingType: 'lump-sum' })}
                   />
                   <span>Lump Sum</span>
@@ -184,6 +280,7 @@ export function ProjectSettings({ project, employees, onUpdate, onClose }: Proje
                     type="radio"
                     name={`billing-${project.id}`}
                     checked={project.billingType === 'time-and-material'}
+                    disabled={!canEditProject}
                     onChange={() => onUpdate({ billingType: 'time-and-material' })}
                   />
                   <span>Time & Material</span>

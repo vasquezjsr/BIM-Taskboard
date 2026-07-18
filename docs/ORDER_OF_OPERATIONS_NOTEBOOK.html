@@ -1,0 +1,1960 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Order of Operations — Notebook</title>
+  <style>
+    :root {
+      --ink: #1a1f2e;
+      --muted: #5c6478;
+      --rule: #c5cad6;
+      --note-bg: #fafbfe;
+      --accent: #3d5a80;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      font-size: 11pt;
+      line-height: 1.45;
+      color: var(--ink);
+      background: #fff;
+    }
+
+    .cover {
+      min-height: 100vh;
+      padding: 2.5rem 2rem;
+      page-break-after: always;
+      border-bottom: 4px solid var(--accent);
+    }
+
+    .cover h1 {
+      font-size: 2rem;
+      margin: 0 0 0.5rem;
+      color: var(--accent);
+    }
+
+    .cover .subtitle {
+      font-size: 1.1rem;
+      color: var(--muted);
+      margin: 0 0 2rem;
+    }
+
+    .ipad-box {
+      background: var(--note-bg);
+      border: 1px solid var(--rule);
+      border-radius: 10px;
+      padding: 1.25rem 1.5rem;
+      margin: 1.5rem 0;
+    }
+
+    .ipad-box h2 {
+      margin: 0 0 0.75rem;
+      font-size: 1rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--accent);
+    }
+
+    .ipad-box ul { margin: 0.5rem 0 0 1.2rem; padding: 0; }
+    .ipad-box li { margin: 0.35rem 0; }
+
+    .toc {
+      margin-top: 2rem;
+      columns: 2;
+      column-gap: 2rem;
+    }
+
+    .toc h2 { font-size: 1rem; margin: 0 0 0.75rem; }
+    .toc ol { margin: 0; padding-left: 1.25rem; }
+    .toc li { margin: 0.25rem 0; break-inside: avoid; }
+
+    main {
+      padding: 1.5rem 2rem 3rem;
+      max-width: 8.5in;
+      margin: 0 auto;
+    }
+
+    h1 { font-size: 1.6rem; margin: 1.5rem 0 0.75rem; color: var(--accent); }
+    h2 {
+      font-size: 1.25rem;
+      margin: 2rem 0 0.75rem;
+      padding-top: 0.5rem;
+      border-top: 2px solid var(--accent);
+      color: var(--accent);
+      page-break-after: avoid;
+    }
+    h3 { font-size: 1.05rem; margin: 1.25rem 0 0.5rem; page-break-after: avoid; }
+    h4 { font-size: 0.95rem; margin: 1rem 0 0.35rem; color: var(--muted); }
+
+    p { margin: 0.5rem 0; }
+    ul { margin: 0.35rem 0 0.75rem 1.2rem; padding: 0; }
+    li { margin: 0.2rem 0; }
+    hr { border: none; border-top: 1px solid var(--rule); margin: 1rem 0; }
+    code {
+      font-family: Consolas, "SF Mono", monospace;
+      font-size: 0.9em;
+      background: #f0f2f8;
+      padding: 0.1em 0.35em;
+      border-radius: 3px;
+    }
+    pre {
+      background: #f0f2f8;
+      padding: 0.75rem 1rem;
+      border-radius: 6px;
+      overflow-x: auto;
+      font-size: 0.85rem;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 0.75rem 0 1rem;
+      font-size: 0.88rem;
+      page-break-inside: avoid;
+    }
+    th, td {
+      border: 1px solid var(--rule);
+      padding: 0.35rem 0.5rem;
+      text-align: left;
+      vertical-align: top;
+    }
+    th { background: #eef1f8; font-weight: 600; }
+
+    .diagram-note { color: var(--muted); font-style: italic; }
+
+    .note-area,
+    .blank-page {
+      margin: 1.5rem 0;
+      padding: 0.75rem 1rem 1rem;
+      background: var(--note-bg);
+      border: 1.5px dashed var(--accent);
+      border-radius: 8px;
+    }
+
+    .note-area-subsection { min-height: 4.5in; }
+    .note-area-section { min-height: 7in; }
+
+    .blank-page {
+      page-break-before: always;
+      min-height: 9in;
+      border-style: solid;
+      border-color: #d8deea;
+    }
+
+    .note-label {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--accent);
+      margin-bottom: 0.65rem;
+    }
+
+    .note-lines { display: flex; flex-direction: column; gap: 1.5rem; }
+    .note-line {
+      border-bottom: 1px solid var(--rule);
+      min-height: 1.5rem;
+    }
+
+    @media print {
+      body { font-size: 10pt; }
+      .cover { min-height: auto; }
+      .note-area-subsection { min-height: 4in; }
+      .note-area-section { min-height: 6.5in; }
+      .blank-page { min-height: 8.5in; }
+      .no-print { display: none; }
+    }
+
+    @page {
+      margin: 0.75in;
+      size: letter;
+    }
+  </style>
+</head>
+<body>
+  <section class="cover">
+    <h1>Order of Operations</h1>
+    <p class="subtitle">BIM Boardroom + SSv3 + Fab — personal notebook edition</p>
+    <p>Generated from <strong>ORDER_OF_OPERATIONS.md</strong>. Every subsection includes a note pad; each major part adds full blank pages for handwriting.</p>
+
+    <div class="ipad-box">
+      <h2>Using this on iPad (Apple Pencil)</h2>
+      <ul>
+        <li><strong>Best format:</strong> PDF — import into <strong>GoodNotes</strong>, <strong>Notability</strong>, <strong>Freeform</strong>, or open in <strong>Files</strong> and tap Markup.</li>
+        <li><strong>Get the PDF:</strong> Open the <code>.html</code> sibling file in Safari or Edge → Share / Print → <strong>Save as PDF</strong> → AirDrop or iCloud to iPad.</li>
+        <li><strong>Or:</strong> Copy <code>ORDER_OF_OPERATIONS_NOTEBOOK.pdf</code> from the <code>docs/</code> folder if the build script created it on your PC.</li>
+        <li><strong>Write on it:</strong> Use Apple Pencil directly on the PDF; add extra blank pages in GoodNotes/Notability if you need more room.</li>
+      </ul>
+    </div>
+
+    <div class="toc">
+      <h2>Contents</h2>
+      <ol>
+        <li>Introduction</li>
+        <li>Prerequisites</li>
+        <li>Part A — Dashboards (main nav)</li>
+        <li>Part B — Project boards (Clients → board mode)</li>
+        <li>Part C — Order of operations (SSv3 → Fab)</li>
+        <li>Part D — Job levels, permissions &amp; what each person sees</li>
+        <li>Status cheat sheet (compact)</li>
+        <li>Who uses which Fab mode</li>
+        <li>Key folders / URLs</li>
+      </ol>
+    </div>
+
+    <p class="no-print" style="margin-top:2rem;color:var(--muted);font-size:0.9rem;">
+      Tip on PC: open this HTML file in a browser and press <strong>Ctrl+P</strong> → Save as PDF.
+    </p>
+  </section>
+
+  <main>
+    <h1>Order of Operations — BIM Boardroom + SSv3 + Fab</h1>
+<p>End-to-end operator sequence from Boardroom setup through shop Fab. Use this when the system feels big; the process itself is linear.</p>
+<p><strong>Contents:</strong> Part A (main nav dashboards) · Part B (project boards) · Part C (SSv3 → Fab) · <strong>Part D (job levels &amp; permissions — every detail)</strong></p>
+<p class="diagram-note"><em>Flow diagram — see the full ORDER_OF_OPERATIONS.md in the repo for the mermaid chart.</em></p>
+
+<section class="note-area note-area-section">
+  <div class="note-label">Notes — Introduction (summary)</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+
+<section class="blank-page">
+  <div class="note-label">Extra notes — Introduction</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+<h2>Prerequisites</h2>
+<ul>
+<li><strong>BIM Boardroom</strong> running in Electron (<code>npm run electron:dev</code> or installed build) so the local API publishes projects/tasks.</li>
+<li><strong>Revit</strong> with <strong>Spooling Savant V3 (Exports)</strong> loaded (SS Manager V3).</li>
+<li>Default export folder:</li>
+</ul>
+<p><code>Spooling Savant Version 3 (Exports)/Boardroom/Exports</code></p>
+<hr />
+
+<section class="note-area note-area-section">
+  <div class="note-label">Notes — Prerequisites (summary)</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+
+<section class="blank-page">
+  <div class="note-label">Extra notes — Prerequisites</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+<h2>Part A — Dashboards (main nav)</h2>
+<p>Nav tabs come from <code>MainNav.tsx</code>. Who sees a gated tab is controlled by permissions (<code>permissions.ts</code>) plus Owner auto-grants. Dashboard <strong>roles</strong> (Shop Super, Warehouse Lead, etc.) are assigned on <strong>Employees</strong> and shape *what you see inside* Fab / PM / Field / Shipping — they are not the same as the tab permission.</p>
+<h3>Quick map</h3>
+<table><thead><tr>
+<th>Nav label</th>
+<th>Tab id</th>
+<th>Who sees the tab</th>
+<th>What it is</th>
+</tr></thead><tbody>
+<tr>
+<td>Owner Dashboard</td>
+<td><code>owner-dashboard</code></td>
+<td><code>view-owner-dashboard</code> / Owner</td>
+<td>Portfolio health</td>
+</tr>
+<tr>
+<td>PM Dashboard</td>
+<td><code>pm-dashboard</code></td>
+<td><code>view-pm-dashboard</code></td>
+<td>PM’s projects + PM board tasks</td>
+</tr>
+<tr>
+<td>Clients</td>
+<td><code>clients</code></td>
+<td>Everyone</td>
+<td>Main Dashboard + all project boards</td>
+</tr>
+<tr>
+<td>Task Board</td>
+<td><code>task-board</code></td>
+<td>Everyone</td>
+<td>Detailer / Support kanban</td>
+</tr>
+<tr>
+<td>Fab Workstation</td>
+<td><code>fab-dashboard</code></td>
+<td><code>view-fab-dashboard</code></td>
+<td>Queued / Warehouse / personal shop views</td>
+</tr>
+<tr>
+<td>Shipping Dashboard</td>
+<td><code>shipping-dashboard</code></td>
+<td><code>view-shipping-dashboard</code></td>
+<td>Shipping board task list</td>
+</tr>
+<tr>
+<td>Field Dashboard</td>
+<td><code>field-dashboard</code></td>
+<td><code>view-field-dashboard</code></td>
+<td>Field board task list</td>
+</tr>
+<tr>
+<td>Time Tracking</td>
+<td><code>time-tracking</code></td>
+<td><code>view-time-tracking</code> (default on for all job levels)</td>
+<td>Hours calendar + Fab clocks</td>
+</tr>
+<tr>
+<td>Employees</td>
+<td><code>employees</code></td>
+<td>Everyone (edit needs <code>manage-org</code>)</td>
+<td>Roster, permissions, dashboard roles</td>
+</tr>
+<tr>
+<td>Organizational Chart</td>
+<td><code>org-chart</code></td>
+<td><code>view-org-chart</code> or <code>manage-org</code></td>
+<td>Reporting tree</td>
+</tr>
+<tr>
+<td>Activity Log</td>
+<td><code>activity-log</code></td>
+<td><code>view-activity-log</code> or Owner/BIM/Ops Mgr</td>
+<td>Audit trail</td>
+</tr>
+<tr>
+<td>Access Control</td>
+<td><code>visibility-dashboard</code></td>
+<td>Job-level setting (default Owner/BIM/Ops Mgr) or <code>view-visibility-dashboard</code></td>
+<td>Permissions + nav visibility matrix</td>
+</tr>
+</tbody></table>
+<hr />
+
+<section class="note-area note-area-subsection">
+  <div class="note-label">Notes — Quick map</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+<h3>A1. Owner Dashboard</h3>
+<ul>
+<li><strong>Purpose:</strong> Executive portfolio view — how all projects are doing at a glance.</li>
+<li><strong>Who:</strong> Owners (<code>view-owner-dashboard</code> / owner org category). BIM Manager does <strong>not</strong> get this by default.</li>
+<li><strong>Shows:</strong> Active project count, average progress, budget vs spent, at-risk signals, BIM lifecycle stage rollup, full project list.</li>
+<li><strong>Actions:</strong> Open a project into Clients → Main Overview. Read-only metrics.</li>
+<li><strong>Sub-modes:</strong> None.</li>
+<li><strong>Linked boards:</strong> Opens into Clients → Main Overview for a project.</li>
+</ul>
+<hr />
+
+<section class="note-area note-area-subsection">
+  <div class="note-label">Notes — A1. Owner Dashboard</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+<h3>A2. PM Dashboard</h3>
+<ul>
+<li><strong>Purpose:</strong> Project Managers’ home for *their* jobs (or all projects if <code>manage-org</code>).</li>
+<li><strong>Who:</strong> <code>view-pm-dashboard</code> — Owner; BIM / Ops / Support Manager defaults; seeded PMs.</li>
+<li><strong>Dashboard roles:</strong> Project Managers, Assistant PMs (assigned on Employees).</li>
+<li><strong>Shows:</strong> Project cards (budget, schedule, lifecycle %), PM board task list, lifecycle legend.</li>
+<li><strong>Actions:</strong> Open <strong>Project Management</strong> board for a project; <strong>Assign PM</strong> (if <code>manage-org</code>).</li>
+<li><strong>Linked board:</strong> <code>project-managers</code> under Clients → project.</li>
+<li><strong>Sub-modes:</strong> None.</li>
+</ul>
+<hr />
+
+<section class="note-area note-area-subsection">
+  <div class="note-label">Notes — A2. PM Dashboard</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+<h3>A3. Clients (entry to all project boards)</h3>
+<ul>
+<li><strong>Purpose:</strong> Create clients/projects and do day-to-day spreadsheet board work.</li>
+<li><strong>Who:</strong> Everyone signed in.</li>
+<li><strong>Sub-modes:</strong></li>
+</ul>
+<p>1. <strong>Main Dashboard</strong> (logo) — portfolio cards by client; click into a project. 2. <strong>Board mode</strong> — strips: <strong>Clients</strong> → <strong>Projects</strong> → <strong>Boards</strong>.</p>
+<ul>
+<li><strong>What lives here:</strong> Every project board (see <strong>Part B</strong>). This is the spreadsheet home for BIM work; Fab shop day-to-day is usually <strong>Fab Workstation</strong>, not the Fab spreadsheet tab.</li>
+<li><strong>Actions:</strong> Add/rename clients &amp; projects; open/reorder boards; create/edit tasks; project settings / teams / job code.</li>
+</ul>
+<hr />
+
+<section class="note-area note-area-subsection">
+  <div class="note-label">Notes — A3. Clients (entry to all project boards)</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+<h3>A4. Task Board</h3>
+<ul>
+<li><strong>Purpose:</strong> Office kanban of work assigned to people (not the project board grid).</li>
+<li><strong>Who:</strong> Everyone.</li>
+<li><strong>Sub-modes:</strong> <strong>Detailers</strong> | <strong>Support Specialists</strong>.</li>
+<li><strong>Shows:</strong> Unassigned pool + one column per employee on that board.</li>
+<li><strong>Actions:</strong> Drag tasks onto people; reorder by priority/due date; Task Board status visibility settings.</li>
+<li><strong>Related boards:</strong> Surfaces tasks from Detailers / Deliverables / Spooling workflows that are assigned to those people.</li>
+</ul>
+<hr />
+
+<section class="note-area note-area-subsection">
+  <div class="note-label">Notes — A4. Task Board</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+<h3>A5. Fab Workstation (shop)</h3>
+<ul>
+<li><strong>Purpose:</strong> Working station for SSv3 packages after <strong>Ready for Fab</strong> — packages, assemblies, export files, BOM, weld log, clock, photos/comments.</li>
+<li><strong>Who (tab):</strong> <code>view-fab-dashboard</code> — Owner; BIM / Ops / Support Manager; seeded Fab staff.</li>
+<li><strong>Dashboard roles:</strong> Shop Super, Warehouse Lead, Warehouse Worker, Shop Dept Manager (Mech / Plmb / HVAC), Workers.</li>
+<li><strong>Dashboards strip</strong> (Queued / Warehouse / named people): Shop Super, Warehouse Lead, Owner, and org-chart managers <strong>upstream</strong> of Shop Super or Warehouse Lead.</li>
+<li><strong>Linked board:</strong> Fabrication (<code>fab</code>) — same tasks; Workstation is the shop UI.</li>
+</ul>
+<h4>A5a. Queued Dashboard</h4>
+<ul>
+<li><strong>Default for:</strong> Shop Super, Owner (queue browse).</li>
+<li><strong>Shows:</strong> All Fab packages (project filter if set).</li>
+<li><strong>Actions:</strong> Review packages; <strong>assign Dept Lead</strong> only; open detail / files; photos/comments.</li>
+<li><strong>Not here:</strong> Worker assign; package clock; warehouse-only BOM focus.</li>
+</ul>
+<h4>A5b. Warehouse Dashboard</h4>
+<ul>
+<li><strong>Default for:</strong> Warehouse Lead, Warehouse Worker.</li>
+<li><strong>Also via strip:</strong> Shop Super, Owner, upstream managers.</li>
+<li><strong>Shows:</strong> Packages in <strong>Queued</strong> or <strong>Pulling Material</strong> only.</li>
+<li><strong>Actions:</strong> Open <strong>Bill of Materials</strong> PDF; status Queued → Pulling Material → Material Pulled; <strong>Clock in/out</strong>; photos/comments.</li>
+<li><strong>Gate:</strong> After <strong>Material Pulled</strong>, package leaves the warehouse list.</li>
+</ul>
+<h4>A5c. Personal workstations (Dept Lead / Worker)</h4>
+<ul>
+<li><strong>Default for:</strong> Shop Dept Managers and Fab Workers (filtered to assignments).</li>
+<li><strong>Strip:</strong> One pill per person (name + role), excluding Shop Super / Warehouse Lead.</li>
+<li><strong>Dept Lead:</strong> Packages where they are Dept Lead; assign package and/or assemblies to workers; advance work; photos/comments; clock.</li>
+<li><strong>Worker:</strong> Assigned packages/assemblies; sheet viewer; weld-log tap-fill; status progression; photos/comments; clock.</li>
+<li><strong>Typical status after material:</strong> In Fab (Mech/Plmb/HVAC) → QA Review → Rework (optional) → Ready to Ship → Complete.</li>
+</ul>
+<h4>Fab shared tools</h4>
+<ul>
+<li>Sheet / PDF viewer (assemblies, Spools Combined, export files).</li>
+<li>Interactive <strong>Weld Log</strong> (tap Date / Welder ID / Initials).</li>
+<li><strong>Photos</strong> / <strong>Comments</strong> on the package.</li>
+<li><strong>Acting as</strong> / View-as when the full strip is not shown.</li>
+</ul>
+<hr />
+
+<section class="note-area note-area-subsection">
+  <div class="note-label">Notes — A5. Fab Workstation (shop)</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+<h3>A6. Shipping Dashboard</h3>
+<ul>
+<li><strong>Purpose:</strong> Department view of <strong>Shipping</strong> board tasks.</li>
+<li><strong>Who:</strong> <code>view-shipping-dashboard</code> — Owner; BIM / Ops / Support Manager; seeded Shipping staff.</li>
+<li><strong>Dashboard roles:</strong> Shipping Manager, Workers.</li>
+<li><strong>Shows:</strong> Task table (number, title, project, status).</li>
+<li><strong>Actions:</strong> Review status here; create/edit on Clients → <strong>Shipping</strong> board.</li>
+<li><strong>Gap:</strong> Fab <strong>Ready to Ship</strong> does <strong>not</strong> auto-promote into Shipping yet.</li>
+<li><strong>Sub-modes:</strong> None.</li>
+</ul>
+<hr />
+
+<section class="note-area note-area-subsection">
+  <div class="note-label">Notes — A6. Shipping Dashboard</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+<h3>A7. Field Dashboard</h3>
+<ul>
+<li><strong>Purpose:</strong> Department view of <strong>Field</strong> board tasks (site install).</li>
+<li><strong>Who:</strong> <code>view-field-dashboard</code> — Owner; BIM / Ops / Support Manager; seeded Field staff (PMs often get Field too).</li>
+<li><strong>Dashboard roles:</strong> Site Superintendents, Foremen, Crew Leads.</li>
+<li><strong>Shows:</strong> Field board task table.</li>
+<li><strong>Actions:</strong> Review progress; staffing via Employees → Field roles; task work on Clients → <strong>Field</strong> board.</li>
+<li><strong>Sub-modes:</strong> None.</li>
+</ul>
+<hr />
+
+<section class="note-area note-area-subsection">
+  <div class="note-label">Notes — A7. Field Dashboard</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+<h3>A8. Time Tracking</h3>
+<ul>
+<li><strong>Purpose:</strong> Log and review hours (office + Fab package clocks).</li>
+<li><strong>Who (tab):</strong> Everyone. <strong>Visible entries:</strong> yourself; people who report to you; Owners see all.</li>
+<li><strong>Shows:</strong> Entry form, Quick Tasks, calendar (<strong>day / week / month</strong>), <strong>Clocked in</strong> strip for open Fab clocks.</li>
+<li><strong>Actions:</strong> Add/edit/delete completed entries (15-minute grid); clock out open Fab entries; pick employee if allowed.</li>
+<li><strong>Fab link:</strong> Warehouse / personal <strong>Clock in/out</strong> writes time entries with package <code>taskId</code> / client / project.</li>
+</ul>
+<hr />
+
+<section class="note-area note-area-subsection">
+  <div class="note-label">Notes — A8. Time Tracking</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+<h3>A9. Employees</h3>
+<ul>
+<li><strong>Purpose:</strong> Roster, permissions, and <strong>dashboard role</strong> assignments.</li>
+<li><strong>Who:</strong> Everyone can open. <strong>Edit:</strong> <code>manage-org</code> (Owner, BIM Manager, Ops Manager defaults).</li>
+<li><strong>Stages:</strong> Leadership | Detailers | Support | Project Management | Field | Fab Shop | Shipping.</li>
+<li><strong>Actions:</strong> Invite/add; org category / trade; Works Under; permission chips; assign PM / Field / Fab / Shipping roles (incl. Warehouse Lead / Workers).</li>
+<li><strong>Fab setup:</strong> Assign Shop Super, Warehouse Lead + Workers, Dept Managers, Workers here before shop work.</li>
+</ul>
+<hr />
+
+<section class="note-area note-area-subsection">
+  <div class="note-label">Notes — A9. Employees</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+<h3>A10. Organizational Chart</h3>
+<ul>
+<li><strong>Purpose:</strong> Visual reporting tree.</li>
+<li><strong>Who:</strong> <code>view-org-chart</code> or <code>manage-org</code> (edit needs manage-org).</li>
+<li><strong>Actions:</strong> Pan/zoom; with <code>manage-org</code>, drag people under managers.</li>
+<li><strong>Fab note:</strong> Warehouse Dashboard strip also opens for managers <strong>upstream</strong> of Shop Super or Warehouse Lead.</li>
+</ul>
+<hr />
+
+<section class="note-area note-area-subsection">
+  <div class="note-label">Notes — A10. Organizational Chart</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+<h3>A11. Activity Log</h3>
+<ul>
+<li><strong>Purpose:</strong> Audit trail (creates, updates, deletes, status/column changes).</li>
+<li><strong>Who:</strong> <code>view-activity-log</code> or Owner / BIM Manager / Ops Manager.</li>
+<li><strong>Actions:</strong> Filter / search; restore deleted columns if <code>manage-columns</code>.</li>
+</ul>
+<hr />
+
+<section class="note-area note-area-subsection">
+  <div class="note-label">Notes — A11. Activity Log</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+<h3>Related UI (not main nav)</h3>
+<table><thead><tr>
+<th>UI</th>
+<th>Where</th>
+<th>Notes</th>
+</tr></thead><tbody>
+<tr>
+<td>Reports</td>
+<td>Header</td>
+<td>Dialog; scope follows active area</td>
+</tr>
+<tr>
+<td>View As</td>
+<td>Header</td>
+<td>Switch perspective (incl. Fab roster)</td>
+</tr>
+<tr>
+<td>Login</td>
+<td>Pre-auth</td>
+<td>Sign-in before any dashboard</td>
+</tr>
+</tbody></table>
+<hr />
+
+<section class="note-area note-area-subsection">
+  <div class="note-label">Notes — Related UI (not main nav)</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+
+<section class="note-area note-area-section">
+  <div class="note-label">Notes — Part A — Dashboards (main nav) (summary)</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+
+<section class="blank-page">
+  <div class="note-label">Extra notes — Part A — Dashboards (main nav)</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+
+<section class="blank-page">
+  <div class="note-label">More notes — Part A — Dashboards (main nav)</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+
+<section class="blank-page">
+  <div class="note-label">Scratch pad — Part A — Dashboards (main nav)</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+<h2>Part B — Project boards (Clients → board mode)</h2>
+<p>Under a project, the board strip is: <strong>Main Overview</strong> first, then sub-boards (reorderable), then any <strong>custom</strong> boards.</p>
+<p><strong>Default sub-board order:</strong> Project Management → RFI → Documents → Detailers → Deliverables → Spooling → Fabrication → Shipping → Field.</p>
+<h3>Main Overview vs sub-boards</h3>
+<table><thead><tr>
+<th></th>
+<th><strong>Main Overview</strong></th>
+<th><strong>Sub-boards</strong></th>
+</tr></thead><tbody>
+<tr>
+<td><strong>Layout</strong></td>
+<td>All project tasks under <strong>section</strong> groups</td>
+<td>One board’s tasks (mirrors that section’s hierarchy; RFI/Documents are flat)</td>
+</tr>
+<tr>
+<td><strong>Default sections</strong></td>
+<td>PM, RFI, Documents, Detailers, Deliverables, Spooling (+ custom). <strong>Not</strong> Fab / Shipping / Field by default</td>
+<td>Own tab</td>
+</tr>
+<tr>
+<td><strong>Columns</strong></td>
+<td>Union of section columns + trailing <strong>Board</strong> column</td>
+<td>Board-local; no Board column</td>
+</tr>
+<tr>
+<td><strong>Statuses</strong></td>
+<td>Per section branch (that board’s workflow)</td>
+<td>That board’s status list</td>
+</tr>
+<tr>
+<td><strong>Trade/level groups</strong></td>
+<td>On Detailers / Deliverables / Spooling sections</td>
+<td>Same hierarchy on those ghost boards</td>
+</tr>
+</tbody></table>
+<hr />
+
+<section class="note-area note-area-subsection">
+  <div class="note-label">Notes — Main Overview vs sub-boards</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+<h3>B1. Main Overview (<code>main</code>)</h3>
+<ul>
+<li><strong>Purpose:</strong> Project rollup — see the full BIM path without switching tabs.</li>
+<li><strong>Who:</strong> Everyone on the job (coordination view).</li>
+<li><strong>Default statuses (fallback only):</strong> Not Started → Not Ready → Ready → In Progress → On Hold → Complete. Rows under a section use <strong>that section’s</strong> statuses.</li>
+<li><strong>Special:</strong> Always-expanded sections; shared custom columns with several sub-boards; workflow due-date columns on detailing/spool/fab/shipping/field branches.</li>
+<li><strong>Actions:</strong> Create/edit tasks in any section; filter/sort; jump awareness of which board a row belongs to via the Board column.</li>
+</ul>
+<hr />
+
+<section class="note-area note-area-subsection">
+  <div class="note-label">Notes — B1. Main Overview (`main`)</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+<h3>B2. Project Management (<code>project-managers</code>)</h3>
+<ul>
+<li><strong>Purpose:</strong> Project setup &amp; coordination — contract through clash/IFC readiness.</li>
+<li><strong>Who:</strong> PMs / Assistant PMs; linked from <strong>PM Dashboard</strong>.</li>
+<li><strong>Default statuses:</strong></li>
+</ul>
+<p>1. Not Started 2. Contract Review 3. Kickoff Complete 4. BEP Approved 5. Model Setup 6. Clash Cycle Active 7. Clashes Resolved 8. IFC Ready 9. On Hold 10. Complete</p>
+<ul>
+<li><strong>Special:</strong> Template <strong>PM checklist</strong> groups/tasks; Main Overview section; fixed Due Date (not the shared workflow due-date pack); no status auto-assign teams.</li>
+<li><strong>Actions:</strong> Run kickoff/BEP/clash checklist work; assign PMs from dashboard when allowed.</li>
+</ul>
+<hr />
+
+<section class="note-area note-area-subsection">
+  <div class="note-label">Notes — B2. Project Management (`project-managers`)</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+<h3>B3. RFI (<code>rfi</code>)</h3>
+<ul>
+<li><strong>Purpose:</strong> Track RFIs waiting on response vs closed.</li>
+<li><strong>Who:</strong> Support specialists (assignee pool = project support); PMs/detailers watch via Overview.</li>
+<li><strong>Default statuses (locked list — only these two ids):</strong></li>
+</ul>
+<p>1. Waiting for Response 2. Complete</p>
+<ul>
+<li><strong>Special:</strong> <strong>Flat board</strong> — default columns mainly title + status (no assignee/due/duration); Main Overview section; new tasks default to Waiting for Response. Status list cannot be expanded beyond those two ids (label/color only).</li>
+<li><strong>Actions:</strong> Log RFIs; mark complete when answered.</li>
+</ul>
+<hr />
+
+<section class="note-area note-area-subsection">
+  <div class="note-label">Notes — B3. RFI (`rfi`)</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+<h3>B4. Documents (<code>documents</code>)</h3>
+<ul>
+<li><strong>Purpose:</strong> Background &amp; reference documents — request → receive → link to model → verify.</li>
+<li><strong>Who:</strong> Support specialists (assignee pool = project support).</li>
+<li><strong>Default statuses:</strong></li>
+</ul>
+<p>1. Not Started 2. Requested 3. Received 4. Linked to Model 5. Verified 6. On Hold 7. Complete</p>
+<ul>
+<li><strong>Special:</strong> <strong>Flat board</strong> — very minimal columns (title-focused); Main Overview section; no workflow due-date pack; no auto-assign.</li>
+<li><strong>Actions:</strong> Track document intake and model linkage.</li>
+</ul>
+<hr />
+
+<section class="note-area note-area-subsection">
+  <div class="note-label">Notes — B4. Documents (`documents`)</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+<h3>B5. Detailers (<code>detailers</code>)</h3>
+<ul>
+<li><strong>Purpose:</strong> 3D detailing / modeling through hangers, detailer QA, ready for coordination.</li>
+<li><strong>Who:</strong> Detailers (assignee pool = project detailers). Also on <strong>Task Board → Detailers</strong>.</li>
+<li><strong>Default statuses:</strong></li>
+</ul>
+<p>1. Not Started 2. Backgrounds Linked 3. Modeling (LOD 300) 4. Hangers &amp; Supports 5. Detailer QA 6. Ready for Coordination 7. Rework 8. On Hold 9. Complete</p>
+<ul>
+<li><strong>Special:</strong> Main Overview section; <strong>trade-first</strong> level/trade grouping (with Deliverables/Spooling); workflow due-date columns; shared Main custom columns.</li>
+<li><strong>Actions:</strong> Model, QA, hand off toward coordination / deliverables.</li>
+</ul>
+<hr />
+
+<section class="note-area note-area-subsection">
+  <div class="note-label">Notes — B5. Detailers (`detailers`)</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+<h3>B6. Deliverables (<code>deliverables</code>)</h3>
+<ul>
+<li><strong>Purpose:</strong> Support Specialists pipeline — pre-planning through spool prep, with detailer handoffs.</li>
+<li><strong>Who:</strong> Support (primary) + detailers on handoff statuses. <strong>Task Board → Support Specialists</strong>.</li>
+<li><strong>Default statuses (auto-assign team):</strong></li>
+</ul>
+<p>1. Not Started → detailers 2. Ready for Pre-Planning → support 3. Pre-Planning Complete → support 4. Support In Progress → support 5. Ready for Spooling → support 6. Spool In Progress → support 7. Spool QA Review → support 8. Spool Approved → support 9. Ready for Fab → detailers 10. On Hold → detailers 11. Detailer Review → detailers 12. Fix Mark Ups → support 13. Complete → detailers</p>
+<ul>
+<li><strong>Special:</strong> Status <strong>auto-assign</strong> to project detailer/support teams; assignees can be locked for overrides; trade-first groups; workflow due dates. <strong><code>Ready for Fab</code> on Deliverables does not promote to Fab</strong> — promotion is <strong>Spooling + SSv3</strong> only.</li>
+<li><strong>Actions:</strong> Pre-plan, support modeling, spool prep handoffs, mark-up loops.</li>
+</ul>
+<hr />
+
+<section class="note-area note-area-subsection">
+  <div class="note-label">Notes — B6. Deliverables (`deliverables`)</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+<h3>B7. Spooling (<code>spooling</code>)</h3>
+<ul>
+<li><strong>Purpose:</strong> Spool sheet creation, QA, approval, and the <strong>fab-ready gate</strong>.</li>
+<li><strong>Who:</strong> Support / spoolers; detailers at Ready for Fab.</li>
+<li><strong>Default statuses (auto-assign team):</strong></li>
+</ul>
+<p>1. Not Started → support 2. Ready for Spooling → support 3. Spool In Progress → support 4. Spool QA Review → support 5. Spool Approved → support 6. Ready for Fab → detailers 7. On Hold → support 8. Complete → support</p>
+<ul>
+<li><strong>Special:</strong></li>
+<li><strong>SSv3 export attach</strong> — <code>boardroom-package.json</code> + reports land on the Spooling task (folder watch / import).</li>
+<li>Setting status to <strong>Ready for Fab</strong> with an SSv3 export <strong>promotes</strong> the package tree to the <strong>Fab</strong> board as <strong>Queued</strong>.</li>
+<li>After Ready for Fab / on Fab, wipe/replace of that export is <strong>blocked</strong>.</li>
+<li>Main Overview section; trade-first; workflow due dates.</li>
+<li><strong>Actions:</strong> Run SSv3; attach export; QA sheets; flip <strong>Ready for Fab</strong> when shop should see it.</li>
+<li><strong>Keep Boardroom open</strong> while SSv3 loads projects/tasks from <code>http://127.0.0.1:17321</code>.</li>
+</ul>
+<hr />
+
+<section class="note-area note-area-subsection">
+  <div class="note-label">Notes — B7. Spooling (`spooling`)</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+<h3>B8. Fabrication (<code>fab</code>)</h3>
+<ul>
+<li><strong>Purpose:</strong> Shop fabrication after promote — warehouse pull through dept fab, QA, ready to ship.</li>
+<li><strong>Who:</strong> Fab shop (Shop Super, Warehouse, Dept Managers, Workers). Day-to-day UI is <strong>Fab Workstation</strong>; this tab is the Clients spreadsheet of the same tasks.</li>
+<li><strong>Default statuses:</strong></li>
+</ul>
+<p>1. Not Started 2. Queued 3. Pulling Material 4. Material Pulled 5. In Fab (Mech) 6. In Fab (Plmb) 7. In Fab (HVAC) 8. QA Review 9. Rework 10. Ready to Ship 11. Complete</p>
+<ul>
+<li><strong>Special:</strong> No default Main Overview section; receives SSv3 package/assembly trees on promote; warehouse filters Queued / Pulling Material; package custom fields (<code>ssv3*</code>); weld log / clock live in Fab Workstation. <strong>Ready to Ship does not auto-create Shipping tasks.</strong></li>
+<li><strong>Actions:</strong> Prefer Fab Workstation for assign, BOM, clock, sheets, weld log, photos/comments.</li>
+</ul>
+<hr />
+
+<section class="note-area note-area-subsection">
+  <div class="note-label">Notes — B8. Fabrication (`fab`)</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+<h3>B9. Shipping (<code>shipping</code>)</h3>
+<ul>
+<li><strong>Purpose:</strong> Staging → loading → transit → site delivery → field receipt.</li>
+<li><strong>Who:</strong> Shipping Manager / Shipping workers (<strong>Shipping Dashboard</strong>).</li>
+<li><strong>Default statuses:</strong></li>
+</ul>
+<p>1. Not Started 2. Staging 3. Loading 4. In Transit 5. Delivered to Site 6. Received by Field 7. Complete</p>
+<ul>
+<li><strong>Special:</strong> No default Main Overview section; workflow due dates; listed on Shipping Dashboard. No auto-promote from Fab yet.</li>
+<li><strong>Actions:</strong> Create/advance shipping tasks; track delivery to field.</li>
+</ul>
+<hr />
+
+<section class="note-area note-area-subsection">
+  <div class="note-label">Notes — B9. Shipping (`shipping`)</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+<h3>B10. Field (<code>field</code>)</h3>
+<ul>
+<li><strong>Purpose:</strong> Site install — mobilization through punch, as-builts, final inspection.</li>
+<li><strong>Who:</strong> Site supers, foremen, crew leads (<strong>Field Dashboard</strong>); PMs often watch.</li>
+<li><strong>Default statuses:</strong></li>
+</ul>
+<p>1. Not Started 2. Mobilization 3. Material On Site 4. Rough-In 5. Hydro / Test 6. Trim-Out 7. Punch List 8. As-Built Update 9. Final Inspection 10. Complete</p>
+<ul>
+<li><strong>Special:</strong> No default Main Overview section; workflow due dates; Field Dashboard lists these tasks.</li>
+<li><strong>Actions:</strong> Track install progress on site.</li>
+</ul>
+<hr />
+
+<section class="note-area note-area-subsection">
+  <div class="note-label">Notes — B10. Field (`field`)</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+<h3>B11. Custom boards (<code>cb-*</code>)</h3>
+<ul>
+<li><strong>Purpose:</strong> Per-project extra tabs (user-named).</li>
+<li><strong>Who:</strong> Whatever the team assigns (assignee pool often detailers+support when set).</li>
+<li><strong>Default statuses:</strong> Generic Main list unless overridden in status settings.</li>
+<li><strong>Special:</strong> Can appear as a Main Overview section; reorderable with built-ins.</li>
+<li><strong>Actions:</strong> Same spreadsheet patterns as other hierarchical boards, project-defined workflow.</li>
+</ul>
+<hr />
+
+<section class="note-area note-area-subsection">
+  <div class="note-label">Notes — B11. Custom boards (`cb-*`)</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+
+<section class="note-area note-area-section">
+  <div class="note-label">Notes — Part B — Project boards (Clients → board mode) (summary)</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+
+<section class="blank-page">
+  <div class="note-label">Extra notes — Part B — Project boards (Clients → board mode)</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+
+<section class="blank-page">
+  <div class="note-label">More notes — Part B — Project boards (Clients → board mode)</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+
+<section class="blank-page">
+  <div class="note-label">Scratch pad — Part B — Project boards (Clients → board mode)</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+<h2>Part C — Order of operations (SSv3 → Fab)</h2>
+<h3>1. Org / roles (Boardroom)</h3>
+<ul>
+<li>Log in as Owner / BIM Manager / Ops as needed.</li>
+<li>Maintain <strong>Employees</strong> and <strong>Org Chart</strong>.</li>
+<li>Assign Fab dashboard roles:</li>
+<li>Shop Super</li>
+<li>Warehouse Lead + Warehouse Workers</li>
+<li>Shop Dept Managers (Mech / Plmb / HVAC)</li>
+<li>Fab Workers</li>
+<li>Optional: set each fab person’s <strong>Welder ID</strong> for weld-log tap-fill.</li>
+</ul>
+
+<section class="note-area note-area-subsection">
+  <div class="note-label">Notes — 1. Org / roles (Boardroom)</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+<h3>2. Client / project (Boardroom)</h3>
+<ul>
+<li>Create <strong>Client</strong> → <strong>Project</strong> (template is fine).</li>
+<li>Confirm job code and project teams.</li>
+<li>Boards that matter for this flow: <strong>Spooling</strong>, <strong>Fab</strong>, <strong>Shipping</strong>.</li>
+</ul>
+
+<section class="note-area note-area-subsection">
+  <div class="note-label">Notes — 2. Client / project (Boardroom)</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+<h3>3. Spooling task (Boardroom)</h3>
+<ul>
+<li>Create or pick a <strong>Spooling</strong> board task for the package work.</li>
+<li>Assign support / spooler as needed; advance spooling statuses as work proceeds.</li>
+<li><strong>Keep Boardroom open</strong> for the API.</li>
+</ul>
+
+<section class="note-area note-area-subsection">
+  <div class="note-label">Notes — 3. Spooling task (Boardroom)</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+<h3>4. SSv3 work (Revit)</h3>
+<ul>
+<li>Open <strong>SS Manager V3</strong>.</li>
+<li>Generate Options that affect handoff: Number Welds, Fill Weld Log, Include Weld Log entry fields, title block / weld log layout.</li>
+<li>Create / package assemblies and generate spool sheets.</li>
+</ul>
+
+<section class="note-area note-area-subsection">
+  <div class="note-label">Notes — 4. SSv3 work (Revit)</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+<h3>5. Plot / Export to Boardroom (SSv3)</h3>
+<ul>
+<li>Plot Packages / Export to Boardroom: pick Boardroom project + Spooling task + export folder.</li>
+<li>Writes <code>boardroom-package.json</code> + reports (Spools Combined, BOM, Cut List, Assembly List, Weld Log <code>.xlsx</code>, etc.).</li>
+</ul>
+
+<section class="note-area note-area-subsection">
+  <div class="note-label">Notes — 5. Plot / Export to Boardroom (SSv3)</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+<h3>6. Boardroom ingest</h3>
+<ul>
+<li>Electron watches Exports; attaches package/assemblies/files to the Spooling task.</li>
+<li>Re-export can replace until Ready for Fab.</li>
+</ul>
+
+<section class="note-area note-area-subsection">
+  <div class="note-label">Notes — 6. Boardroom ingest</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+<h3>7. Ready for Fab (gate)</h3>
+<ul>
+<li>Spooling status → <strong>Ready for Fab</strong>.</li>
+<li>Promotes package/assemblies to Fab as <strong>Queued</strong>.</li>
+<li><strong>Lock:</strong> further SSv3 overwrite blocked.</li>
+</ul>
+
+<section class="note-area note-area-subsection">
+  <div class="note-label">Notes — 7. Ready for Fab (gate)</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+<h3>8–10. Shop (Queued → Warehouse → Dept Lead / Workers)</h3>
+<ul>
+<li>Queued: assign Dept Lead.</li>
+<li>Warehouse: BOM, clock, Queued → Pulling Material → Material Pulled.</li>
+<li>Personal: assign workers; fab statuses; sheets; weld-log tap-fill; photos/comments.</li>
+</ul>
+
+<section class="note-area note-area-subsection">
+  <div class="note-label">Notes — 8–10. Shop (Queued → Warehouse → Dept Lead / Workers)</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+<h3>11. Time Tracking</h3>
+<ul>
+<li>Package clock in/out → Time Tracking tab.</li>
+</ul>
+
+<section class="note-area note-area-subsection">
+  <div class="note-label">Notes — 11. Time Tracking</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+<h3>12. Shipping (later)</h3>
+<ul>
+<li>Dashboard + board exist; no auto-hand-off from Ready to Ship yet.</li>
+</ul>
+<hr />
+
+<section class="note-area note-area-subsection">
+  <div class="note-label">Notes — 12. Shipping (later)</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+
+<section class="note-area note-area-section">
+  <div class="note-label">Notes — Part C — Order of operations (SSv3 → Fab) (summary)</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+
+<section class="blank-page">
+  <div class="note-label">Extra notes — Part C — Order of operations (SSv3 → Fab)</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+
+<section class="blank-page">
+  <div class="note-label">More notes — Part C — Order of operations (SSv3 → Fab)</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+
+<section class="blank-page">
+  <div class="note-label">Scratch pad — Part C — Order of operations (SSv3 → Fab)</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+<h2>Part D — Job levels, permissions &amp; what each person sees</h2>
+<p>Two separate systems:</p>
+<p>1. <strong>Job level (<code>orgCategory</code>)</strong> + some <code>role</code> rules → default <strong>AppPermissions</strong> → which <strong>main nav tabs</strong> appear. 2. <strong>Dashboard roles</strong> (Employees assigner: Shop Super, Warehouse Lead, PM, etc.) → how Fab/PM/Field/Shipping behave <strong>inside</strong> a tab you already can open.</p>
+<p>Permissions can also be edited per person on <strong>Employees</strong> (needs <code>manage-org</code>). Runtime auto-grants can still apply even if a chip is missing (see below).</p>
+<hr />
+<h3>D1. Permission catalog (every permission)</h3>
+<table><thead><tr>
+<th>Permission id</th>
+<th>Label in UI</th>
+<th>What it unlocks</th>
+</tr></thead><tbody>
+<tr>
+<td><code>edit-budget-hours</code></td>
+<td>Edit budget hours</td>
+<td>Edit project budget hours. Also auto-unlocks <strong>View org chart</strong> at runtime.</td>
+</tr>
+<tr>
+<td><code>manage-org</code></td>
+<td>Manage org &amp; permissions</td>
+<td>Edit org chart layout, roster, permission chips, dashboard role assignments; on PM Dashboard see <strong>all</strong> projects + Assign PM. Alone also grants org-chart <strong>access</strong>.</td>
+</tr>
+<tr>
+<td><code>manage-columns</code></td>
+<td>Manage &amp; restore columns</td>
+<td>Delete/manage spreadsheet columns; restore deleted columns from Activity Log.</td>
+</tr>
+<tr>
+<td><code>view-activity-log</code></td>
+<td>View activity log</td>
+<td><strong>Activity Log</strong> main nav tab.</td>
+</tr>
+<tr>
+<td><code>view-org-chart</code></td>
+<td>View org chart</td>
+<td><strong>Organizational Chart</strong> main nav tab (browse). Drag/edit still needs <code>manage-org</code>.</td>
+</tr>
+<tr>
+<td><code>view-owner-dashboard</code></td>
+<td>View Owner dashboard</td>
+<td><strong>Owner Dashboard</strong> main nav tab.</td>
+</tr>
+<tr>
+<td><code>view-pm-dashboard</code></td>
+<td>View PM dashboard</td>
+<td><strong>PM Dashboard</strong> main nav tab.</td>
+</tr>
+<tr>
+<td><code>view-field-dashboard</code></td>
+<td>View Field dashboard</td>
+<td><strong>Field Dashboard</strong> main nav tab.</td>
+</tr>
+<tr>
+<td><code>view-fab-dashboard</code></td>
+<td>View Fab dashboard</td>
+<td><strong>Fab Workstation</strong> main nav tab.</td>
+</tr>
+<tr>
+<td><code>view-shipping-dashboard</code></td>
+<td>View Shipping dashboard</td>
+<td><strong>Shipping Dashboard</strong> main nav tab.</td>
+</tr>
+<tr>
+<td><code>view-visibility-dashboard</code></td>
+<td>View Access Control</td>
+<td><strong>Access Control</strong> main nav tab (permissions + visibility; also via editable job-level list).</td>
+</tr>
+<tr>
+<td><code>view-time-tracking</code></td>
+<td>View Time Tracking</td>
+<td><strong>Time Tracking</strong> main nav tab.</td>
+</tr>
+</tbody></table>
+<p><strong>Always visible (no permission):</strong> Clients, Task Board, Employees. <strong>Time Tracking rows</strong> (who you can see): yourself, people who report up to you, or everyone if Owner — separate from the tab permission.</p>
+<hr />
+
+<section class="note-area note-area-subsection">
+  <div class="note-label">Notes — D1. Permission catalog (every permission)</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+<h3>D2. Job levels (<code>orgCategory</code>)</h3>
+<table><thead><tr>
+<th>Job level id</th>
+<th>Label</th>
+<th>Typical <code>Employee.role</code></th>
+</tr></thead><tbody>
+<tr>
+<td><code>owner</code></td>
+<td>Owner</td>
+<td>Often support-specialist + owner category (Joe)</td>
+</tr>
+<tr>
+<td><code>bim-manager</code></td>
+<td>BIM Manager</td>
+<td>support-specialist</td>
+</tr>
+<tr>
+<td><code>operations-manager</code></td>
+<td>Operations Manager</td>
+<td>operations</td>
+</tr>
+<tr>
+<td><code>operations-staff</code></td>
+<td>Operations</td>
+<td>operations (PM / Field / Fab / Shipping staff)</td>
+</tr>
+<tr>
+<td><code>plumbing-detailer</code></td>
+<td>Lead Plumbing Detailer</td>
+<td>detailer</td>
+</tr>
+<tr>
+<td><code>mechanical-detailer</code></td>
+<td>Lead Mechanical Detailer</td>
+<td>detailer</td>
+</tr>
+<tr>
+<td><code>sheet-metal-detailer</code></td>
+<td>Lead Sheet Metal Detailer</td>
+<td>detailer</td>
+</tr>
+<tr>
+<td><code>jr-detailer</code></td>
+<td>Junior Detailer</td>
+<td>detailer</td>
+</tr>
+<tr>
+<td><code>support-manager</code></td>
+<td>Support Specialist Manager</td>
+<td>support-specialist</td>
+</tr>
+<tr>
+<td><code>support-specialist</code></td>
+<td>Support Specialist</td>
+<td>support-specialist</td>
+</tr>
+</tbody></table>
+<p>If <code>orgCategory</code> is missing: <code>operations</code> → <code>operations-staff</code>; <code>support-specialist</code> → <code>support-specialist</code>; else → <code>plumbing-detailer</code>.</p>
+<p><strong>Employees UI stages</strong> (lanes, not permissions): Leadership | Detailers | Support | Project Management | Field | Fab Shop | Shipping.</p>
+<hr />
+
+<section class="note-area note-area-subsection">
+  <div class="note-label">Notes — D2. Job levels (`orgCategory`)</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+<h3>D3. Default permissions by job level</h3>
+<p>Everyone starts with <code>view-org-chart</code>. Then category/role rules add more (<code>createDefaultEmployeePermissions</code>).</p>
+<table><thead><tr>
+<th>Job level</th>
+<th>Default permissions</th>
+</tr></thead><tbody>
+<tr>
+<td><strong>Owner</strong></td>
+<td>All 10: Budget, Org, Columns, Activity, Chart, Owner, PM, Field, Fab, Shipping</td>
+</tr>
+<tr>
+<td><strong>BIM Manager</strong></td>
+<td>Budget, Org, Columns, Activity, Chart, PM, Field, Fab, Shipping — <strong>not</strong> Owner Dashboard</td>
+</tr>
+<tr>
+<td><strong>Operations Manager</strong></td>
+<td>Org, Columns, Activity, Chart, PM, Field, Fab, Shipping — <strong>not</strong> Budget, <strong>not</strong> Owner</td>
+</tr>
+<tr>
+<td><strong>Support Manager</strong></td>
+<td>Chart + PM + Field + Fab + Shipping</td>
+</tr>
+<tr>
+<td><strong>Detailer</strong> (any trade / junior)</td>
+<td>Chart + Budget (<code>role === 'detailer'</code>)</td>
+</tr>
+<tr>
+<td><strong>Support Specialist</strong></td>
+<td>Chart only</td>
+</tr>
+<tr>
+<td><strong>Operations Staff</strong> (generic)</td>
+<td>Chart only, <strong>plus</strong> roster extras below if seeded into a department</td>
+</tr>
+</tbody></table>
+<h4>Operations staff roster extras (<code>operationsDashboardPermissions</code>)</h4>
+<table><thead><tr>
+<th>Seeded roster</th>
+<th>Example people</th>
+<th>Extra view permissions</th>
+</tr></thead><tbody>
+<tr>
+<td>PM</td>
+<td>Kendra, Damon</td>
+<td>PM + Field + Fab + Shipping</td>
+</tr>
+<tr>
+<td>Field</td>
+<td>Marcus, Elena, Tyler</td>
+<td>Field only</td>
+</tr>
+<tr>
+<td>Fab</td>
+<td>Gina…Priya (<code>emp-fab-1</code>…<code>10</code>)</td>
+<td>Fab only</td>
+</tr>
+<tr>
+<td>Shipping</td>
+<td>Harper, Mason</td>
+<td>Shipping only</td>
+</tr>
+</tbody></table>
+<h4>Runtime auto-grants (even if chip missing)</h4>
+<table><thead><tr>
+<th>Permission / gate</th>
+<th>Also true when</th>
+</tr></thead><tbody>
+<tr>
+<td>Edit budget hours</td>
+<td>Detailer role <strong>or</strong> Owner <strong>or</strong> Joe Vasquez</td>
+</tr>
+<tr>
+<td>View org chart</td>
+<td>User can edit budget hours</td>
+</tr>
+<tr>
+<td>Manage org</td>
+<td>Owner <strong>or</strong> Joe Vasquez</td>
+</tr>
+<tr>
+<td>View Owner dashboard</td>
+<td>Owner</td>
+</tr>
+<tr>
+<td>View PM / Field / Fab / Shipping</td>
+<td>Owner</td>
+</tr>
+<tr>
+<td>Manage columns</td>
+<td>Explicit chip <strong>or</strong> Owner / BIM Manager / Ops Manager category</td>
+</tr>
+<tr>
+<td>View activity log</td>
+<td>Explicit chip <strong>or</strong> Owner / BIM Manager / Ops Manager category</td>
+</tr>
+<tr>
+<td>View someone’s time</td>
+<td>Self <strong>or</strong> Owner <strong>or</strong> upstream manager in org chart</td>
+</tr>
+</tbody></table>
+<hr />
+
+<section class="note-area note-area-subsection">
+  <div class="note-label">Notes — D3. Default permissions by job level</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+<h3>D4. Main nav visibility by job level (defaults)</h3>
+<p>Always also: <strong>Clients</strong>, <strong>Task Board</strong>, <strong>Employees</strong>.</p>
+<table><thead><tr>
+<th>Job level</th>
+<th>Owner</th>
+<th>PM</th>
+<th>Fab</th>
+<th>Shipping</th>
+<th>Field</th>
+<th>Time</th>
+<th>Org Chart</th>
+<th>Activity</th>
+<th>Access</th>
+</tr></thead><tbody>
+<tr>
+<td>Owner</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+</tr>
+<tr>
+<td>BIM Manager</td>
+<td></td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+</tr>
+<tr>
+<td>Operations Manager</td>
+<td></td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+</tr>
+<tr>
+<td>Support Manager</td>
+<td></td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Detailer (any)</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td>✓</td>
+<td>✓</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Support Specialist</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td>✓</td>
+<td>✓</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Ops – PM Lead</td>
+<td></td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Ops – PM Staff</td>
+<td></td>
+<td>✓</td>
+<td></td>
+<td></td>
+<td></td>
+<td>✓</td>
+<td>✓</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Ops – Field Lead</td>
+<td></td>
+<td>✓</td>
+<td></td>
+<td></td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Ops – Field Staff</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Ops – Fab Lead</td>
+<td></td>
+<td></td>
+<td>✓</td>
+<td>✓</td>
+<td></td>
+<td>✓</td>
+<td>✓</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Ops – Fab Staff</td>
+<td></td>
+<td></td>
+<td>✓</td>
+<td></td>
+<td></td>
+<td>✓</td>
+<td>✓</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Ops – Shipping Lead</td>
+<td></td>
+<td></td>
+<td>✓</td>
+<td>✓</td>
+<td></td>
+<td>✓</td>
+<td>✓</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Ops – Shipping Staff</td>
+<td></td>
+<td></td>
+<td></td>
+<td>✓</td>
+<td></td>
+<td>✓</td>
+<td>✓</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Ops – unassigned</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td>✓</td>
+<td>✓</td>
+<td></td>
+<td></td>
+</tr>
+</tbody></table>
+<p><strong>Employees tab:</strong> everyone can open; <strong>editing</strong> people/permissions/roles needs <code>manage-org</code> (Owner, BIM Manager, Ops Manager, Joe).</p>
+<p><strong>Access Control</strong> defaults to Owner / BIM Manager / Operations Manager and is editable on that dashboard (job-level checkboxes + Access column). All AppPermissions (Budget, Org, Columns, dashboards, etc.) are managed there — not on Employees.</p>
+<hr />
+
+<section class="note-area note-area-subsection">
+  <div class="note-label">Notes — D4. Main nav visibility by job level (defaults)</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+<h3>D5. What each job level sees *inside* each dashboard</h3>
+<h4>Owner</h4>
+<table><thead><tr>
+<th>Surface</th>
+<th>Detail</th>
+</tr></thead><tbody>
+<tr>
+<td>Owner Dashboard</td>
+<td>Full portfolio metrics + all projects</td>
+</tr>
+<tr>
+<td>PM Dashboard</td>
+<td>All projects (<code>manage-org</code>); Assign PM</td>
+</tr>
+<tr>
+<td>Clients / boards</td>
+<td>Full spreadsheet access for all boards</td>
+</tr>
+<tr>
+<td>Task Board</td>
+<td>Detailers + Support kanban</td>
+</tr>
+<tr>
+<td>Fab Workstation</td>
+<td>Queued by default; <strong>full Dashboards strip</strong> (Queued, Warehouse, every personal tab)</td>
+</tr>
+<tr>
+<td>Shipping / Field</td>
+<td>Full department task lists</td>
+</tr>
+<tr>
+<td>Time Tracking</td>
+<td><strong>All</strong> employees’ entries</td>
+</tr>
+<tr>
+<td>Employees</td>
+<td>Full edit</td>
+</tr>
+<tr>
+<td>Org Chart</td>
+<td>View + edit</td>
+</tr>
+<tr>
+<td>Activity Log</td>
+<td>Full + restore columns</td>
+</tr>
+</tbody></table>
+<h4>BIM Manager</h4>
+<table><thead><tr>
+<th>Surface</th>
+<th>Detail</th>
+</tr></thead><tbody>
+<tr>
+<td>Owner Dashboard</td>
+<td><strong>No tab</strong></td>
+</tr>
+<tr>
+<td>PM / Fab / Shipping / Field</td>
+<td>Tabs yes; PM shows assigned projects unless also manage-org</td>
+</tr>
+<tr>
+<td>Fab strip</td>
+<td>Yes if upstream of Shop Super / Warehouse Lead in org chart (Ops Manager usually is; BIM Manager depends on reports-to)</td>
+</tr>
+<tr>
+<td>Time Tracking</td>
+<td>Self + reports</td>
+</tr>
+<tr>
+<td>Employees / Org Chart</td>
+<td>Edit (<code>manage-org</code>)</td>
+</tr>
+<tr>
+<td>Activity Log</td>
+<td>Yes</td>
+</tr>
+</tbody></table>
+<h4>Operations Manager</h4>
+<table><thead><tr>
+<th>Surface</th>
+<th>Detail</th>
+</tr></thead><tbody>
+<tr>
+<td>Same phase dashboards as BIM Manager</td>
+<td>PM, Fab, Shipping, Field, Org, Activity</td>
+</tr>
+<tr>
+<td>Budget hours</td>
+<td><strong>No</strong> by default</td>
+</tr>
+<tr>
+<td>Owner Dashboard</td>
+<td><strong>No</strong></td>
+</tr>
+<tr>
+<td>Fab strip</td>
+<td>Yes when upstream of Shop Super / Warehouse Lead (seeded: Shop Super reports to Ops Manager)</td>
+</tr>
+<tr>
+<td>Employees</td>
+<td>Edit</td>
+</tr>
+</tbody></table>
+<h4>Support Manager</h4>
+<table><thead><tr>
+<th>Surface</th>
+<th>Detail</th>
+</tr></thead><tbody>
+<tr>
+<td>PM / Fab / Shipping / Field</td>
+<td>Tabs yes</td>
+</tr>
+<tr>
+<td>Owner / Activity</td>
+<td><strong>No</strong> by default</td>
+</tr>
+<tr>
+<td>Org Chart</td>
+<td>View</td>
+</tr>
+<tr>
+<td>Employees</td>
+<td>View; edit only if given <code>manage-org</code></td>
+</tr>
+<tr>
+<td>Fab inside</td>
+<td>Depends on fab <strong>role</strong> assignment + strip rules</td>
+</tr>
+</tbody></table>
+<h4>Detailer (Plumbing / Mechanical / Sheet Metal / Junior)</h4>
+<table><thead><tr>
+<th>Surface</th>
+<th>Detail</th>
+</tr></thead><tbody>
+<tr>
+<td>Phase dashboards</td>
+<td><strong>None</strong> by default</td>
+</tr>
+<tr>
+<td>Clients boards</td>
+<td>Full project work — Detailers board primary; Main Overview sections</td>
+</tr>
+<tr>
+<td>Task Board</td>
+<td>Detailers lane</td>
+</tr>
+<tr>
+<td>Budget hours</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Org Chart</td>
+<td>View</td>
+</tr>
+<tr>
+<td>Time Tracking</td>
+<td>Self (+ reports if any)</td>
+</tr>
+</tbody></table>
+<h4>Support Specialist</h4>
+<table><thead><tr>
+<th>Surface</th>
+<th>Detail</th>
+</tr></thead><tbody>
+<tr>
+<td>Phase dashboards</td>
+<td><strong>None</strong> by default</td>
+</tr>
+<tr>
+<td>Clients boards</td>
+<td>Deliverables / Spooling / Documents / RFI primary</td>
+</tr>
+<tr>
+<td>Task Board</td>
+<td>Support Specialists lane</td>
+</tr>
+<tr>
+<td>Org Chart</td>
+<td>View</td>
+</tr>
+</tbody></table>
+<h4>Operations – PM staff (e.g. Project Manager / Assistant PM roles)</h4>
+<table><thead><tr>
+<th>Surface</th>
+<th>Detail</th>
+</tr></thead><tbody>
+<tr>
+<td>Tabs</td>
+<td>PM + Field + Fab + Shipping (+ Chart)</td>
+</tr>
+<tr>
+<td>PM Dashboard</td>
+<td>Projects where they are on <code>pmIds</code> (or all PM seed staff); not all projects unless <code>manage-org</code></td>
+</tr>
+<tr>
+<td>Field / Fab / Shipping</td>
+<td>Tabs open; Fab mode still depends on fab role (usually none → queue fallback if they open Fab)</td>
+</tr>
+<tr>
+<td>Dashboard roles</td>
+<td>Project Managers / Assistant PMs buckets on Employees</td>
+</tr>
+</tbody></table>
+<h4>Operations – Field staff</h4>
+<table><thead><tr>
+<th>Surface</th>
+<th>Detail</th>
+</tr></thead><tbody>
+<tr>
+<td>Tabs</td>
+<td>Field (+ Chart)</td>
+</tr>
+<tr>
+<td>Field Dashboard</td>
+<td>All Field-board tasks (no per-role row filter)</td>
+</tr>
+<tr>
+<td>Roles</td>
+<td>Site Superintendent / Foreman / Crew Lead (staffing labels)</td>
+</tr>
+</tbody></table>
+<h4>Operations – Fab staff</h4>
+<table><thead><tr>
+<th>Surface</th>
+<th>Detail</th>
+</tr></thead><tbody>
+<tr>
+<td>Tabs</td>
+<td>Fab (+ Chart) only by default</td>
+</tr>
+<tr>
+<td><strong>Shop Super</strong></td>
+<td>Queued Dashboard; full strip</td>
+</tr>
+<tr>
+<td><strong>Warehouse Lead</strong></td>
+<td>Warehouse Dashboard; full strip</td>
+</tr>
+<tr>
+<td><strong>Warehouse Worker</strong></td>
+<td>Warehouse mode; <strong>no</strong> full strip</td>
+</tr>
+<tr>
+<td><strong>Dept Manager Mech/Plmb/HVAC</strong></td>
+<td>Personal workstation (packages as Dept Lead)</td>
+</tr>
+<tr>
+<td><strong>Worker</strong></td>
+<td>Personal workstation (package/assembly assignments)</td>
+</tr>
+<tr>
+<td>Upstream of Super/Lead</td>
+<td>Strip browse including Warehouse / Queued</td>
+</tr>
+</tbody></table>
+<h4>Operations – Shipping staff</h4>
+<table><thead><tr>
+<th>Surface</th>
+<th>Detail</th>
+</tr></thead><tbody>
+<tr>
+<td>Tabs</td>
+<td>Shipping (+ Chart)</td>
+</tr>
+<tr>
+<td>Shipping Dashboard</td>
+<td>All Shipping-board tasks</td>
+</tr>
+<tr>
+<td>Roles</td>
+<td>Shipping Manager / Workers</td>
+</tr>
+</tbody></table>
+<hr />
+
+<section class="note-area note-area-subsection">
+  <div class="note-label">Notes — D5. What each job level sees *inside* each dashboard</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+<h3>D6. Dashboard roles (Employees assigner) — not the same as job level</h3>
+<p>Assigned under Employees. They do <strong>not</strong> open the nav tab by themselves (you still need <code>view-*-dashboard</code>).</p>
+<table><thead><tr>
+<th>Dashboard</th>
+<th>Role ids / labels</th>
+</tr></thead><tbody>
+<tr>
+<td>PM</td>
+<td><code>project-manager</code> Project Managers, <code>assistant-pm</code> Assistant PMs</td>
+</tr>
+<tr>
+<td>Field</td>
+<td><code>site-superintendent</code>, <code>foreman</code>, <code>crew-lead</code></td>
+</tr>
+<tr>
+<td>Fab</td>
+<td><code>shop-super</code>, <code>warehouse-lead</code>, <code>warehouse-worker</code>, <code>dept-manager-mech</code>, <code>dept-manager-plmb</code>, <code>dept-manager-hvac</code>, <code>worker</code></td>
+</tr>
+<tr>
+<td>Shipping</td>
+<td><code>shipping-manager</code>, <code>worker</code></td>
+</tr>
+</tbody></table>
+<h4>Fab role → mode (inside Fab Workstation)</h4>
+<p>Primary role resolution order: Owner → Shop Super → Warehouse Lead → Warehouse Worker → Dept Manager (Mech/Plmb/HVAC) → Worker → else <strong><code>owner-queue</code></strong> (same as Queued).</p>
+<table><thead><tr>
+<th>Primary Fab role</th>
+<th>Mode</th>
+<th>Packages shown</th>
+</tr></thead><tbody>
+<tr>
+<td>Owner / Shop Super / <code>owner-queue</code> (no fab role)</td>
+<td>Queued</td>
+<td>All packages</td>
+</tr>
+<tr>
+<td>Warehouse Lead / Warehouse Worker</td>
+<td>Warehouse</td>
+<td>Status <strong>Queued</strong> or <strong>Pulling Material</strong> only</td>
+</tr>
+<tr>
+<td>Dept managers / Workers</td>
+<td>Personal</td>
+<td>Packages where user is Dept Lead, package Worker, or assembly assignee</td>
+</tr>
+</tbody></table>
+<h4>Fab Dashboards strip (who)</h4>
+<table><thead><tr>
+<th>Who</th>
+<th>Strip?</th>
+</tr></thead><tbody>
+<tr>
+<td>Owner</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Shop Super</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Warehouse Lead</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Anyone whose primary resolves to <code>owner-queue</code> (has Fab tab, no fab role)</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Upstream manager of Shop Super or Warehouse Lead</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Warehouse Worker / Dept Mgr / Worker (primary)</td>
+<td>No (Acting-as / own mode only)</td>
+</tr>
+</tbody></table>
+<h4>Fab in-mode actions</h4>
+<table><thead><tr>
+<th>Action</th>
+<th>Who can</th>
+</tr></thead><tbody>
+<tr>
+<td>Assign Dept Lead on a package</td>
+<td>Queued mode + Shop Super or <code>owner-queue</code></td>
+</tr>
+<tr>
+<td>Assign Workers / assemblies</td>
+<td>Personal mode + you are that package’s Dept Lead</td>
+</tr>
+<tr>
+<td>Clock in/out on package</td>
+<td>Warehouse + personal workstations (feeds Time Tracking)</td>
+</tr>
+<tr>
+<td>Browse Queued / Warehouse / every personal tab via strip</td>
+<td>Strip-eligible users above</td>
+</tr>
+</tbody></table>
+<hr />
+
+<section class="note-area note-area-subsection">
+  <div class="note-label">Notes — D6. Dashboard roles (Employees assigner) — not the same as job level</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+<h3>D7. Protected / special people</h3>
+<table><thead><tr>
+<th>Person</th>
+<th>Notes</th>
+</tr></thead><tbody>
+<tr>
+<td><strong>Joe Vasquez</strong> (<code>emp-support-1</code>)</td>
+<td>Owner category locked; cannot delete; full Owner permissions; explicit Budget + Manage org</td>
+</tr>
+<tr>
+<td><strong>Taylor Morgan</strong> (<code>emp-owner-1</code>)</td>
+<td>Support Manager category locked; cannot delete; Support Manager dashboard defaults; reports to Joe</td>
+</tr>
+</tbody></table>
+<hr />
+
+<section class="note-area note-area-subsection">
+  <div class="note-label">Notes — D7. Protected / special people</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+<h3>D8. Mental model</h3>
+<p>1. <strong>Job level</strong> → default <strong>permissions</strong> → <strong>which tabs</strong> you see. 2. <strong>Dashboard role</strong> → <strong>queue / warehouse / personal</strong> (and PM project filter). 3. <strong>Org chart reporting</strong> → time visibility + Fab strip for managers above Shop Super / Warehouse Lead. 4. Chips on Employees can always grant more (or less, except runtime Owner/detailer auto-grants).</p>
+<hr />
+
+<section class="note-area note-area-subsection">
+  <div class="note-label">Notes — D8. Mental model</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+
+<section class="note-area note-area-section">
+  <div class="note-label">Notes — Part D — Job levels, permissions &amp; what each person sees (summary)</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+
+<section class="blank-page">
+  <div class="note-label">Extra notes — Part D — Job levels, permissions &amp; what each person sees</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+
+<section class="blank-page">
+  <div class="note-label">More notes — Part D — Job levels, permissions &amp; what each person sees</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+
+<section class="blank-page">
+  <div class="note-label">Scratch pad — Part D — Job levels, permissions &amp; what each person sees</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+<h2>Status cheat sheet (compact)</h2>
+<h3>Spooling</h3>
+<p>Not Started → Ready for Spooling → Spool In Progress → Spool QA Review → Spool Approved → <strong>Ready for Fab</strong> → On Hold / Complete</p>
+
+<section class="note-area note-area-subsection">
+  <div class="note-label">Notes — Spooling</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+<h3>Fab</h3>
+<p>Not Started → <strong>Queued</strong> → <strong>Pulling Material</strong> → <strong>Material Pulled</strong> → In Fab (Mech / Plmb / HVAC) → QA Review → Rework → <strong>Ready to Ship</strong> → Complete</p>
+<p>Warehouse-active only: <strong>Queued</strong>, <strong>Pulling Material</strong></p>
+
+<section class="note-area note-area-subsection">
+  <div class="note-label">Notes — Fab</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+<h3>Shipping</h3>
+<p>Not Started → Staging → Loading → In Transit → Delivered to Site → Received by Field → Complete</p>
+<hr />
+
+<section class="note-area note-area-subsection">
+  <div class="note-label">Notes — Shipping</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+
+<section class="note-area note-area-section">
+  <div class="note-label">Notes — Status cheat sheet (compact) (summary)</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+
+<section class="blank-page">
+  <div class="note-label">Extra notes — Status cheat sheet (compact)</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+<h2>Who uses which Fab mode</h2>
+<table><thead><tr>
+<th>Role</th>
+<th>Mode</th>
+</tr></thead><tbody>
+<tr>
+<td>Owner / Shop Super</td>
+<td>Queued (full Dashboards strip)</td>
+</tr>
+<tr>
+<td>Warehouse Lead</td>
+<td>Warehouse (strip too)</td>
+</tr>
+<tr>
+<td>Ops / BIM managers above Shop Super or Warehouse Lead</td>
+<td>Same strip</td>
+</tr>
+<tr>
+<td>Warehouse Worker</td>
+<td>Warehouse (own view; no full strip)</td>
+</tr>
+<tr>
+<td>Shop Dept Manager (Mech / Plmb / HVAC)</td>
+<td>Personal (Dept Lead packages)</td>
+</tr>
+<tr>
+<td>Fab Worker</td>
+<td>Personal (assignments)</td>
+</tr>
+</tbody></table>
+<hr />
+
+<section class="note-area note-area-section">
+  <div class="note-label">Notes — Who uses which Fab mode (summary)</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+
+<section class="blank-page">
+  <div class="note-label">Extra notes — Who uses which Fab mode</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+<h2>Key folders / URLs</h2>
+<table><thead><tr>
+<th>What</th>
+<th>Where</th>
+</tr></thead><tbody>
+<tr>
+<td>Boardroom API</td>
+<td><code>http://127.0.0.1:17321</code></td>
+</tr>
+<tr>
+<td>Default SSv3 export folder</td>
+<td><code>Spooling Savant Version 3 (Exports)/Boardroom/Exports</code></td>
+</tr>
+<tr>
+<td>Package manifest</td>
+<td><code>boardroom-package.json</code> in that folder</td>
+</tr>
+<tr>
+<td>SSv3 add-in notes</td>
+<td>[Spooling Savant Version 3 (Exports)/README.md](./Spooling%20Savant%20Version%203%20(Exports)/README.md)</td>
+</tr>
+</tbody></table>
+
+<section class="note-area note-area-section">
+  <div class="note-label">Notes — Key folders / URLs (summary)</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+
+<section class="blank-page">
+  <div class="note-label">Extra notes — Key folders / URLs</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+
+<section class="blank-page">
+  <div class="note-label">General notes</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+
+<section class="blank-page">
+  <div class="note-label">General notes (continued)</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+
+<section class="blank-page">
+  <div class="note-label">Scratch pad</div>
+  <div class="note-lines"><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div><div class="note-line"></div></div>
+</section>
+  </main>
+</body>
+</html>

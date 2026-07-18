@@ -39,6 +39,29 @@
   justify-content: flex-end;
 }
 
+.topBarActions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.settingsBtn {
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-primary);
+  background: rgba(124, 111, 201, 0.18);
+  border: 1px solid rgba(124, 111, 201, 0.4);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.settingsBtn:hover {
+  background: rgba(124, 111, 201, 0.3);
+}
+
 .statChip {
   padding: 6px 10px;
   font-size: 11px;

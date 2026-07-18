@@ -29,19 +29,50 @@ export const PERMISSION_LABELS: Record<AppPermission, string> = {
   'edit-budget-hours': 'Edit budget hours',
   'manage-org': 'Manage org & permissions',
   'manage-columns': 'Manage & restore columns',
+  'edit-pm-assigns': 'Edit PM assigns',
+  'assign-fab-leads': 'Assign fab leads',
+  'assign-fab-workers': 'Assign fab workers',
+  'edit-fab-status': 'Edit fab status',
+  'fab-clock': 'Fab clock',
+  'edit-weld-log': 'Edit weld log',
+  'edit-fab-collab': 'Fab package notes',
+  'log-time': 'Log time',
+  'delete-time': 'Delete time',
+  'edit-clients-projects': 'Edit clients & projects',
+  'edit-tasks': 'Edit tasks',
+  'assign-tasks': 'Assign tasks',
+  'manage-statuses': 'Manage statuses',
+  'add-columns': 'Add columns',
   'view-activity-log': 'View activity log',
   'view-org-chart': 'View org chart',
   'view-owner-dashboard': 'View Owner dashboard',
   'view-pm-dashboard': 'View PM dashboard',
   'view-field-dashboard': 'View Field dashboard',
-  'view-fab-dashboard': 'View Fab dashboard',
+  'view-fab-dashboard': 'View Shop dashboard',
   'view-shipping-dashboard': 'View Shipping dashboard',
+  'view-weld-log-dashboard': 'View Weld Log Dashboard',
+  'view-visibility-dashboard': 'View Access Control',
+  'view-time-tracking': 'View Time Tracking',
 };
 
 export const ALL_PERMISSIONS: AppPermission[] = [
   'edit-budget-hours',
   'manage-org',
   'manage-columns',
+  'edit-pm-assigns',
+  'assign-fab-leads',
+  'assign-fab-workers',
+  'edit-fab-status',
+  'fab-clock',
+  'edit-weld-log',
+  'edit-fab-collab',
+  'log-time',
+  'delete-time',
+  'edit-clients-projects',
+  'edit-tasks',
+  'assign-tasks',
+  'manage-statuses',
+  'add-columns',
   'view-activity-log',
   'view-org-chart',
   'view-owner-dashboard',
@@ -49,6 +80,83 @@ export const ALL_PERMISSIONS: AppPermission[] = [
   'view-field-dashboard',
   'view-fab-dashboard',
   'view-shipping-dashboard',
+  'view-weld-log-dashboard',
+  'view-visibility-dashboard',
+  'view-time-tracking',
+];
+
+/** Live-roster edit capabilities (not tab visibility). */
+export const DASHBOARD_EDIT_PERMISSIONS: AppPermission[] = [
+  'edit-pm-assigns',
+  'assign-fab-leads',
+  'assign-fab-workers',
+  'edit-fab-status',
+  'fab-clock',
+  'edit-weld-log',
+  'edit-fab-collab',
+  'log-time',
+  'delete-time',
+  'edit-clients-projects',
+  'edit-tasks',
+  'assign-tasks',
+  'manage-statuses',
+  'add-columns',
+];
+
+/** Default edit chips by org category (additive; callers merge into existing sets). */
+export function defaultDashboardEditPermissionsForCategory(
+  category: OrgCategory
+): AppPermission[] {
+  if (category === 'owner' || category === 'bim-manager') {
+    return [...DASHBOARD_EDIT_PERMISSIONS];
+  }
+  if (category === 'operations-manager') {
+    return [
+      'edit-pm-assigns',
+      'assign-fab-leads',
+      'assign-fab-workers',
+      'edit-fab-status',
+      'fab-clock',
+      'edit-weld-log',
+      'edit-fab-collab',
+      'log-time',
+      'delete-time',
+      'edit-clients-projects',
+      'edit-tasks',
+      'assign-tasks',
+      'manage-statuses',
+      'add-columns',
+    ];
+  }
+  if (
+    category === 'plumbing-detailer' ||
+    category === 'mechanical-detailer' ||
+    category === 'sheet-metal-detailer' ||
+    category === 'jr-detailer'
+  ) {
+    return ['log-time', 'edit-tasks', 'assign-tasks'];
+  }
+  if (category === 'operations-staff') {
+    return [
+      'assign-fab-workers',
+      'edit-fab-status',
+      'fab-clock',
+      'edit-weld-log',
+      'edit-fab-collab',
+      'log-time',
+    ];
+  }
+  if (category === 'support-manager' || category === 'support-specialist') {
+    return ['log-time', 'edit-clients-projects', 'edit-tasks', 'assign-tasks'];
+  }
+  return ['log-time'];
+}
+
+/** Job levels that get Visibility Dashboard access by default (editable in-app). */
+export const DEFAULT_VISIBILITY_DASHBOARD_JOB_LEVELS: OrgCategory[] = [
+  'owner',
+  'bim-manager',
+  'operations-manager',
 ];
 
 const ORG_CATEGORY_LABELS = Object.fromEntries(
@@ -187,7 +295,7 @@ export function createDefaultEmployeePermissions(employees: Employee[]): Employe
   const map: EmployeePermissionsMap = {};
 
   for (const employee of employees) {
-    const permissions: AppPermission[] = ['view-org-chart'];
+    const permissions: AppPermission[] = ['view-org-chart', 'view-time-tracking'];
 
     if (employee.role === 'detailer') {
       permissions.push('edit-budget-hours');
@@ -203,7 +311,10 @@ export function createDefaultEmployeePermissions(employees: Employee[]): Employe
         'view-pm-dashboard',
         'view-field-dashboard',
         'view-fab-dashboard',
-        'view-shipping-dashboard'
+        'view-shipping-dashboard',
+        'view-weld-log-dashboard',
+        'view-visibility-dashboard',
+        ...defaultDashboardEditPermissionsForCategory('owner')
       );
     }
 
@@ -212,7 +323,9 @@ export function createDefaultEmployeePermissions(employees: Employee[]): Employe
         'view-pm-dashboard',
         'view-field-dashboard',
         'view-fab-dashboard',
-        'view-shipping-dashboard'
+        'view-shipping-dashboard',
+        'view-weld-log-dashboard',
+        ...defaultDashboardEditPermissionsForCategory('support-manager')
       );
     }
 
@@ -226,7 +339,10 @@ export function createDefaultEmployeePermissions(employees: Employee[]): Employe
         'view-pm-dashboard',
         'view-field-dashboard',
         'view-fab-dashboard',
-        'view-shipping-dashboard'
+        'view-shipping-dashboard',
+        'view-weld-log-dashboard',
+        'view-visibility-dashboard',
+        ...defaultDashboardEditPermissionsForCategory('bim-manager')
       );
     }
 
@@ -238,16 +354,28 @@ export function createDefaultEmployeePermissions(employees: Employee[]): Employe
         'view-pm-dashboard',
         'view-field-dashboard',
         'view-fab-dashboard',
-        'view-shipping-dashboard'
+        'view-shipping-dashboard',
+        'view-weld-log-dashboard',
+        'view-visibility-dashboard',
+        ...defaultDashboardEditPermissionsForCategory('operations-manager')
       );
+    }
+
+    if (employee.role === 'detailer') {
+      permissions.push(...defaultDashboardEditPermissionsForCategory(inferOrgCategory(employee)));
     }
 
     if (employee.role === 'operations') {
       permissions.push(...operationsDashboardPermissions(employee.id));
+      permissions.push(...defaultDashboardEditPermissionsForCategory('operations-staff'));
+    }
+
+    if (employee.role === 'support-specialist' && inferOrgCategory(employee) === 'support-specialist') {
+      permissions.push(...defaultDashboardEditPermissionsForCategory('support-specialist'));
     }
 
     if (employee.id === JOE_VASQUEZ_ID) {
-      permissions.push('edit-budget-hours', 'manage-org');
+      permissions.push('edit-budget-hours', 'manage-org', ...DASHBOARD_EDIT_PERMISSIONS);
     }
 
     map[employee.id] = [...new Set(permissions)];

@@ -1,7 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../store/useStore';
-import { canViewEmployeeTime, getVisibleTimeEmployeeIds } from '../utils/permissions';
-import { computeHoursFromTimes, snapTimeToIncrement } from '../utils/timeEntry';
+import {
+  canDeleteTime,
+  canLogTime as hasLogTimePermission,
+  canViewEmployeeTime,
+  getVisibleTimeEmployeeIds,
+} from '../utils/permissions';
+import {
+  formatTimeLabel,
+  getEntryTaskLabel,
+  isOpenTimeEntry,
+  localNowTimeString,
+  prepareCompletedClockTimes,
+  snapTimeToIncrement,
+} from '../utils/timeEntry';
 import { TimeIncrementSelect } from './TimeIncrementSelect';
 import {
   type CalendarView,
@@ -24,9 +36,13 @@ export function TimeTrackingView() {
   const tasks = useStore((s) => s.tasks);
   const currentUserId = useStore((s) => s.currentUserId);
   const employeeReportsTo = useStore((s) => s.employeeReportsTo);
+  const employeePermissions = useStore((s) => s.employeePermissions);
   const addTimeEntry = useStore((s) => s.addTimeEntry);
   const updateTimeEntry = useStore((s) => s.updateTimeEntry);
   const removeTimeEntry = useStore((s) => s.removeTimeEntry);
+
+  const allowLogTime = hasLogTimePermission(currentUserId, employees, employeePermissions);
+  const allowDeleteTime = canDeleteTime(currentUserId, employees, employeePermissions);
 
   const visibleEmployeeIds = useMemo(
     () => getVisibleTimeEmployeeIds(currentUserId, employees, employeeReportsTo),
@@ -77,6 +93,14 @@ export function TimeTrackingView() {
     [timeEntries, currentUserId, employees, employeeReportsTo]
   );
 
+  const openClockEntries = useMemo(
+    () =>
+      visibleTimeEntries
+        .filter(isOpenTimeEntry)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    [visibleTimeEntries]
+  );
+
   const sortedClients = useMemo(
     () => [...clients].sort((a, b) => a.name.localeCompare(b.name)),
     [clients]
@@ -91,7 +115,7 @@ export function TimeTrackingView() {
   );
 
   const hiddenEntryCount = timeEntries.length - visibleTimeEntries.length;
-  const canLogTime = visibleEmployeeIds.length > 0;
+  const canLogTime = allowLogTime && visibleEmployeeIds.length > 0;
   const selectedEmployee = employees.find((employee) => employee.id === employeeId);
 
   const resetForm = () => {
@@ -102,16 +126,36 @@ export function TimeTrackingView() {
     setEditingEntryId(null);
   };
 
+  const handleClockOutEntry = (entry: TimeEntry) => {
+    if (!allowLogTime) return;
+    const completed = prepareCompletedClockTimes(entry.startTime, localNowTimeString());
+    if (!completed) return;
+    updateTimeEntry(entry.id, {
+      employeeId: entry.employeeId,
+      clientId: entry.clientId,
+      projectId: entry.projectId,
+      taskId: entry.taskId,
+      date: entry.date,
+      startTime: completed.startTime,
+      endTime: completed.endTime,
+      hours: completed.hours,
+      note: entry.note,
+    });
+    if (editingEntryId === entry.id) resetForm();
+  };
+
   const handleSubmit = () => {
+    if (!allowLogTime) return;
     const snappedStart = startTime ? snapTimeToIncrement(startTime) : null;
     const snappedEnd = endTime ? snapTimeToIncrement(endTime) : null;
-    const computedHours =
-      snappedStart && snappedEnd ? computeHoursFromTimes(snappedStart, snappedEnd) : null;
+    const completed =
+      snappedStart && snappedEnd
+        ? prepareCompletedClockTimes(snappedStart, snappedEnd)
+        : null;
     if (
       !employeeId ||
       !date ||
-      computedHours === null ||
-      computedHours <= 0 ||
+      !completed ||
       !canViewEmployeeTime(currentUserId, employeeId, employees, employeeReportsTo)
     ) {
       return;
@@ -123,9 +167,9 @@ export function TimeTrackingView() {
       projectId: projectId || null,
       taskId: selectedTaskId,
       date,
-      startTime: snappedStart,
-      endTime: snappedEnd,
-      hours: computedHours,
+      startTime: completed.startTime,
+      endTime: completed.endTime,
+      hours: completed.hours,
       note: note.trim(),
     };
 
@@ -159,12 +203,13 @@ export function TimeTrackingView() {
   };
 
   const handleDeleteEditingEntry = () => {
-    if (!editingEntryId) return;
+    if (!editingEntryId || !allowDeleteTime) return;
     removeTimeEntry(editingEntryId);
     resetForm();
   };
 
   const handleDeleteEntry = (id: string) => {
+    if (!allowDeleteTime) return;
     removeTimeEntry(id);
     if (editingEntryId === id) resetForm();
   };
@@ -204,8 +249,58 @@ export function TimeTrackingView() {
     <div className={styles.wrapper}>
       <div className={styles.header}>
         <h2 className={styles.title}>Time Tracking</h2>
-        <p className={styles.subtitle}>Log hours and review them by day, week, or month.</p>
+        <p className={styles.subtitle}>
+          Log hours and review them by day, week, or month. Fab Warehouse and workstation
+          clocks write here automatically.
+        </p>
       </div>
+
+      {openClockEntries.length > 0 ? (
+        <section className={styles.openClocks} aria-label="Open clocks">
+          <span className={styles.sectionLabel}>Clocked in</span>
+          <ul className={styles.openClockList}>
+            {openClockEntries.map((entry) => {
+              const employee = employees.find((item) => item.id === entry.employeeId);
+              return (
+                <li key={entry.id} className={styles.openClockItem}>
+                  <div className={styles.openClockText}>
+                    <span className={styles.openClockTask}>
+                      {getEntryTaskLabel(entry, tasks)}
+                    </span>
+                    <span className={styles.openClockMeta}>
+                      {employee?.name ?? 'Employee'}
+                      {entry.startTime
+                        ? ` · started ${formatTimeLabel(entry.startTime)}`
+                        : ''}
+                      {entry.note ? ` · ${entry.note}` : ''}
+                    </span>
+                  </div>
+                  <div className={styles.openClockActions}>
+                    {allowLogTime ? (
+                      <>
+                        <button
+                          type="button"
+                          className={styles.openClockEdit}
+                          onClick={() => handleEditEntry(entry)}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          className={styles.openClockOut}
+                          onClick={() => handleClockOutEntry(entry)}
+                        >
+                          Clock out
+                        </button>
+                      </>
+                    ) : null}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ) : null}
 
       <div className={styles.layout}>
         <section
@@ -218,7 +313,9 @@ export function TimeTrackingView() {
 
           {!canLogTime ? (
             <p className={styles.restrictedNote}>
-              You can only log time for yourself and people who report to you.
+              {!allowLogTime
+                ? 'You do not have permission to log time. Ask an admin to grant Log time on Access Control.'
+                : 'You can only log time for yourself and people who report to you.'}
             </p>
           ) : (
             <>
@@ -347,6 +444,12 @@ export function TimeTrackingView() {
                       type="button"
                       className={styles.deleteBtn}
                       onClick={handleDeleteEditingEntry}
+                      disabled={!allowDeleteTime}
+                      title={
+                        allowDeleteTime
+                          ? 'Delete entry'
+                          : 'You do not have permission to delete time entries'
+                      }
                     >
                       Delete
                     </button>

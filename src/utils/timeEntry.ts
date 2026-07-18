@@ -68,7 +68,58 @@ export function buildTimeIncrementOptions(): { value: string; label: string }[] 
   return options;
 }
 
-export function formatEntryTimeRange(entry: Pick<TimeEntry, 'startTime' | 'endTime' | 'hours'>): string {
+export function isOpenTimeEntry(
+  entry: Pick<TimeEntry, 'startTime' | 'endTime'>
+): boolean {
+  return Boolean(entry.startTime) && entry.endTime == null;
+}
+
+export function localNowTimeString(now = new Date()): string {
+  return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+}
+
+export function localTodayIsoDate(now = new Date()): string {
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+/** Snap start/end onto the 15-min grid with at least one increment of duration. */
+export function prepareCompletedClockTimes(
+  startTimeRaw: string | null | undefined,
+  endTimeRaw: string
+): { startTime: string; endTime: string; hours: number } | null {
+  if (!startTimeRaw) return null;
+  let startTime = snapTimeToIncrement(startTimeRaw);
+  let endTime = snapTimeToIncrement(endTimeRaw);
+  if (!startTime || !endTime) return null;
+
+  let hours = computeHoursFromTimes(startTime, endTime);
+  if (hours !== null && hours > 0) {
+    return { startTime, endTime, hours };
+  }
+
+  const startMinutes = parseTimeToMinutes(startTime);
+  if (startMinutes === null) return null;
+
+  let endMinutes = startMinutes + TIME_INCREMENT_MINUTES;
+  if (endMinutes > 23 * 60 + 45) {
+    endMinutes = 23 * 60 + 45;
+    startTime = minutesToTimeString(Math.max(0, endMinutes - TIME_INCREMENT_MINUTES));
+  }
+  endTime = minutesToTimeString(endMinutes);
+  hours = computeHoursFromTimes(startTime, endTime);
+  if (hours === null || hours <= 0) return null;
+  return { startTime, endTime, hours };
+}
+
+export function formatEntryTimeRange(
+  entry: Pick<TimeEntry, 'startTime' | 'endTime' | 'hours'>
+): string {
+  if (isOpenTimeEntry(entry) && entry.startTime) {
+    return `In progress · ${formatTimeLabel(entry.startTime)}`;
+  }
   if (entry.startTime && entry.endTime) {
     return `${formatTimeLabel(entry.startTime)} – ${formatTimeLabel(entry.endTime)}`;
   }
@@ -104,10 +155,29 @@ export function prepareTimeEntryPayload(
   const endTime = entry.endTime ? snapTimeToIncrement(entry.endTime.trim()) : null;
   let hours = entry.hours;
 
+  // In-progress clock: start time only, hours stay 0 until clock-out
+  if (startTime && !endTime) {
+    return {
+      ...entry,
+      taskId,
+      startTime,
+      endTime: null,
+      hours: 0,
+      note: entry.note.trim(),
+    };
+  }
+
   if (startTime && endTime) {
-    const computed = computeHoursFromTimes(startTime, endTime);
-    if (computed === null || computed <= 0) return null;
-    hours = computed;
+    const completed = prepareCompletedClockTimes(startTime, endTime);
+    if (!completed) return null;
+    return {
+      ...entry,
+      taskId,
+      startTime: completed.startTime,
+      endTime: completed.endTime,
+      hours: completed.hours,
+      note: entry.note.trim(),
+    };
   }
 
   if (!Number.isFinite(hours) || hours <= 0) return null;

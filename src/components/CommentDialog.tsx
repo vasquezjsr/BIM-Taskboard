@@ -7,17 +7,19 @@ import styles from './CommentDialog.module.css';
 interface CommentDialogProps {
   task: Task;
   onClose: () => void;
+  allowMutate?: boolean;
 }
 
-export function CommentDialog({ task, onClose }: CommentDialogProps) {
+export function CommentDialog({ task, onClose, allowMutate = true }: CommentDialogProps) {
   const employees = useStore((s) => s.employees);
+  const currentUserId = useStore((s) => s.currentUserId);
   const taskComments = useStore((s) => s.taskComments);
   const addTaskComment = useStore((s) => s.addTaskComment);
   const removeTaskComment = useStore((s) => s.removeTaskComment);
   const markTaskCommentsRead = useStore((s) => s.markTaskCommentsRead);
 
   const [body, setBody] = useState('');
-  const [authorId, setAuthorId] = useState('');
+  const [authorId, setAuthorId] = useState(currentUserId ?? '');
 
   const comments = useMemo(
     () =>
@@ -30,6 +32,10 @@ export function CommentDialog({ task, onClose }: CommentDialogProps) {
   useEffect(() => {
     markTaskCommentsRead(task.id);
   }, [markTaskCommentsRead, task.id]);
+
+  useEffect(() => {
+    if (currentUserId) setAuthorId(currentUserId);
+  }, [currentUserId]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -58,6 +64,7 @@ export function CommentDialog({ task, onClose }: CommentDialogProps) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!allowMutate) return;
     const trimmed = body.trim();
     if (!trimmed) return;
     addTaskComment(task.id, authorId || null, trimmed);
@@ -90,14 +97,16 @@ export function CommentDialog({ task, onClose }: CommentDialogProps) {
                       <span className={styles.author}>{authorName(comment.authorId)}</span>
                       <span className={styles.when}>{formatWhen(comment.createdAt)}</span>
                     </div>
-                    <button
-                      type="button"
-                      className={styles.deleteBtn}
-                      onClick={() => removeTaskComment(comment.id)}
-                      title="Delete comment"
-                    >
-                      Delete
-                    </button>
+                    {allowMutate ? (
+                      <button
+                        type="button"
+                        className={styles.deleteBtn}
+                        onClick={() => removeTaskComment(comment.id)}
+                        title="Delete comment"
+                      >
+                        Delete
+                      </button>
+                    ) : null}
                   </div>
                   <p className={styles.commentBody}>{comment.body}</p>
                 </div>
@@ -105,31 +114,33 @@ export function CommentDialog({ task, onClose }: CommentDialogProps) {
             )}
           </div>
 
-          <form className={styles.compose} onSubmit={handleSubmit}>
-            <label className={styles.authorField}>
-              <span>Your name</span>
-              <select value={authorId} onChange={(e) => setAuthorId(e.target.value)}>
-                <option value="">Select employee…</option>
-                {employees.map((emp) => (
-                  <option key={emp.id} value={emp.id}>
-                    {emp.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className={styles.commentField}>
-              <span>Add a comment</span>
-              <textarea
-                value={body}
-                onChange={(e) => setBody(e.target.value)}
-                rows={4}
-                placeholder="Type your comment…"
-              />
-            </label>
-            <button type="submit" className={styles.submitBtn} disabled={!body.trim()}>
-              Post comment
-            </button>
-          </form>
+          {allowMutate ? (
+            <form className={styles.compose} onSubmit={handleSubmit}>
+              <label className={styles.authorField}>
+                <span>Your name</span>
+                <select value={authorId} onChange={(e) => setAuthorId(e.target.value)}>
+                  <option value="">Select employee…</option>
+                  {employees.map((emp) => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className={styles.commentField}>
+                <span>Add a comment</span>
+                <textarea
+                  value={body}
+                  onChange={(e) => setBody(e.target.value)}
+                  rows={4}
+                  placeholder="Type your comment…"
+                />
+              </label>
+              <button type="submit" className={styles.submitBtn} disabled={!body.trim()}>
+                Post comment
+              </button>
+            </form>
+          ) : null}
         </div>
       </div>
     </div>,

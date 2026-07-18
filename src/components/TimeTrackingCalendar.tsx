@@ -5,6 +5,7 @@ import { employeeNameById } from '../utils/orgChart';
 import {
   formatEntryTimeRange,
   getEntryTaskLabel,
+  isOpenTimeEntry,
 } from '../utils/timeEntry';
 import {
   type CalendarView,
@@ -100,6 +101,7 @@ export function TimeTrackingCalendar({
   const renderDayCell = (iso: string, inMonth = true) => {
     const dayEntries = entriesByDate.get(iso) ?? [];
     const dayHours = sumHours(dayEntries);
+    const hasOpenEntry = dayEntries.some(isOpenTimeEntry);
     const isToday = iso === today;
     const isSelected = iso === focusDate;
     const visibleEntries = dayEntries.slice(0, 3);
@@ -110,7 +112,9 @@ export function TimeTrackingCalendar({
         key={iso}
         className={`${styles.dayCell} ${!inMonth ? styles.dayCellOutside : ''} ${
           isToday ? styles.dayCellToday : ''
-        } ${isSelected ? styles.dayCellSelected : ''} ${dayHours > 0 ? styles.dayCellHasHours : ''}`}
+        } ${isSelected ? styles.dayCellSelected : ''} ${
+          dayHours > 0 || hasOpenEntry ? styles.dayCellHasHours : ''
+        }`}
       >
         <button
           type="button"
@@ -127,7 +131,7 @@ export function TimeTrackingCalendar({
                 type="button"
                 className={`${styles.dayEntryChip} ${
                   editingEntryId === entry.id ? styles.dayEntryChipActive : ''
-                }`}
+                } ${isOpenTimeEntry(entry) ? styles.dayEntryChipOpen : ''}`}
                 onClick={() => onEditEntry(entry)}
                 onContextMenu={(e) => handleEntryContextMenu(entry, e)}
               >
@@ -188,7 +192,9 @@ export function TimeTrackingCalendar({
                 <td>{employeeNameById(employees, entry.employeeId)}</td>
                 <td>{getEntryTaskLabel(entry, tasks)}</td>
                 <td>{formatEntryTimeRange(entry)}</td>
-                <td className={styles.hoursCell}>{entry.hours.toLocaleString()}</td>
+                <td className={styles.hoursCell}>
+                  {isOpenTimeEntry(entry) ? '—' : entry.hours.toLocaleString()}
+                </td>
                 <td>{clientName(entry.clientId)}</td>
                 <td>{projectName(entry.projectId)}</td>
                 <td>{entry.note || '—'}</td>

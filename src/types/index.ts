@@ -40,6 +40,8 @@ export interface TaskStatusDefinition {
   countsAsComplete?: boolean;
   /** Auto-assign project detailers or support when a task enters this status */
   autoAssignTeam?: 'detailers' | 'support' | null;
+  /** Auto-assign a specific employee when a task enters this status (overrides team) */
+  autoAssignEmployeeId?: string | null;
 }
 
 export type EmployeeRole = 'detailer' | 'support-specialist' | 'operations';
@@ -98,6 +100,8 @@ export type PmDashboardRole = 'project-manager' | 'assistant-pm';
 export type FieldDashboardRole = 'site-superintendent' | 'foreman' | 'crew-lead';
 export type FabDashboardRole =
   | 'shop-super'
+  | 'warehouse-lead'
+  | 'warehouse-worker'
   | 'dept-manager-mech'
   | 'dept-manager-plmb'
   | 'dept-manager-hvac'
@@ -130,19 +134,39 @@ export type MainTab =
   | 'field-dashboard'
   | 'fab-dashboard'
   | 'shipping-dashboard'
-  | 'activity-log';
+  | 'weld-log-dashboard'
+  | 'activity-log'
+  | 'visibility-dashboard';
 
 export type AppPermission =
   | 'edit-budget-hours'
   | 'manage-org'
   | 'manage-columns'
+  | 'edit-pm-assigns'
+  | 'assign-fab-leads'
+  | 'assign-fab-workers'
+  | 'edit-fab-status'
+  | 'fab-clock'
+  | 'edit-weld-log'
+  | 'view-weld-log-dashboard'
+  | 'edit-fab-collab'
+  | 'log-time'
+  | 'delete-time'
+  | 'edit-clients-projects'
+  | 'edit-tasks'
+  | 'assign-tasks'
+  | 'manage-statuses'
+  | 'add-columns'
   | 'view-activity-log'
   | 'view-org-chart'
   | 'view-owner-dashboard'
   | 'view-pm-dashboard'
   | 'view-field-dashboard'
   | 'view-fab-dashboard'
-  | 'view-shipping-dashboard';
+  | 'view-shipping-dashboard'
+  | 'view-weld-log-dashboard'
+  | 'view-visibility-dashboard'
+  | 'view-time-tracking';
 
 export interface OrgTeam {
   id: string;
@@ -173,6 +197,10 @@ export interface Employee {
   role: EmployeeRole;
   /** Org chart category — determines default team placement */
   orgCategory?: OrgCategory;
+  /** Custom job title id from employeeJobTitles catalog. */
+  jobTitleId?: string;
+  /** Shop stamp / welder ID used on Fab weld logs (optional). */
+  welderId?: string | null;
 }
 
 export type GroupTier = 'section' | 'parent' | 'child';
@@ -271,6 +299,12 @@ export interface Project {
   supportIds: string[];
   /** Project managers assigned to this job (PM Dashboard) */
   pmIds: string[];
+  /** Assistant PMs on this job */
+  assistantPmIds: string[];
+  /** Field Super / Foreman / Journeyman in charge on site */
+  fieldIds: string[];
+  /** Field crew who can view this job’s Field dashboard */
+  fieldCrewIds: string[];
   revitYear: string | null;
   modelType: 'cloud' | 'local' | null;
   /** Full building level list (UG → Roof) */
@@ -451,6 +485,9 @@ export type ProjectSettingsUpdate = Partial<
     | 'detailerIds'
     | 'supportIds'
     | 'pmIds'
+    | 'assistantPmIds'
+    | 'fieldIds'
+    | 'fieldCrewIds'
     | 'revitYear'
     | 'modelType'
     | 'billingType'
@@ -467,6 +504,9 @@ export function defaultProjectFields(): Pick<
   | 'detailerIds'
   | 'supportIds'
   | 'pmIds'
+  | 'assistantPmIds'
+  | 'fieldIds'
+  | 'fieldCrewIds'
   | 'revitYear'
   | 'modelType'
   | 'buildingLevels'
@@ -484,6 +524,9 @@ export function defaultProjectFields(): Pick<
     detailerIds: [],
     supportIds: [],
     pmIds: [],
+    assistantPmIds: [],
+    fieldIds: [],
+    fieldCrewIds: [],
     revitYear: null,
     modelType: null,
     buildingLevels: [],
@@ -505,6 +548,9 @@ export function normalizeProject(project: Project): Project {
     detailerIds: project.detailerIds ?? [],
     supportIds: project.supportIds ?? [],
     pmIds: project.pmIds ?? [],
+    assistantPmIds: project.assistantPmIds ?? [],
+    fieldIds: project.fieldIds ?? [],
+    fieldCrewIds: project.fieldCrewIds ?? [],
     revitYear: project.revitYear ?? null,
     modelType: project.modelType ?? null,
     buildingLevels: project.buildingLevels ?? [],

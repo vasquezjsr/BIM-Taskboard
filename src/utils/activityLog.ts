@@ -1,4 +1,6 @@
-import type { ProjectBoardType, SheetColumnDefinition, TaskDurationRange } from '../types';
+import type { AppPermission, Employee, ProjectBoardType, SheetColumnDefinition, TaskDurationRange } from '../types';
+import type { EmployeeAssigneeStyle } from '../data/assigneeColors';
+import type { EmployeeCredential } from './auth';
 
 export const MAX_ACTIVITY_LOG_ENTRIES = 2000;
 
@@ -53,6 +55,21 @@ export interface DeletedColumnArchive {
     }
   >;
   groupFieldValues: Record<string, Record<string, TaskDurationRange>>;
+  restoredAt?: string;
+  restoredById?: string | null;
+}
+
+/** Soft-deleted employee snapshot for Activity Log restore. */
+export interface DeletedEmployeeArchive {
+  id: string;
+  deletedAt: string;
+  deletedById: string | null;
+  activityLogId: string;
+  employee: Employee;
+  permissions: AppPermission[];
+  reportsTo: string[];
+  assigneeStyle: EmployeeAssigneeStyle | null;
+  credentials: EmployeeCredential | null;
   restoredAt?: string;
   restoredById?: string | null;
 }

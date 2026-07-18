@@ -8,7 +8,7 @@ import {
   type ActivityLogEntry,
 } from '../utils/activityLog';
 import { employeeNameById } from '../utils/orgChart';
-import { canManageColumns, canViewActivityLog } from '../utils/permissions';
+import { canManageColumns, canManageOrg, canViewActivityLog } from '../utils/permissions';
 import styles from './ActivityLogView.module.css';
 
 const ACTION_FILTERS: Array<{ id: 'all' | ActivityAction; label: string }> = [
@@ -32,11 +32,17 @@ export function ActivityLogView() {
   const employeePermissions = useStore((s) => s.employeePermissions);
   const activityLog = useStore((s) => s.activityLog ?? []);
   const deletedColumnArchive = useStore((s) => s.deletedColumnArchive ?? []);
+  const deletedEmployeeArchive = useStore((s) => s.deletedEmployeeArchive ?? []);
   const restoreDeletedColumn = useStore((s) => s.restoreDeletedColumn);
+  const restoreDeletedEmployee = useStore((s) => s.restoreDeletedEmployee);
 
-  const viewerId = viewAsOriginalUserId ?? currentUserId;
-  const canView = canViewActivityLog(viewerId, employees, employeePermissions);
-  const canRestore = canManageColumns(viewerId, employees, employeePermissions);
+  // View As: page content follows the person being previewed (same as MainNav).
+  // Restore actions stay on the real signed-in user so preview can't escalate privileges.
+  const perspectiveUserId = currentUserId;
+  const realUserId = viewAsOriginalUserId ?? currentUserId;
+  const canView = canViewActivityLog(perspectiveUserId, employees, employeePermissions);
+  const canRestoreColumns = canManageColumns(realUserId, employees, employeePermissions);
+  const canRestoreEmployees = canManageOrg(realUserId, employees, employeePermissions);
 
   const [actionFilter, setActionFilter] = useState<'all' | ActivityAction>('all');
   const [search, setSearch] = useState('');
@@ -59,13 +65,27 @@ export function ActivityLogView() {
     });
   }, [actionFilter, activityLog, employees, search]);
 
-  const restorableArchiveIds = useMemo(() => {
+  const restorableColumnArchiveIds = useMemo(() => {
     const map = new Map<string, boolean>();
     for (const archive of deletedColumnArchive) {
       map.set(archive.id, !archive.restoredAt);
     }
     return map;
   }, [deletedColumnArchive]);
+
+  const restorableEmployeeArchiveIds = useMemo(() => {
+    const map = new Map<string, boolean>();
+    for (const archive of deletedEmployeeArchive) {
+      const alreadyOnRoster = employees.some((employee) => employee.id === archive.employee.id);
+      map.set(archive.id, !archive.restoredAt && !alreadyOnRoster);
+    }
+    return map;
+  }, [deletedEmployeeArchive, employees]);
+
+  const restorableEmployeeCount = deletedEmployeeArchive.filter((entry) => {
+    if (entry.restoredAt) return false;
+    return !employees.some((employee) => employee.id === entry.employee.id);
+  }).length;
 
   if (!canView) {
     return (
@@ -87,13 +107,16 @@ export function ActivityLogView() {
         <div>
           <h2 className={styles.title}>Activity Log</h2>
           <p className={styles.subtitle}>
-            Track creates, updates, deletes, status changes, and column changes across BIM
-            Boardroom. Column deletions can be restored here by authorized users.
+            Track creates, updates, deletes, and restores across BIM Boardroom. Deleted columns and
+            employees can be restored here by authorized users.
           </p>
         </div>
         <div className={styles.stats}>
           <span>{activityLog.length} events</span>
-          <span>{deletedColumnArchive.filter((entry) => !entry.restoredAt).length} restorable columns</span>
+          <span>
+            {deletedColumnArchive.filter((entry) => !entry.restoredAt).length} restorable columns
+          </span>
+          <span>{restorableEmployeeCount} restorable employees</span>
         </div>
       </header>
 
@@ -123,16 +146,33 @@ export function ActivityLogView() {
         {filteredEntries.length === 0 ? (
           <div className={styles.emptyList}>No activity matches your filters.</div>
         ) : (
-          filteredEntries.map((entry) => (
-            <ActivityRow
-              key={entry.id}
-              entry={entry}
-              actor={actorName(entry.actorId, employees)}
-              canRestore={canRestore}
-              canRestoreArchive={Boolean(entry.archiveId && restorableArchiveIds.get(entry.archiveId))}
-              onRestore={() => entry.archiveId && restoreDeletedColumn(entry.archiveId)}
-            />
-          ))
+          filteredEntries.map((entry) => {
+            const isEmployee = entry.entityType === 'employee';
+            const isColumn = entry.entityType === 'column';
+            const canRestoreArchive = Boolean(
+              entry.archiveId &&
+                ((isEmployee && restorableEmployeeArchiveIds.get(entry.archiveId)) ||
+                  (isColumn && restorableColumnArchiveIds.get(entry.archiveId)))
+            );
+            const canRestore =
+              (isEmployee && canRestoreEmployees) || (isColumn && canRestoreColumns);
+
+            return (
+              <ActivityRow
+                key={entry.id}
+                entry={entry}
+                actor={actorName(entry.actorId, employees)}
+                canRestore={canRestore}
+                canRestoreArchive={canRestoreArchive}
+                restoreLabel={isEmployee ? 'Restore employee' : 'Restore column'}
+                onRestore={() => {
+                  if (!entry.archiveId) return;
+                  if (isEmployee) restoreDeletedEmployee(entry.archiveId);
+                  else if (isColumn) restoreDeletedColumn(entry.archiveId);
+                }}
+              />
+            );
+          })
         )}
       </div>
     </div>
@@ -144,12 +184,14 @@ function ActivityRow({
   actor,
   canRestore,
   canRestoreArchive,
+  restoreLabel,
   onRestore,
 }: {
   entry: ActivityLogEntry;
   actor: string;
   canRestore: boolean;
   canRestoreArchive: boolean;
+  restoreLabel: string;
   onRestore: () => void;
 }) {
   return (
@@ -177,12 +219,10 @@ function ActivityRow({
       </div>
       {canRestore && canRestoreArchive && (
         <button type="button" className={styles.restoreBtn} onClick={onRestore}>
-          Restore column
+          {restoreLabel}
         </button>
       )}
-      {entry.restoredAt && (
-        <span className={styles.restoredTag}>Restored</span>
-      )}
+      {entry.restoredAt && <span className={styles.restoredTag}>Restored</span>}
     </article>
   );
 }

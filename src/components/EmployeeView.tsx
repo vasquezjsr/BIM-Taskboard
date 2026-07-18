@@ -10,6 +10,7 @@ import {
   type DragStartEvent,
 } from '@dnd-kit/core';
 import { useStore, sortEmployeeTasks } from '../store/useStore';
+import { canAssignTasks } from '../utils/permissions';
 import { hasTaskAssignees, taskHasAssignee } from '../utils/taskAssignees';
 import {
   isTaskVisibleOnTaskBoard,
@@ -63,6 +64,9 @@ export function EmployeeView() {
   const setActiveEmployeeBoard = useStore((s) => s.setActiveEmployeeBoard);
   const moveTask = useStore((s) => s.moveTask);
   const reorderEmployeeTasks = useStore((s) => s.reorderEmployeeTasks);
+  const currentUserId = useStore((s) => s.currentUserId);
+  const employeePermissions = useStore((s) => s.employeePermissions);
+  const allowAssignTasks = canAssignTasks(currentUserId, employees, employeePermissions);
 
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [showSettings, setShowSettings] = useState(false);
@@ -115,12 +119,14 @@ export function EmployeeView() {
   );
 
   const handleDragStart = (event: DragStartEvent) => {
+    if (!allowAssignTasks) return;
     const task = tasks.find((t) => t.id === event.active.id);
     if (task) setActiveTask(task);
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
     setActiveTask(null);
+    if (!allowAssignTasks) return;
     const { active, over } = event;
     if (!over) return;
 

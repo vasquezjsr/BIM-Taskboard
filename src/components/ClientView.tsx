@@ -15,6 +15,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useStore } from '../store/useStore';
+import { canEditClientsProjects } from '../utils/permissions';
 import {
   PROJECT_BOARD_TYPES,
   getBoardLabel,
@@ -96,6 +97,9 @@ export function ClientView() {
   const addProjectFromTemplate = useStore((s) => s.addProjectFromTemplate);
   const updateProjectSettings = useStore((s) => s.updateProjectSettings);
   const employees = useStore((s) => s.employees);
+  const currentUserId = useStore((s) => s.currentUserId);
+  const employeePermissions = useStore((s) => s.employeePermissions);
+  const canEditClients = canEditClientsProjects(currentUserId, employees, employeePermissions);
 
   const [newClientName, setNewClientName] = useState('');
   const [newBoardName, setNewBoardName] = useState('');
@@ -156,6 +160,7 @@ export function ClientView() {
   };
 
   const handleAddBoard = () => {
+    if (!canEditClients) return;
     if (newBoardName.trim() && activeClientId && activeProjectId) {
       addCustomBoard(activeClientId, activeProjectId, newBoardName.trim());
       setNewBoardName('');
@@ -164,6 +169,7 @@ export function ClientView() {
   };
 
   const handleAddClient = () => {
+    if (!canEditClients) return;
     if (newClientName.trim()) {
       addClient(newClientName.trim());
       setNewClientName('');
@@ -172,7 +178,7 @@ export function ClientView() {
   };
 
   const handleAddProject = (result: AddProjectDialogResult) => {
-    if (!activeClientId) return;
+    if (!canEditClients || !activeClientId) return;
     if (result.useTemplate) {
       addProjectFromTemplate(activeClientId, result.name, result);
     } else {
@@ -182,13 +188,14 @@ export function ClientView() {
   };
 
   const startRenamingClient = (clientId: string, name: string) => {
+    if (!canEditClients) return;
     setRenamingClientId(clientId);
     setClientNameDraft(name);
   };
 
   const finishRenamingClient = (clientId: string) => {
     const trimmed = clientNameDraft.trim();
-    if (trimmed) updateClient(clientId, { name: trimmed });
+    if (trimmed && canEditClients) updateClient(clientId, { name: trimmed });
     setRenamingClientId(null);
     setClientNameDraft('');
   };
@@ -248,11 +255,11 @@ export function ClientView() {
                     <button onClick={handleAddClient}>Add</button>
                     <button onClick={() => setShowAddClient(false)}>Cancel</button>
                   </div>
-                ) : (
+                ) : canEditClients ? (
                   <button className={styles.addBtn} onClick={() => setShowAddClient(true)}>
                     + Client
                   </button>
-                )}
+                ) : null}
               </div>
             </div>
 
@@ -277,11 +284,11 @@ export function ClientView() {
                         onSubmit={handleAddProject}
                         onClose={() => setShowAddProject(false)}
                       />
-                    ) : (
+                    ) : canEditClients ? (
                       <button className={styles.addBtn} onClick={() => setShowAddProject(true)}>
                         + Project
                       </button>
-                    )}
+                    ) : null}
                   </div>
                 </div>
 
@@ -329,11 +336,11 @@ export function ClientView() {
                           <button onClick={handleAddBoard}>Add</button>
                           <button onClick={() => setShowAddBoard(false)}>Cancel</button>
                         </div>
-                      ) : (
+                      ) : canEditClients ? (
                         <button className={styles.addBtn} onClick={() => setShowAddBoard(true)}>
                           + Board
                         </button>
-                      )}
+                      ) : null}
                     </div>
                   </div>
                 )}

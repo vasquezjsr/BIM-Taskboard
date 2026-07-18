@@ -8,6 +8,7 @@ import {
 } from '../data/departmentStaff';
 import { isOwnerEmployee } from '../data/employees';
 import { inferOrgCategory } from './orgChart';
+import type { EmployeeJobTitleDef } from './employeeJobs';
 
 export type EmployeeStageId =
   | 'leadership'
@@ -95,23 +96,29 @@ const OPS_STAGE_STAFF: Record<
   'shipping-ops': SHIPPING_STAFF_IDS,
 };
 
-export function employeesForStage(
+function legacyEmployeesForStage(
   stageId: EmployeeStageId,
   employees: Employee[],
   dashboardAssignments: DashboardAssignments
 ): Employee[] {
   switch (stageId) {
     case 'leadership':
-      return employees.filter(
-        (employee) =>
-          isOwnerEmployee(employee) || inferOrgCategory(employee) === 'bim-manager'
-      );
+      return employees.filter((employee) => {
+        const category = inferOrgCategory(employee);
+        return (
+          isOwnerEmployee(employee) ||
+          category === 'owner' ||
+          category === 'bim-manager'
+        );
+      });
     case 'detailers':
       return employees.filter((employee) => employee.role === 'detailer');
     case 'support':
-      return employees.filter(
-        (employee) => employee.role === 'support-specialist' && !isOwnerEmployee(employee)
-      );
+      return employees.filter((employee) => {
+        if (isOwnerEmployee(employee)) return false;
+        const category = inferOrgCategory(employee);
+        return category === 'support-manager' || category === 'support-specialist';
+      });
     case 'pm-ops':
     case 'field-ops':
     case 'fab-ops':
@@ -137,6 +144,34 @@ export function employeesForStage(
   }
 }
 
+export function employeesForStage(
+  stageId: EmployeeStageId,
+  employees: Employee[],
+  dashboardAssignments: DashboardAssignments,
+  jobTitles?: EmployeeJobTitleDef[]
+): Employee[] {
+  if (!jobTitles || jobTitles.length === 0) {
+    return legacyEmployeesForStage(stageId, employees, dashboardAssignments);
+  }
+
+  const byTitle = employees.filter((employee) => {
+    if (isOwnerEmployee(employee) || inferOrgCategory(employee) === 'owner') {
+      return stageId === 'leadership';
+    }
+    if (!employee.jobTitleId) return false;
+    const title = jobTitles.find((entry) => entry.id === employee.jobTitleId);
+    return title?.stageId === stageId;
+  });
+
+  // Include people still missing jobTitleId via legacy rules (without double-counting).
+  const titledIds = new Set(byTitle.map((employee) => employee.id));
+  const legacy = legacyEmployeesForStage(stageId, employees, dashboardAssignments).filter(
+    (employee) => !employee.jobTitleId && !titledIds.has(employee.id)
+  );
+
+  return [...byTitle, ...legacy];
+}
+
 export function detailerTradeGroups(employees: Employee[]): { category: OrgCategory; label: string; employees: Employee[] }[] {
   return DETAILER_ORG_CATEGORIES.map((category) => ({
     category: category.id,
@@ -147,12 +182,13 @@ export function detailerTradeGroups(employees: Employee[]): { category: OrgCateg
 
 export function stageCounts(
   employees: Employee[],
-  dashboardAssignments: DashboardAssignments
+  dashboardAssignments: DashboardAssignments,
+  jobTitles?: EmployeeJobTitleDef[]
 ): Record<EmployeeStageId, number> {
   return Object.fromEntries(
     EMPLOYEE_STAGES.map((stage) => [
       stage.id,
-      employeesForStage(stage.id, employees, dashboardAssignments).length,
+      employeesForStage(stage.id, employees, dashboardAssignments, jobTitles).length,
     ])
   ) as Record<EmployeeStageId, number>;
 }

@@ -1,6 +1,6 @@
 import { useStore } from '../store/useStore';
-import type { MainTab, Employee, DashboardType } from '../types';
-import { canAccessOrgChart, canViewActivityLog, canViewOwnerDashboard, visibleDashboards } from '../utils/permissions';
+import type { MainTab, Employee, DashboardType, OrgCategory } from '../types';
+import { canAccessOrgChart, canViewActivityLog, canViewOwnerDashboard, canViewTimeTracking, canViewVisibilityDashboard, canViewWeldLogDashboard, visibleDashboards } from '../utils/permissions';
 import { DASHBOARD_META } from '../data/dashboards';
 import type { EmployeePermissionsMap } from '../utils/orgChart';
 import styles from './MainNav.module.css';
@@ -13,7 +13,8 @@ const PHASE_DASHBOARDS: DashboardType[] = ['fab', 'shipping', 'field'];
 function buildNavTabs(
   currentUserId: string | null,
   employees: Employee[],
-  employeePermissions: EmployeePermissionsMap
+  employeePermissions: EmployeePermissionsMap,
+  visibilityDashboardJobLevels: OrgCategory[]
 ): { id: MainTab; label: string }[] {
   const tabs: { id: MainTab; label: string }[] = [];
   const dashboards = visibleDashboards(currentUserId, employees, employeePermissions);
@@ -35,7 +36,14 @@ function buildNavTabs(
     }
   }
 
-  tabs.push({ id: 'time-tracking', label: 'Time Tracking' });
+  if (canViewWeldLogDashboard(currentUserId, employees, employeePermissions)) {
+    tabs.push({ id: 'weld-log-dashboard', label: 'Weld Log Dashboard' });
+  }
+
+  if (canViewTimeTracking(currentUserId, employees, employeePermissions)) {
+    tabs.push({ id: 'time-tracking', label: 'Time Tracking' });
+  }
+
   tabs.push({ id: 'employees', label: 'Employees' });
 
   if (canAccessOrgChart(currentUserId, employees, employeePermissions)) {
@@ -44,6 +52,17 @@ function buildNavTabs(
 
   if (canViewActivityLog(currentUserId, employees, employeePermissions)) {
     tabs.push({ id: 'activity-log', label: 'Activity Log' });
+  }
+
+  if (
+    canViewVisibilityDashboard(
+      currentUserId,
+      employees,
+      employeePermissions,
+      visibilityDashboardJobLevels
+    )
+  ) {
+    tabs.push({ id: 'visibility-dashboard', label: 'Access Control' });
   }
 
   return tabs;
@@ -55,8 +74,14 @@ export function MainNav() {
   const currentUserId = useStore((s) => s.currentUserId);
   const employees = useStore((s) => s.employees);
   const employeePermissions = useStore((s) => s.employeePermissions);
+  const visibilityDashboardJobLevels = useStore((s) => s.visibilityDashboardJobLevels);
 
-  const tabs = buildNavTabs(currentUserId, employees, employeePermissions);
+  const tabs = buildNavTabs(
+    currentUserId,
+    employees,
+    employeePermissions,
+    visibilityDashboardJobLevels
+  );
 
   return (
     <nav className={styles.nav}>

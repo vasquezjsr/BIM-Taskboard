@@ -1,7 +1,12 @@
-import type { AppPermission, Employee } from '../types';
+import type { AppPermission, Employee, OrgCategory } from '../types';
 import type { DashboardType } from '../types';
 import type { EmployeePermissionsMap, EmployeeReportsToMap } from './orgChart';
-import { inferOrgCategory, isOrgOwner, isUpstreamManagerOf } from './orgChart';
+import {
+  DEFAULT_VISIBILITY_DASHBOARD_JOB_LEVELS,
+  inferOrgCategory,
+  isOrgOwner,
+  isUpstreamManagerOf,
+} from './orgChart';
 
 /** Joe Vasquez — legacy explicit grants */
 export const JOE_VASQUEZ_ID = 'emp-support-1';
@@ -34,8 +39,11 @@ function hasPermission(
     if (canEditBudgetHours(userId, employees, employeePermissions)) return true;
   }
 
-  if (permission === 'manage-org' && (userId === JOE_VASQUEZ_ID || isOrgOwner(employee))) {
-    return true;
+  if (permission === 'manage-org' && userId) {
+    if (userId === JOE_VASQUEZ_ID || isOrgOwner(employee)) return true;
+    // BIM / Ops managers administer Access Control; keep manage-org even if the chip was cleared.
+    const category = employee ? inferOrgCategory(employee) : null;
+    if (category === 'bim-manager' || category === 'operations-manager') return true;
   }
 
   if (permission === 'view-owner-dashboard' && isOrgOwner(employee)) {
@@ -43,17 +51,78 @@ function hasPermission(
   }
 
   if (
+    permission === 'view-activity-log' &&
+    (userId === JOE_VASQUEZ_ID || isOrgOwner(employee) || isColumnAdminCategory(employee))
+  ) {
+    return true;
+  }
+
+  if (
     (permission === 'view-pm-dashboard' ||
       permission === 'view-field-dashboard' ||
       permission === 'view-fab-dashboard' ||
-      permission === 'view-shipping-dashboard') &&
+      permission === 'view-shipping-dashboard' ||
+      permission === 'view-weld-log-dashboard' ||
+      permission === 'view-time-tracking' ||
+      permission === 'view-visibility-dashboard') &&
     isOrgOwner(employee)
   ) {
     return true;
   }
 
+  if (isDashboardEditPermission(permission) && userId) {
+    if (userId === JOE_VASQUEZ_ID || isOrgOwner(employee)) return true;
+    const category = employee ? inferOrgCategory(employee) : null;
+    if (category === 'bim-manager') return true;
+  }
+
   return false;
 }
+
+const DASHBOARD_EDIT_PERMISSION_SET = new Set<AppPermission>([
+  'edit-pm-assigns',
+  'assign-fab-leads',
+  'assign-fab-workers',
+  'edit-fab-status',
+  'fab-clock',
+  'edit-weld-log',
+  'edit-fab-collab',
+  'log-time',
+  'delete-time',
+  'edit-clients-projects',
+  'edit-tasks',
+  'assign-tasks',
+  'manage-statuses',
+  'add-columns',
+]);
+
+function isDashboardEditPermission(permission: AppPermission): boolean {
+  return DASHBOARD_EDIT_PERMISSION_SET.has(permission);
+}
+
+function permissionHelper(permission: AppPermission) {
+  return (
+    userId: string | null,
+    employees: Employee[],
+    employeePermissions: EmployeePermissionsMap = {}
+  ) => hasPermission(userId, permission, employees, employeePermissions);
+}
+
+export const canEditPmAssigns = permissionHelper('edit-pm-assigns');
+export const canAssignFabLeadsPermission = permissionHelper('assign-fab-leads');
+export const canAssignFabWorkersPermission = permissionHelper('assign-fab-workers');
+export const canEditFabStatus = permissionHelper('edit-fab-status');
+export const canFabClock = permissionHelper('fab-clock');
+export const canEditWeldLog = permissionHelper('edit-weld-log');
+export const canViewWeldLogDashboard = permissionHelper('view-weld-log-dashboard');
+export const canEditFabCollab = permissionHelper('edit-fab-collab');
+export const canLogTime = permissionHelper('log-time');
+export const canDeleteTime = permissionHelper('delete-time');
+export const canEditClientsProjects = permissionHelper('edit-clients-projects');
+export const canEditTasks = permissionHelper('edit-tasks');
+export const canAssignTasks = permissionHelper('assign-tasks');
+export const canManageStatuses = permissionHelper('manage-statuses');
+export const canAddColumns = permissionHelper('add-columns');
 
 function isColumnAdminCategory(employee: Employee | undefined): boolean {
   if (!employee) return false;
@@ -123,6 +192,29 @@ export function canViewOwnerDashboard(
   employeePermissions: EmployeePermissionsMap = {}
 ): boolean {
   return hasPermission(userId, 'view-owner-dashboard', employees, employeePermissions);
+}
+
+export function canViewTimeTracking(
+  userId: string | null,
+  employees: Employee[],
+  employeePermissions: EmployeePermissionsMap = {}
+): boolean {
+  return hasPermission(userId, 'view-time-tracking', employees, employeePermissions);
+}
+
+export function canViewVisibilityDashboard(
+  userId: string | null,
+  employees: Employee[],
+  employeePermissions: EmployeePermissionsMap = {},
+  visibilityDashboardJobLevels: OrgCategory[] = DEFAULT_VISIBILITY_DASHBOARD_JOB_LEVELS
+): boolean {
+  if (hasPermission(userId, 'view-visibility-dashboard', employees, employeePermissions)) {
+    return true;
+  }
+  if (!userId) return false;
+  const employee = employees.find((entry) => entry.id === userId);
+  if (!employee) return false;
+  return visibilityDashboardJobLevels.includes(inferOrgCategory(employee));
 }
 
 const DASHBOARD_PERMISSION: Record<DashboardType, AppPermission> = {

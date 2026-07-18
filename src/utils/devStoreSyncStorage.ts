@@ -11,16 +11,6 @@ function updatedAtKey(name: string): string {
   return `${name}-updatedAt`;
 }
 
-function parsePersistVersion(stateJson: string | null): number {
-  if (!stateJson) return 0;
-  try {
-    const parsed = JSON.parse(stateJson) as { version?: number };
-    return typeof parsed.version === 'number' ? parsed.version : 0;
-  } catch {
-    return 0;
-  }
-}
-
 async function readSharedPayload(): Promise<DevStoreSyncPayload | null> {
   try {
     const res = await fetch(SYNC_ROUTE);
@@ -47,27 +37,25 @@ async function writeSharedPayload(payload: DevStoreSyncPayload): Promise<void> {
 
 export const DEV_STORE_SYNC_STORAGE_KEY = 'bim-task-board-storage';
 
-/** Dev-only storage: shares zustand persist JSON between localhost:5173 and :5174 via disk. */
+/**
+ * Dev storage for 5173/5174.
+ * CRITICAL: If this browser profile already has localStorage, that wins — never replace it
+ * with the shared disk file on refresh (that was wiping Demo Mechanical on Ctrl+Shift+R).
+ * Shared file is only used when local is empty (first boot / new profile).
+ */
 export const devStoreSyncStorage: StateStorage = {
   getItem: async (name) => {
     const local = localStorage.getItem(name);
-    const localAt = Number(localStorage.getItem(updatedAtKey(name)) || 0);
-    const shared = await readSharedPayload();
-
-    if (shared) {
-      const sharedVersion = parsePersistVersion(shared.state);
-      const localVersion = parsePersistVersion(local);
-      const preferShared =
-        sharedVersion > localVersion ||
-        (sharedVersion === localVersion && shared.updatedAt > localAt);
-      if (preferShared) {
-        localStorage.setItem(name, shared.state);
-        localStorage.setItem(updatedAtKey(name), String(shared.updatedAt));
-        return shared.state;
-      }
+    if (local) {
+      return local;
     }
 
-    return local;
+    const shared = await readSharedPayload();
+    if (!shared) return null;
+
+    localStorage.setItem(name, shared.state);
+    localStorage.setItem(updatedAtKey(name), String(shared.updatedAt));
+    return shared.state;
   },
 
   setItem: async (name, value) => {
@@ -88,28 +76,12 @@ export const devStoreSyncStorage: StateStorage = {
   },
 };
 
+/** @deprecated Pulling shared over local caused data loss — always no-op now. */
 export async function pullDevStoreSync(): Promise<boolean> {
-  if (!import.meta.env.DEV) return false;
-
-  const name = DEV_STORE_SYNC_STORAGE_KEY;
-  const local = localStorage.getItem(name);
-  const localAt = Number(localStorage.getItem(updatedAtKey(name)) || 0);
-  const shared = await readSharedPayload();
-  if (!shared) return false;
-
-  const localVersion = parsePersistVersion(local);
-  const sharedVersion = parsePersistVersion(shared.state);
-  const preferShared =
-    sharedVersion > localVersion ||
-    (sharedVersion === localVersion && shared.updatedAt > localAt);
-  if (!preferShared) return false;
-
-  localStorage.setItem(name, shared.state);
-  localStorage.setItem(updatedAtKey(name), String(shared.updatedAt));
-  return true;
+  return false;
 }
 
-/** Push this tab's localStorage into the shared dev file if it is newer (seeds 5174 → file). */
+/** Push this tab's localStorage into the shared dev file (backup / seed other ports). */
 export async function pushDevStoreSyncIfNewer(): Promise<void> {
   if (!import.meta.env.DEV) return;
 
@@ -117,12 +89,6 @@ export async function pushDevStoreSyncIfNewer(): Promise<void> {
   const local = localStorage.getItem(name);
   if (!local) return;
 
-  const localAt = Number(localStorage.getItem(updatedAtKey(name)) || Date.now());
-  const shared = await readSharedPayload();
-  const localVersion = parsePersistVersion(local);
-  const sharedVersion = shared ? parsePersistVersion(shared.state) : 0;
-  if (shared && sharedVersion > localVersion) return;
-  if (shared && shared.updatedAt >= localAt && sharedVersion >= localVersion) return;
-
-  await writeSharedPayload({ updatedAt: localAt, state: local });
+  const updatedAt = Number(localStorage.getItem(updatedAtKey(name)) || Date.now());
+  await writeSharedPayload({ updatedAt: Math.max(updatedAt, Date.now()), state: local });
 }

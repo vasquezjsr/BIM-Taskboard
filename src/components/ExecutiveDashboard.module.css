@@ -94,6 +94,14 @@
   color: var(--text-muted, #94a3b8);
 }
 
+.cardActions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
 .openBtn {
   border: 1px solid rgba(125, 211, 252, 0.45);
   background: rgba(125, 211, 252, 0.08);
@@ -109,11 +117,49 @@
   background: rgba(125, 211, 252, 0.16);
 }
 
+.openBtnSecondary {
+  border: 1px solid rgba(134, 239, 172, 0.4);
+  background: rgba(22, 101, 52, 0.2);
+  color: #bbf7d0;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 0.78rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.openBtnSecondary:hover {
+  background: rgba(22, 101, 52, 0.35);
+}
+
 .metaGrid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px 16px;
   margin: 0 0 12px;
+}
+
+.teamGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 16px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.35);
+  border: 1px solid rgba(148, 163, 184, 0.15);
+}
+
+.teamGrid dt {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted, #94a3b8);
+}
+
+.teamGrid dd {
+  margin: 2px 0 0;
+  font-size: 0.82rem;
 }
 
 .metaGrid dt {

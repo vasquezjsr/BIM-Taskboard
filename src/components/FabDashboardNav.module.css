@@ -1,0 +1,152 @@
+.navArea {
+  display: flex;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  margin: -16px -20px 12px;
+}
+
+.tabRows {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.tabRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.tabRows .tabRow:last-child {
+  border-bottom: none;
+}
+
+/* Match Clients / Projects / Boards pastel tiers */
+.tabRows .tabRow:nth-child(1) {
+  background: var(--level2-bg);
+}
+
+.tabRows .tabRow:nth-child(2) {
+  background: var(--level3-bg);
+}
+
+.tabRows .tabRow:nth-child(3) {
+  background: var(--level4-bg);
+}
+
+.tabLabel {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  min-width: 88px;
+  flex-shrink: 0;
+}
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+}
+
+/* Level 2 — Dashboards (Client-tab language) */
+.dashTab {
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--level2-accent);
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.dashTab:hover {
+  background: var(--level2-bg-active);
+  color: var(--level2-text);
+}
+
+.dashTabActive {
+  background: var(--level2-bg-active);
+  color: var(--level2-text);
+  border-color: var(--level2-border);
+}
+
+/* Level 3 — Workstations / supervisors (Project-tab language) */
+.workstationTab {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--level3-accent);
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.workstationTab:hover {
+  background: var(--level3-bg-active);
+  color: var(--level3-text);
+}
+
+.workstationTabActive {
+  background: var(--level3-bg-active);
+  color: var(--level3-text);
+  border-color: var(--level3-border);
+}
+
+.workstationTabManager {
+  font-weight: 600;
+}
+
+/* Level 4 — Workers under selected supervisor (Board-tab language) */
+.workerTab {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--level4-accent);
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.workerTab:hover {
+  background: var(--level4-bg-active);
+  color: var(--level4-text);
+}
+
+.workerTabActive {
+  background: var(--level4-bg-active);
+  color: var(--level4-text);
+  border-color: var(--level4-border);
+}
+
+.workstationRole {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.65;
+}
+
+.emptyWorkstations {
+  font-size: 12px;
+  color: var(--text-muted);
+}

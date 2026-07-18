@@ -37,6 +37,10 @@ npm run electron:build
 
 The installer will be in the `release/` folder.
 
+## Docs
+
+- **[Order of Operations](./ORDER_OF_OPERATIONS.md)** — end-to-end Boardroom → SSv3 → Fab shop sequence
+
 ## Usage
 
 1. **Clients tab** — select a client, then a project, then a board type. Create tasks with "+ New Task" and drag them between status columns.

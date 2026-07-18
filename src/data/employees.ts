@@ -95,7 +95,12 @@ export function reconcileCoreRoster(employees: Employee[]): Employee[] {
 }
 
 export function isProtectedRosterEmployee(employeeId: string): boolean {
-  return employeeId === JOE_VASQUEZ_ID || employeeId === TAYLOR_MORGAN_ID;
+  return (
+    employeeId === JOE_VASQUEZ_ID ||
+    employeeId === TAYLOR_MORGAN_ID ||
+    employeeId === 'emp-bim-mgr-1' ||
+    employeeId === 'emp-ops-mgr-1'
+  );
 }
 
 export function isOwnerEmployee(employee: Employee | undefined): boolean {

@@ -5,3 +5,7 @@ release/
 *.log
 .DS_Store
 .dev-store-sync.json
+dim-inspector-live.txt
+
+# Separate Revit addin repo (Spooling Savant V3 Exports)
+Spooling Savant Version 3 (Exports)/
