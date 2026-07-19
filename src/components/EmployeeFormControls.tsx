@@ -30,6 +30,7 @@ export const PERMISSION_SHORT: Record<AppPermission, string> = {
   'view-fab-dashboard': 'Shop',
   'view-shipping-dashboard': 'Ship',
   'view-weld-log-dashboard': 'Weld Log Dash',
+  'view-spooling-dashboard': 'Spooling Dash',
   'view-visibility-dashboard': 'Access',
   'view-time-tracking': 'Time',
 };

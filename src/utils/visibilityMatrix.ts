@@ -23,6 +23,7 @@ import {
   canEditTasks,
   canEditWeldLog,
   canViewWeldLogDashboard,
+  canViewSpoolingDashboard,
   canFabClock,
   canLogTime,
   canManageColumns,
@@ -60,6 +61,7 @@ export type VisibilityNavColumn =
   | 'shipping'
   | 'field'
   | 'weld-log'
+  | 'spooling'
   | 'time-tracking'
   | 'org-chart'
   | 'activity'
@@ -221,6 +223,13 @@ export const VISIBILITY_NAV_COLUMNS: {
     kind: 'dashboard',
   },
   {
+    id: 'spooling',
+    label: 'Spooling Dashboard',
+    tooltip:
+      'Whether this role can see the Spooling Dashboard tab (all projects’ Spooling board work in one spreadsheet).',
+    kind: 'dashboard',
+  },
+  {
     id: 'time-tracking',
     label: 'Time Tracking',
     tooltip:
@@ -284,6 +293,7 @@ export const NAV_COLUMN_PERMISSION: Record<VisibilityNavColumn, AppPermission> =
   shipping: 'view-shipping-dashboard',
   field: 'view-field-dashboard',
   'weld-log': 'view-weld-log-dashboard',
+  spooling: 'view-spooling-dashboard',
   'time-tracking': 'view-time-tracking',
   'org-chart': 'view-org-chart',
   activity: 'view-activity-log',
@@ -374,6 +384,7 @@ const OFF: Record<VisibilityNavColumn, boolean> = {
   shipping: false,
   field: false,
   'weld-log': false,
+  spooling: false,
   'time-tracking': false,
   'org-chart': false,
   activity: false,
@@ -419,6 +430,7 @@ export const DEFAULT_JOB_LEVEL_VISIBILITY_ROWS: VisibilityMatrixRow[] = [
       shipping: true,
       field: true,
       'weld-log': true,
+      spooling: true,
       'org-chart': true,
       activity: true,
       visibility: true,
@@ -438,6 +450,7 @@ export const DEFAULT_JOB_LEVEL_VISIBILITY_ROWS: VisibilityMatrixRow[] = [
       shipping: true,
       field: true,
       'weld-log': true,
+      spooling: true,
       'org-chart': true,
       activity: true,
       visibility: true,
@@ -456,6 +469,7 @@ export const DEFAULT_JOB_LEVEL_VISIBILITY_ROWS: VisibilityMatrixRow[] = [
       shipping: true,
       field: true,
       'weld-log': true,
+      spooling: true,
       'org-chart': true,
       activity: true,
       visibility: true,
@@ -474,6 +488,7 @@ export const DEFAULT_JOB_LEVEL_VISIBILITY_ROWS: VisibilityMatrixRow[] = [
       fab: true,
       shipping: true,
       field: true,
+      spooling: true,
       'org-chart': true,
     }),
   },
@@ -498,6 +513,7 @@ export const DEFAULT_JOB_LEVEL_VISIBILITY_ROWS: VisibilityMatrixRow[] = [
       'edit-clients-projects': true,
       'edit-tasks': true,
       'assign-tasks': true,
+      spooling: true,
       'org-chart': true,
     }),
   },
@@ -780,6 +796,7 @@ const DASHBOARD_COLUMNS: VisibilityNavColumn[] = [
   'shipping',
   'field',
   'weld-log',
+  'spooling',
   'time-tracking',
   'org-chart',
   'activity',
@@ -933,6 +950,7 @@ export function employeeNavVisibility(
     shipping: canViewDashboard('shipping', employeeId, employees, employeePermissions),
     field: canViewDashboard('field', employeeId, employees, employeePermissions),
     'weld-log': canViewWeldLogDashboard(employeeId, employees, employeePermissions),
+    spooling: canViewSpoolingDashboard(employeeId, employees, employeePermissions),
     'time-tracking': canViewTimeTracking(employeeId, employees, employeePermissions),
     'org-chart': canAccessOrgChart(employeeId, employees, employeePermissions),
     activity: canViewActivityLog(employeeId, employees, employeePermissions),

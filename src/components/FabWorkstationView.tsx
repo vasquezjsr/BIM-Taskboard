@@ -1401,9 +1401,7 @@ export function FabWorkstationView() {
                                 {employees.find((employee) => employee.id === assemblyWorkerId)
                                   ?.name ?? 'Assigned'}
                               </span>
-                            ) : (
-                              <span className={styles.assignSelectPlaceholder} aria-hidden />
-                            )}
+                            ) : null}
                             {fabMode === 'personal' ? (
                               <select
                                 className={styles.statusSelect}

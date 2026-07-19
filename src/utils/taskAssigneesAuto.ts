@@ -15,6 +15,7 @@ export const DELIVERABLES_STATUS_ASSIGNEES: Record<string, 'detailers' | 'suppor
   'spool-qa-review': 'support',
   'spool-approved': 'support',
   'ready-for-fab': 'detailers',
+  'return-to-detailing': 'detailers',
   'on-hold': 'detailers',
   'ready-for-support-team': 'support',
   'detailer-review': 'detailers',

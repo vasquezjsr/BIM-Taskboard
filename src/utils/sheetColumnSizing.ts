@@ -7,6 +7,7 @@ export type SheetFixedColumnKey =
   | 'collapse'
   | 'drag'
   | 'title'
+  | 'project'
   | 'description'
   | 'status'
   | 'assignee'
@@ -33,6 +34,7 @@ export const SHEET_DEFAULT_WIDTHS: Record<SheetFixedColumnKey, number> = {
   collapse: 26,
   drag: 28,
   title: 220,
+  project: 220,
   description: 280,
   status: 106,
   assignee: 108,
@@ -46,6 +48,7 @@ export const SHEET_MIN_WIDTHS: Record<SheetFixedColumnKey, number> = {
   collapse: 24,
   drag: 28,
   title: 80,
+  project: 120,
   description: 100,
   status: 86,
   assignee: 86,

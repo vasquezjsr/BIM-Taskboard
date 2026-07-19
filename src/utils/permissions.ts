@@ -63,6 +63,7 @@ function hasPermission(
       permission === 'view-fab-dashboard' ||
       permission === 'view-shipping-dashboard' ||
       permission === 'view-weld-log-dashboard' ||
+      permission === 'view-spooling-dashboard' ||
       permission === 'view-time-tracking' ||
       permission === 'view-visibility-dashboard') &&
     isOrgOwner(employee)
@@ -115,6 +116,7 @@ export const canEditFabStatus = permissionHelper('edit-fab-status');
 export const canFabClock = permissionHelper('fab-clock');
 export const canEditWeldLog = permissionHelper('edit-weld-log');
 export const canViewWeldLogDashboard = permissionHelper('view-weld-log-dashboard');
+export const canViewSpoolingDashboard = permissionHelper('view-spooling-dashboard');
 export const canEditFabCollab = permissionHelper('edit-fab-collab');
 export const canLogTime = permissionHelper('log-time');
 export const canDeleteTime = permissionHelper('delete-time');

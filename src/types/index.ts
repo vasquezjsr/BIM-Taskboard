@@ -134,6 +134,7 @@ export type MainTab =
   | 'field-dashboard'
   | 'fab-dashboard'
   | 'shipping-dashboard'
+  | 'spooling-dashboard'
   | 'weld-log-dashboard'
   | 'activity-log'
   | 'visibility-dashboard';
@@ -149,6 +150,7 @@ export type AppPermission =
   | 'fab-clock'
   | 'edit-weld-log'
   | 'view-weld-log-dashboard'
+  | 'view-spooling-dashboard'
   | 'edit-fab-collab'
   | 'log-time'
   | 'delete-time'
@@ -164,7 +166,6 @@ export type AppPermission =
   | 'view-field-dashboard'
   | 'view-fab-dashboard'
   | 'view-shipping-dashboard'
-  | 'view-weld-log-dashboard'
   | 'view-visibility-dashboard'
   | 'view-time-tracking';
 

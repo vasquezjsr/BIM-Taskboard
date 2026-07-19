@@ -71,7 +71,7 @@ import { buildBimOrgRoster, createBimOrgChartReportsTo } from '../data/bimOrgCha
 import { applyDefaultProjectTeams, ensureDefaultProjectTeams } from '../data/projectTeams';
 import { defaultProjectFields, normalizeProject, type ProjectSettingsUpdate } from '../types';
 import { cloneProjectFromTemplate, type NewProjectOptions } from '../utils/projectTemplate';
-import { canAccessOrgChart, canEditBudgetHours, canManageColumns, canViewActivityLog, canViewDashboard, canViewEmployeeTime, canViewOwnerDashboard, canViewTimeTracking, canViewVisibilityDashboard, canViewWeldLogDashboard } from '../utils/permissions';
+import { canAccessOrgChart, canEditBudgetHours, canManageColumns, canViewActivityLog, canViewDashboard, canViewEmployeeTime, canViewOwnerDashboard, canViewSpoolingDashboard, canViewTimeTracking, canViewVisibilityDashboard, canViewWeldLogDashboard } from '../utils/permissions';
 import {
   DEFAULT_JOB_LEVEL_NAV_VISIBILITY,
   NAV_COLUMN_PERMISSION,
@@ -117,6 +117,8 @@ import {
 import {
   applyDetailersReadyForSpoolingHandoff,
   applyDetailersSpoolingMirrorCleanup,
+  applySpoolingReturnToDetailingHandoff,
+  collectDescendantTaskIds,
 } from '../utils/detailersSpoolingHandoff';
 import { normalizeTimeEntry, prepareTimeEntryPayload } from '../utils/timeEntry';
 import {
@@ -309,7 +311,9 @@ import {
   DEFAULT_SPOOLING_TASK_STATUSES,
   DEFAULT_TASK_STATUSES,
   createDefaultBoardTaskStatuses,
+  ensureDetailersBoardStatuses,
   getBoardTaskStatuses,
+  migrateDetailersTaskStatus,
   migrateRfiBoardTaskStatuses,
   migrateTasksToBoardStatuses,
   normalizeProjectBoardTaskStatuses,
@@ -1065,6 +1069,13 @@ function mergePersistedState(p: Partial<AppState>, current: AppState): AppState 
   }
 
   if (
+    navigation.activeMainTab === 'spooling-dashboard' &&
+    !canViewSpoolingDashboard(resolvedUserId, employees, employeePermissions)
+  ) {
+    navigation.activeMainTab = 'clients';
+  }
+
+  if (
     navigation.activeMainTab === 'activity-log' &&
     !canViewActivityLog(resolvedUserId, employees, employeePermissions)
   ) {
@@ -1516,6 +1527,7 @@ function enrichTaskUpdates(
   }
 
   patched = applyDetailersReadyForSpoolingHandoff(task, patched);
+  patched = applySpoolingReturnToDetailingHandoff(task, patched);
   patched = applyDetailersSpoolingMirrorCleanup(task, patched);
 
   const withBranch = enrichTaskUpdatesWithBranchGroup(
@@ -1532,6 +1544,48 @@ function enrichTaskUpdates(
     boardTaskStatuses,
     projectBoardTaskStatuses
   );
+}
+
+/**
+ * When a parent package is set to Ready for Spooling, push the same status
+ * (and Detailers→Spooling handoff) onto all nested assembly subtasks.
+ */
+function cascadeReadyForSpoolingToAssemblies(
+  tasks: Task[],
+  parentIds: Iterable<string>,
+  projects: Project[],
+  taskGroups: TaskGroup[],
+  boardTaskStatuses: BoardTaskStatusesMap,
+  projectBoardTaskStatuses: ProjectBoardTaskStatusesMap
+): Task[] {
+  const rootIds = new Set<string>();
+  for (const id of parentIds) {
+    const parent = tasks.find((task) => task.id === id);
+    if (parent?.status === 'ready-for-spooling') rootIds.add(id);
+  }
+  if (rootIds.size === 0) return tasks;
+
+  const childIds = new Set<string>();
+  for (const rootId of rootIds) {
+    for (const childId of collectDescendantTaskIds(tasks, rootId)) {
+      if (!rootIds.has(childId)) childIds.add(childId);
+    }
+  }
+  if (childIds.size === 0) return tasks;
+
+  return tasks.map((task) => {
+    if (!childIds.has(task.id)) return task;
+    if (task.status === 'ready-for-spooling' && task.boardType === 'spooling') return task;
+    const enriched = enrichTaskUpdates(
+      task,
+      { status: 'ready-for-spooling' },
+      projects,
+      taskGroups,
+      boardTaskStatuses,
+      projectBoardTaskStatuses
+    );
+    return { ...task, ...enriched };
+  });
 }
 
 const RELOAD_NAV_SESSION_KEY = 'bim-task-board-reload-nav';
@@ -1639,13 +1693,17 @@ function resolvePersistedNavigation(
             ? 'fab-dashboard'
             : rawMainTab === 'shipping-dashboard'
               ? 'shipping-dashboard'
-              : rawMainTab === 'activity-log'
-                ? 'activity-log'
-                : rawMainTab === 'visibility-dashboard'
-                  ? 'visibility-dashboard'
-              : rawMainTab === 'org-chart' || rawMainTab === 'permissions'
-                ? 'org-chart'
-                : 'clients';
+              : rawMainTab === 'spooling-dashboard'
+                ? 'spooling-dashboard'
+                : rawMainTab === 'weld-log-dashboard'
+                  ? 'weld-log-dashboard'
+                  : rawMainTab === 'activity-log'
+                    ? 'activity-log'
+                    : rawMainTab === 'visibility-dashboard'
+                      ? 'visibility-dashboard'
+                      : rawMainTab === 'org-chart' || rawMainTab === 'permissions'
+                        ? 'org-chart'
+                        : 'clients';
 
   const clientsView: AppState['clientsView'] =
     source.clientsView === 'dashboard' ? 'dashboard' : 'board';
@@ -3085,6 +3143,51 @@ function runStoreMigration(persisted: unknown, version: number) {
           boardSheetColumnOrder = premade.boardSheetColumnOrder;
         }
 
+        if (version < 125) {
+          const nextPermissions: EmployeePermissionsMap = { ...employeePermissions };
+          for (const employee of employees) {
+            const granted = new Set(nextPermissions[employee.id] ?? []);
+            const category = inferOrgCategory(employee);
+            if (
+              category === 'owner' ||
+              category === 'bim-manager' ||
+              category === 'operations-manager' ||
+              category === 'support-manager' ||
+              category === 'support-specialist' ||
+              employee.role === 'support-specialist'
+            ) {
+              granted.add('view-spooling-dashboard');
+            }
+            nextPermissions[employee.id] = [...granted];
+          }
+          employeePermissions = nextPermissions;
+        }
+
+        if (version < 127) {
+          boardTaskStatuses = {
+            ...boardTaskStatuses,
+            detailers: ensureDetailersBoardStatuses(
+              boardTaskStatuses.detailers?.length
+                ? boardTaskStatuses.detailers
+                : createDefaultBoardTaskStatuses().detailers!
+            ),
+          };
+          const nextProjectStatuses: ProjectBoardTaskStatusesMap = { ...projectBoardTaskStatuses };
+          for (const [projectId, boards] of Object.entries(nextProjectStatuses)) {
+            if (!boards?.detailers?.length) continue;
+            nextProjectStatuses[projectId] = {
+              ...boards,
+              detailers: ensureDetailersBoardStatuses(boards.detailers),
+            };
+          }
+          projectBoardTaskStatuses = nextProjectStatuses;
+          tasks = tasks.map((task) => {
+            if (task.boardType !== 'detailers') return task;
+            const nextStatus = migrateDetailersTaskStatus(task.status);
+            return nextStatus === task.status ? task : { ...task, status: nextStatus };
+          });
+        }
+
         if (version < 110) {
           const nextPermissions: EmployeePermissionsMap = { ...employeePermissions };
           for (const employee of employees) {
@@ -3366,6 +3469,13 @@ function runStoreMigration(persisted: unknown, version: number) {
         }
 
         if (
+          resolvedNavigation.activeMainTab === 'spooling-dashboard' &&
+          !canViewSpoolingDashboard(currentUserId, employees, employeePermissions)
+        ) {
+          resolvedNavigation.activeMainTab = 'clients';
+        }
+
+        if (
           resolvedNavigation.activeMainTab === 'activity-log' &&
           !canViewActivityLog(currentUserId, employees, employeePermissions)
         ) {
@@ -3638,6 +3748,16 @@ export const useStore = create<AppState>()(
             return;
           }
           if (
+            tab === 'spooling-dashboard' &&
+            !canViewSpoolingDashboard(
+              state.currentUserId,
+              state.employees,
+              state.employeePermissions
+            )
+          ) {
+            return;
+          }
+          if (
             tab === 'visibility-dashboard' &&
             !canViewVisibilityDashboard(
               state.currentUserId,
@@ -3721,6 +3841,8 @@ export const useStore = create<AppState>()(
               !canViewDashboard('shipping', employeeId, employees, employeePermissions)) ||
             (tab === 'weld-log-dashboard' &&
               !canViewWeldLogDashboard(employeeId, employees, employeePermissions)) ||
+            (tab === 'spooling-dashboard' &&
+              !canViewSpoolingDashboard(employeeId, employees, employeePermissions)) ||
             (tab === 'activity-log' &&
               !canViewActivityLog(employeeId, employees, employeePermissions)) ||
             (tab === 'time-tracking' &&
@@ -3806,6 +3928,8 @@ export const useStore = create<AppState>()(
               !canViewDashboard('shipping', employeeId, employees, employeePermissions)) ||
             (activeMainTab === 'weld-log-dashboard' &&
               !canViewWeldLogDashboard(employeeId, employees, employeePermissions)) ||
+            (activeMainTab === 'spooling-dashboard' &&
+              !canViewSpoolingDashboard(employeeId, employees, employeePermissions)) ||
             (activeMainTab === 'activity-log' &&
               !canViewActivityLog(employeeId, employees, employeePermissions)) ||
             (activeMainTab === 'time-tracking' &&
@@ -5466,6 +5590,17 @@ export const useStore = create<AppState>()(
               return next;
             });
 
+            if (updates.status === 'ready-for-spooling') {
+              tasks = cascadeReadyForSpoolingToAssemblies(
+                tasks,
+                [id],
+                s.projects,
+                s.taskGroups,
+                s.boardTaskStatuses,
+                s.projectBoardTaskStatuses
+              );
+            }
+
             const updated = tasks.find((t) => t.id === id);
             if (
               updated &&
@@ -5662,6 +5797,17 @@ export const useStore = create<AppState>()(
               return { ...t, ...enriched };
             });
 
+            if (updates.status === 'ready-for-spooling') {
+              tasks = cascadeReadyForSpoolingToAssemblies(
+                tasks,
+                idSet,
+                s.projects,
+                s.taskGroups,
+                s.boardTaskStatuses,
+                s.projectBoardTaskStatuses
+              );
+            }
+
             if (updates.status === 'ready-for-fab') {
               for (const id of idSet) {
                 const updated = tasks.find((t) => t.id === id);
@@ -5801,6 +5947,20 @@ export const useStore = create<AppState>()(
               );
               return { ...t, ...enriched };
             });
+
+            const readyForSpoolingRoots = [...idSet].filter(
+              (id) => tasks.find((t) => t.id === id)?.status === 'ready-for-spooling'
+            );
+            if (readyForSpoolingRoots.length > 0) {
+              tasks = cascadeReadyForSpoolingToAssemblies(
+                tasks,
+                readyForSpoolingRoots,
+                s.projects,
+                s.taskGroups,
+                s.boardTaskStatuses,
+                s.projectBoardTaskStatuses
+              );
+            }
 
             for (const id of idSet) {
               const previous = previousById.get(id);
@@ -7548,7 +7708,7 @@ export const useStore = create<AppState>()(
 
       name: 'bim-task-board-storage',
 
-      version: 124,
+      version: 127,
 
       migrate: (persisted, version) => {
         try {

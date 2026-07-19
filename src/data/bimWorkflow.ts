@@ -35,7 +35,7 @@ export const BIM_WORKFLOW_STAGES: WorkflowStageDefinition[] = [
   {
     id: 'detailing',
     label: 'Detailing',
-    description: '3D modeling, hangers, and detailer QA before coordination',
+    description: 'Modeling and coordinating before spooling handoff',
     boardTypes: ['detailers'],
   },
   {

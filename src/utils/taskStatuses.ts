@@ -46,10 +46,8 @@ export const DEFAULT_PM_TASK_STATUSES: TaskStatusDefinition[] = [
 /** Detailing / modeling workflow */
 export const DEFAULT_DETAILERS_TASK_STATUSES: TaskStatusDefinition[] = [
   { id: 'not-started', label: 'Not Started', color: '#94a3b8' },
-  { id: 'backgrounds-linked', label: 'Backgrounds Linked', color: '#cbd5e1' },
-  { id: 'modeling', label: 'Modeling (LOD 300)', color: '#93c5fd' },
-  { id: 'hangers-supports', label: 'Hangers & Supports', color: '#7dd3fc' },
-  { id: 'detailer-qa', label: 'Detailer QA', color: '#fde68a' },
+  { id: 'modeling', label: 'Modeling', color: '#93c5fd' },
+  { id: 'coordinating', label: 'Coordinating', color: '#a5b4fc' },
   { id: 'ready-for-coordination', label: 'Ready for Coordination', color: '#6ee7b7' },
   {
     id: 'ready-for-spooling',
@@ -61,6 +59,26 @@ export const DEFAULT_DETAILERS_TASK_STATUSES: TaskStatusDefinition[] = [
   { id: 'on-hold', label: 'On Hold', color: '#d8b4fe' },
   { id: 'complete', label: 'Complete', color: '#86efac', countsAsComplete: true },
 ];
+
+/** Removed from Detailers board — remap any lingering task values. */
+const DETAILERS_REMOVED_STATUS_IDS = new Set([
+  'backgrounds-linked',
+  'hangers-supports',
+  'detailer-qa',
+  'take-off-lod-300',
+]);
+
+export function migrateDetailersTaskStatus(status: string): string {
+  if (status === 'detailer-qa') return 'coordinating';
+  if (
+    status === 'take-off-lod-300' ||
+    status === 'backgrounds-linked' ||
+    status === 'hangers-supports'
+  ) {
+    return 'modeling';
+  }
+  return status;
+}
 
 /** Background & reference document workflow */
 export const DEFAULT_DOCUMENTS_TASK_STATUSES: TaskStatusDefinition[] = [
@@ -161,6 +179,12 @@ export const DEFAULT_SPOOLING_TASK_STATUSES: TaskStatusDefinition[] = [
     id: 'ready-for-fab',
     label: 'Ready for Fab',
     color: '#fcd34d',
+    autoAssignTeam: 'detailers',
+  },
+  {
+    id: 'return-to-detailing',
+    label: 'Return to Detailing',
+    color: '#fca5a5',
     autoAssignTeam: 'detailers',
   },
   { id: 'on-hold', label: 'On Hold', color: '#d8b4fe', autoAssignTeam: 'support' },
@@ -395,6 +419,104 @@ export function ensureDetailersReadyForSpoolingStatus(
   return [...statuses, insert];
 }
 
+function insertDetailersStatusAfter(
+  statuses: TaskStatusDefinition[],
+  insert: TaskStatusDefinition,
+  afterIds: string[]
+): TaskStatusDefinition[] {
+  if (statuses.some((status) => status.id === insert.id)) {
+    return statuses.map((status) =>
+      status.id === insert.id ? { ...status, label: insert.label, color: insert.color } : status
+    );
+  }
+  for (const afterId of afterIds) {
+    const idx = statuses.findIndex((status) => status.id === afterId);
+    if (idx >= 0) {
+      const next = [...statuses];
+      next.splice(idx + 1, 0, insert);
+      return next;
+    }
+  }
+  const notStartedIdx = statuses.findIndex((status) => status.id === 'not-started');
+  if (notStartedIdx >= 0) {
+    const next = [...statuses];
+    next.splice(notStartedIdx + 1, 0, insert);
+    return next;
+  }
+  return [insert, ...statuses];
+}
+
+/**
+ * Keep Detailers status lists current: drop retired statuses, keep Modeling (no LOD suffix),
+ * and ensure Coordinating + Ready for Spooling exist.
+ */
+export function ensureDetailersBoardStatuses(
+  statuses: TaskStatusDefinition[]
+): TaskStatusDefinition[] {
+  let next = statuses
+    .map((status) => {
+      if (status.id === 'take-off-lod-300') {
+        return { ...status, id: 'modeling', label: 'Modeling', color: status.color || '#93c5fd' };
+      }
+      if (status.id === 'modeling') {
+        return { ...status, label: 'Modeling' };
+      }
+      return status;
+    })
+    .filter((status) => !DETAILERS_REMOVED_STATUS_IDS.has(status.id));
+
+  const seen = new Set<string>();
+  next = next.filter((status) => {
+    if (seen.has(status.id)) return false;
+    seen.add(status.id);
+    return true;
+  });
+
+  next = insertDetailersStatusAfter(
+    next,
+    { id: 'modeling', label: 'Modeling', color: '#93c5fd' },
+    ['not-started']
+  );
+  next = insertDetailersStatusAfter(
+    next,
+    { id: 'coordinating', label: 'Coordinating', color: '#a5b4fc' },
+    ['modeling', 'not-started']
+  );
+  return ensureDetailersReadyForSpoolingStatus(next);
+}
+
+/** Inject Return to Detailing into persisted Spooling lists that predate the return path. */
+export function ensureSpoolingReturnToDetailingStatus(
+  statuses: TaskStatusDefinition[]
+): TaskStatusDefinition[] {
+  if (statuses.some((status) => status.id === 'return-to-detailing')) return statuses;
+  const insert: TaskStatusDefinition = {
+    id: 'return-to-detailing',
+    label: 'Return to Detailing',
+    color: '#fca5a5',
+    autoAssignTeam: 'detailers',
+  };
+  const afterFab = statuses.findIndex((status) => status.id === 'ready-for-fab');
+  if (afterFab >= 0) {
+    const next = [...statuses];
+    next.splice(afterFab + 1, 0, insert);
+    return next;
+  }
+  const onHoldIdx = statuses.findIndex((status) => status.id === 'on-hold');
+  if (onHoldIdx >= 0) {
+    const next = [...statuses];
+    next.splice(onHoldIdx, 0, insert);
+    return next;
+  }
+  const completeIdx = statuses.findIndex((status) => status.id === 'complete');
+  if (completeIdx >= 0) {
+    const next = [...statuses];
+    next.splice(completeIdx, 0, insert);
+    return next;
+  }
+  return [...statuses, insert];
+}
+
 /** Terminal / leave-Shipping package status (handoff to Field). */
 export const SHIPPING_HANDED_TO_FIELD_STATUSES = ['received-field'] as const;
 
@@ -510,14 +632,16 @@ export function getBoardTaskStatuses(
   if (projectId && projectBoardTaskStatuses?.[projectId]?.[boardType]?.length) {
     const list = normalizeTaskStatuses(projectBoardTaskStatuses[projectId]![boardType]);
     if (boardType === 'fab') return ensureFabWorkstationStatuses(list);
-    if (boardType === 'detailers') return ensureDetailersReadyForSpoolingStatus(list);
+    if (boardType === 'detailers') return ensureDetailersBoardStatuses(list);
+    if (boardType === 'spooling') return ensureSpoolingReturnToDetailingStatus(list);
     return list;
   }
   const list = boardTaskStatuses[boardType];
   if (list?.length) {
     const normalized = normalizeTaskStatuses(list);
     if (boardType === 'fab') return ensureFabWorkstationStatuses(normalized);
-    if (boardType === 'detailers') return ensureDetailersReadyForSpoolingStatus(normalized);
+    if (boardType === 'detailers') return ensureDetailersBoardStatuses(normalized);
+    if (boardType === 'spooling') return ensureSpoolingReturnToDetailingStatus(normalized);
     return normalized;
   }
   const main = boardTaskStatuses.main;

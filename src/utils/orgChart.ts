@@ -51,6 +51,7 @@ export const PERMISSION_LABELS: Record<AppPermission, string> = {
   'view-fab-dashboard': 'View Shop dashboard',
   'view-shipping-dashboard': 'View Shipping dashboard',
   'view-weld-log-dashboard': 'View Weld Log Dashboard',
+  'view-spooling-dashboard': 'View Spooling Dashboard',
   'view-visibility-dashboard': 'View Access Control',
   'view-time-tracking': 'View Time Tracking',
 };
@@ -81,6 +82,7 @@ export const ALL_PERMISSIONS: AppPermission[] = [
   'view-fab-dashboard',
   'view-shipping-dashboard',
   'view-weld-log-dashboard',
+  'view-spooling-dashboard',
   'view-visibility-dashboard',
   'view-time-tracking',
 ];
@@ -313,6 +315,7 @@ export function createDefaultEmployeePermissions(employees: Employee[]): Employe
         'view-fab-dashboard',
         'view-shipping-dashboard',
         'view-weld-log-dashboard',
+        'view-spooling-dashboard',
         'view-visibility-dashboard',
         ...defaultDashboardEditPermissionsForCategory('owner')
       );
@@ -325,6 +328,7 @@ export function createDefaultEmployeePermissions(employees: Employee[]): Employe
         'view-fab-dashboard',
         'view-shipping-dashboard',
         'view-weld-log-dashboard',
+        'view-spooling-dashboard',
         ...defaultDashboardEditPermissionsForCategory('support-manager')
       );
     }
@@ -341,6 +345,7 @@ export function createDefaultEmployeePermissions(employees: Employee[]): Employe
         'view-fab-dashboard',
         'view-shipping-dashboard',
         'view-weld-log-dashboard',
+        'view-spooling-dashboard',
         'view-visibility-dashboard',
         ...defaultDashboardEditPermissionsForCategory('bim-manager')
       );
@@ -356,6 +361,7 @@ export function createDefaultEmployeePermissions(employees: Employee[]): Employe
         'view-fab-dashboard',
         'view-shipping-dashboard',
         'view-weld-log-dashboard',
+        'view-spooling-dashboard',
         'view-visibility-dashboard',
         ...defaultDashboardEditPermissionsForCategory('operations-manager')
       );
@@ -371,7 +377,10 @@ export function createDefaultEmployeePermissions(employees: Employee[]): Employe
     }
 
     if (employee.role === 'support-specialist' && inferOrgCategory(employee) === 'support-specialist') {
-      permissions.push(...defaultDashboardEditPermissionsForCategory('support-specialist'));
+      permissions.push(
+        'view-spooling-dashboard',
+        ...defaultDashboardEditPermissionsForCategory('support-specialist')
+      );
     }
 
     if (employee.id === JOE_VASQUEZ_ID) {

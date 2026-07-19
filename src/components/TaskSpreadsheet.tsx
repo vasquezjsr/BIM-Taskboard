@@ -30,6 +30,7 @@ import {
   type TaskStatusDefinition,
 } from '../types';
 import {
+  buildCrossProjectSpoolingSheetRows,
   buildSheetRows,
   computeGroupProgress,
   getSectionForBoard,
@@ -47,6 +48,8 @@ import {
   type GroupVisualRole,
   type SheetRow,
 } from '../utils/groupRows';
+import { projectJobLabel } from '../utils/projectJobLabel';
+import { isTemplateProject } from '../utils/projectTemplate';
 import {
   getProjectSubBoardOrder,
   getAssignableBoards,
@@ -81,6 +84,7 @@ import {
   getBoardSheetColumnOrder,
   parseSheetColDragId,
   sheetColDragId,
+  withCrossProjectColumnOrder,
   type SheetColumnSlot,
   type FixedSheetColumnId,
 } from '../utils/sheetColumns';
@@ -576,6 +580,8 @@ interface TaskSpreadsheetProps {
   clientId: string;
   projectId: string;
   boardType: ProjectBoardType;
+  /** Spooling Dashboard: all projects’ Spooling rows + Project column. */
+  scope?: 'project' | 'all-projects';
 }
 
 type FixedColumnKey = SheetFixedColumnKey;
@@ -947,6 +953,8 @@ interface SortableGroupRowProps {
   focusName?: boolean;
   onNameFocusConsumed?: () => void;
   isColumnVisible?: (columnId: string) => boolean;
+  /** Spooling Dashboard: hide + New affordances. */
+  allowCreateRows?: boolean;
 }
 
 function SortableGroupRow({
@@ -971,6 +979,7 @@ function SortableGroupRow({
   focusName = false,
   onNameFocusConsumed,
   isColumnVisible,
+  allowCreateRows = true,
 }: SortableGroupRowProps) {
   const { group, depth, isGhost = false } = row;
   const isVirtual = group.id.startsWith('__');
@@ -1046,7 +1055,7 @@ function SortableGroupRow({
   const isLevelGroup = resolveGroupVisualRole(group, taskGroups) === 'level-group';
   const canEditDuration = isLevelGroup && !(isVirtual && !isCollapsibleBucket);
 
-  const showNewBtn = !isVirtual || isCollapsibleBucket;
+  const showNewBtn = allowCreateRows && (!isVirtual || isCollapsibleBucket);
   const showsNewChoice =
     isUngroupedBucket || group.tier === 'parent' || group.tier === 'child';
   const hasStatusColumn = columnSlots.some(
@@ -1423,6 +1432,7 @@ interface SortableTaskRowProps {
   onDuplicate: (id: string) => void;
   allowEditTasks: boolean;
   allowAssignTasks: boolean;
+  projectLabelText?: string;
 }
 
 function renderFixedColumnCell(
@@ -1438,7 +1448,8 @@ function renderFixedColumnCell(
   projectBoardTaskStatuses: import('../utils/taskStatuses').ProjectBoardTaskStatusesMap,
   taskGroups: TaskGroup[],
   branchBoards: { id: import('../types').ProjectBoardType; label: string }[],
-  onUpdate: TaskUpdateHandler
+  onUpdate: TaskUpdateHandler,
+  projectLabelText?: string
 ): React.ReactNode {
   switch (slotId) {
     case 'title':
@@ -1468,6 +1479,12 @@ function renderFixedColumnCell(
             )}
           </div>
         </div>
+      );
+    case 'project':
+      return (
+        <span className={styles.cellInput} title={projectLabelText ?? '—'} style={{ display: 'block' }}>
+          {projectLabelText ?? '—'}
+        </span>
       );
     case 'description':
       return (
@@ -1604,6 +1621,7 @@ function SortableTaskRow({
   onDuplicate,
   allowEditTasks,
   allowAssignTasks,
+  projectLabelText,
 }: SortableTaskRowProps) {
   const { task, depth } = row;
   const readOnly = !allowEditTasks;
@@ -1745,6 +1763,7 @@ function SortableTaskRow({
               taskGroups,
               branchBoards,
               onUpdate,
+              projectLabelText,
             )
           )}
         </td>
@@ -1772,9 +1791,17 @@ function SortableTaskRow({
   );
 }
 
-export function TaskSpreadsheet({ clientId, projectId, boardType }: TaskSpreadsheetProps) {
+export function TaskSpreadsheet({
+  clientId,
+  projectId,
+  boardType,
+  scope = 'project',
+}: TaskSpreadsheetProps) {
+  const isAllProjectsScope = scope === 'all-projects' && boardType === 'spooling';
   const tasks = useStore((s) => s.tasks);
   const taskGroups = useStore((s) => s.taskGroups);
+  const projects = useStore((s) => s.projects);
+  const clients = useStore((s) => s.clients);
   const employees = useStore((s) => s.employees);
   const currentUserId = useStore((s) => s.currentUserId);
   const viewAsOriginalUserId = useStore((s) => s.viewAsOriginalUserId);
@@ -1853,7 +1880,7 @@ export function TaskSpreadsheet({ clientId, projectId, boardType }: TaskSpreadsh
   ]);
   const sheetColumns = useMemo(() => {
     // Board tabs use the same column set as their Main Overview section.
-    if (!isOverview && boardType !== 'main') {
+    if (!isOverview) {
       return getMainOverviewSectionColumns(
         boardType,
         mainOverviewSectionSheetColumns,
@@ -1868,21 +1895,21 @@ export function TaskSpreadsheet({ clientId, projectId, boardType }: TaskSpreadsh
     mainOverviewSectionSheetColumns,
   ]);
   const columnOrder = useMemo(() => {
-    if (!isOverview && boardType !== 'main') {
-      return getMainOverviewSectionColumnOrder(
-        boardType,
-        mainOverviewSectionColumnOrder,
-        mainOverviewSectionSheetColumns,
-        boardSheetColumnOrder,
-        boardSheetColumns
-      );
-    }
-    return getBoardSheetColumnOrder(
-      boardType,
-      boardSheetColumnOrder,
-      boardSheetColumns,
-      isOverview
-    );
+    const base = !isOverview
+      ? getMainOverviewSectionColumnOrder(
+          boardType,
+          mainOverviewSectionColumnOrder,
+          mainOverviewSectionSheetColumns,
+          boardSheetColumnOrder,
+          boardSheetColumns
+        )
+      : getBoardSheetColumnOrder(
+          boardType,
+          boardSheetColumnOrder,
+          boardSheetColumns,
+          isOverview
+        );
+    return isAllProjectsScope ? withCrossProjectColumnOrder(base) : base;
   }, [
     isOverview,
     boardType,
@@ -1890,6 +1917,7 @@ export function TaskSpreadsheet({ clientId, projectId, boardType }: TaskSpreadsh
     boardSheetColumns,
     mainOverviewSectionColumnOrder,
     mainOverviewSectionSheetColumns,
+    isAllProjectsScope,
   ]);
   const columnSlots = useMemo(
     () => buildSheetColumnSlots(columnOrder, sheetColumns, isOverview),
@@ -2047,8 +2075,9 @@ export function TaskSpreadsheet({ clientId, projectId, boardType }: TaskSpreadsh
   );
 
   useEffect(() => {
+    if (isAllProjectsScope) return;
     ensureProjectGroups(clientId, projectId);
-  }, [clientId, projectId, ensureProjectGroups]);
+  }, [clientId, projectId, ensureProjectGroups, isAllProjectsScope]);
 
   useEffect(() => {
     setColumnWidths(loadColumnWidths(boardType));
@@ -2518,19 +2547,19 @@ export function TaskSpreadsheet({ clientId, projectId, boardType }: TaskSpreadsh
     [customBoards, projectId]
   );
 
-  const sheetRows = useMemo(
-    () =>
-      buildSheetRows(
+  const sheetRows = useMemo(() => {
+    if (isAllProjectsScope) {
+      return buildCrossProjectSpoolingSheetRows(
         taskGroups,
         tasks,
-        clientId,
-        projectId,
-        boardType,
+        projects,
+        clients,
         collapsedIds,
-        projectBoardOrder,
+        subBoardTabOrder,
         customBoards
-      ),
-    [
+      );
+    }
+    return buildSheetRows(
       taskGroups,
       tasks,
       clientId,
@@ -2538,9 +2567,22 @@ export function TaskSpreadsheet({ clientId, projectId, boardType }: TaskSpreadsh
       boardType,
       collapsedIds,
       projectBoardOrder,
-      customBoards,
-    ]
-  );
+      customBoards
+    );
+  }, [
+    isAllProjectsScope,
+    taskGroups,
+    tasks,
+    projects,
+    clients,
+    clientId,
+    projectId,
+    boardType,
+    collapsedIds,
+    projectBoardOrder,
+    subBoardTabOrder,
+    customBoards,
+  ]);
 
   const overviewSplitRows = useMemo(
     () =>
@@ -2556,7 +2598,10 @@ export function TaskSpreadsheet({ clientId, projectId, boardType }: TaskSpreadsh
   );
 
   const showTradeGroupWorkspace =
-    Boolean(activeBoardSection) && !isFlatBoardView && boardType !== 'main';
+    !isAllProjectsScope &&
+    Boolean(activeBoardSection) &&
+    !isFlatBoardView &&
+    boardType !== 'main';
 
   const taskDragIds = useMemo(
     () =>
@@ -2927,14 +2972,36 @@ export function TaskSpreadsheet({ clientId, projectId, boardType }: TaskSpreadsh
   const groupProgressById = useMemo(() => {
     const map = new Map<string, GroupProgress>();
     for (const g of taskGroups) {
-      if (g.clientId !== clientId || g.projectId !== projectId) continue;
+      if (isAllProjectsScope) {
+        const project = projects.find((p) => p.id === g.projectId);
+        if (!project || isTemplateProject(project)) continue;
+      } else if (g.clientId !== clientId || g.projectId !== projectId) {
+        continue;
+      }
       map.set(
         g.id,
-        computeGroupProgress(g, taskGroups, tasks, clientId, projectId, boardTaskStatuses, projectBoardTaskStatuses)
+        computeGroupProgress(
+          g,
+          taskGroups,
+          tasks,
+          g.clientId,
+          g.projectId,
+          boardTaskStatuses,
+          projectBoardTaskStatuses
+        )
       );
     }
     return map;
-  }, [taskGroups, tasks, clientId, projectId, boardTaskStatuses, projectBoardTaskStatuses]);
+  }, [
+    isAllProjectsScope,
+    taskGroups,
+    tasks,
+    projects,
+    clientId,
+    projectId,
+    boardTaskStatuses,
+    projectBoardTaskStatuses,
+  ]);
 
   const assignableEmployees = useMemo(
     () => [...employees].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })),
@@ -3197,7 +3264,9 @@ export function TaskSpreadsheet({ clientId, projectId, boardType }: TaskSpreadsh
     return rows.length === 0 ? (
       <tr>
         <td colSpan={3 + slots.length + 1} className={styles.empty}>
-          No tasks yet. Use "+ New" on a group, add a group, or create an ungrouped task to get started.
+          {isAllProjectsScope
+            ? 'No Spooling tasks across projects yet. Create work on each project’s Spooling board under Clients.'
+            : 'No tasks yet. Use "+ New" on a group, add a group, or create an ungrouped task to get started.'}
         </td>
       </tr>
     ) : (
@@ -3247,6 +3316,7 @@ export function TaskSpreadsheet({ clientId, projectId, boardType }: TaskSpreadsh
               isSelected={selectedGroupIds.has(row.group.id)}
               selectable={canRemoveSheetGroup(row.group)}
               onSelect={handleGroupSelect}
+              allowCreateRows={!isAllProjectsScope}
             />
           );
         }
@@ -3282,6 +3352,11 @@ export function TaskSpreadsheet({ clientId, projectId, boardType }: TaskSpreadsh
             onDuplicate={handleDuplicate}
             allowEditTasks={allowEditTasks}
             allowAssignTasks={allowAssignTasks}
+            projectLabelText={
+              isAllProjectsScope
+                ? projectJobLabel(row.task.projectId, projects, clients)
+                : undefined
+            }
           />
         );
       })
@@ -4210,7 +4285,7 @@ export function TaskSpreadsheet({ clientId, projectId, boardType }: TaskSpreadsh
                   : ' — blue line at bottom: insert after this row'}
             </div>
           )}
-          {isFlatBoardView && (
+          {isFlatBoardView && !isAllProjectsScope && (
             <div className={styles.flatToolbar}>
               <button type="button" className={styles.flatToolbarBtn} onClick={handleAddFlatRow}>
                 + New row
@@ -4395,11 +4470,13 @@ export function TaskSpreadsheet({ clientId, projectId, boardType }: TaskSpreadsh
                 {sheetRows.length === 0 ? (
                   <tr>
                     <td colSpan={colSpan} className={styles.empty}>
-                      {isFlatBoardView
-                        ? 'No rows yet. Click "+ New row" to get started.'
-                        : isGhostBoard
-                          ? 'No tasks for this board yet. Assign tasks on Main Overview using the Board column or by placing them under this board’s section.'
-                          : 'No tasks yet. Use "+ New" on a group, add a group, or create an ungrouped task to get started.'}
+                      {isAllProjectsScope
+                        ? 'No Spooling tasks across projects yet. Create work on each project’s Spooling board under Clients.'
+                        : isFlatBoardView
+                          ? 'No rows yet. Click "+ New row" to get started.'
+                          : isGhostBoard
+                            ? 'No tasks for this board yet. Assign tasks on Main Overview using the Board column or by placing them under this board’s section.'
+                            : 'No tasks yet. Use "+ New" on a group, add a group, or create an ungrouped task to get started.'}
                     </td>
                   </tr>
                 ) : (
@@ -4528,15 +4605,17 @@ export function TaskSpreadsheet({ clientId, projectId, boardType }: TaskSpreadsh
             {selectedTaskIds.size >= 2 ? ` (${selectedTaskIds.size} tasks)` : ''}
           </button>
           )}
-          <button
-            type="button"
-            onClick={() => {
-              handleQuickSubtask(contextMenu.taskId);
-              setContextMenu(null);
-            }}
-          >
-            Create subtask
-          </button>
+          {!isAllProjectsScope && (
+            <button
+              type="button"
+              onClick={() => {
+                handleQuickSubtask(contextMenu.taskId);
+                setContextMenu(null);
+              }}
+            >
+              Create subtask
+            </button>
+          )}
           <button
             type="button"
             onClick={() => {
@@ -4547,28 +4626,32 @@ export function TaskSpreadsheet({ clientId, projectId, boardType }: TaskSpreadsh
             Copy
             <span className={styles.contextShortcut}>Ctrl+C</span>
           </button>
-          <button
-            type="button"
-            disabled={!taskClipboard}
-            onClick={() => {
-              handlePaste(contextMenu.taskId);
-              setContextMenu(null);
-            }}
-          >
-            Paste below
-            <span className={styles.contextShortcut}>Ctrl+V</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              if (selectedTaskIds.size > 1) handleDuplicateSelected();
-              else handleDuplicate(contextMenu.taskId);
-              setContextMenu(null);
-            }}
-          >
-            Duplicate
-            {selectedTaskIds.size > 1 ? ` (${selectedTaskIds.size})` : ''}
-          </button>
+          {!isAllProjectsScope && (
+            <button
+              type="button"
+              disabled={!taskClipboard}
+              onClick={() => {
+                handlePaste(contextMenu.taskId);
+                setContextMenu(null);
+              }}
+            >
+              Paste below
+              <span className={styles.contextShortcut}>Ctrl+V</span>
+            </button>
+          )}
+          {!isAllProjectsScope && (
+            <button
+              type="button"
+              onClick={() => {
+                if (selectedTaskIds.size > 1) handleDuplicateSelected();
+                else handleDuplicate(contextMenu.taskId);
+                setContextMenu(null);
+              }}
+            >
+              Duplicate
+              {selectedTaskIds.size > 1 ? ` (${selectedTaskIds.size})` : ''}
+            </button>
+          )}
           <button
             type="button"
             className={styles.contextMenuDelete}
@@ -4592,7 +4675,7 @@ export function TaskSpreadsheet({ clientId, projectId, boardType }: TaskSpreadsh
           className={styles.contextMenu}
           onClick={(e) => e.stopPropagation()}
         >
-          {isUngroupedBucketGroupId(contextMenu.group.id) && (
+          {!isAllProjectsScope && isUngroupedBucketGroupId(contextMenu.group.id) && (
             <>
               <button
                 type="button"
@@ -4626,7 +4709,7 @@ export function TaskSpreadsheet({ clientId, projectId, boardType }: TaskSpreadsh
               </button>
             </>
           )}
-          {contextMenu.group.tier === 'section' && !isGhostBoard && (
+          {!isAllProjectsScope && contextMenu.group.tier === 'section' && !isGhostBoard && (
             <>
               <button
                 type="button"
@@ -4650,7 +4733,8 @@ export function TaskSpreadsheet({ clientId, projectId, boardType }: TaskSpreadsh
               </button>
             </>
           )}
-          {(contextMenu.group.tier === 'parent' || contextMenu.group.tier === 'child') &&
+          {!isAllProjectsScope &&
+            (contextMenu.group.tier === 'parent' || contextMenu.group.tier === 'child') &&
             !isUngroupedBucketGroupId(contextMenu.group.id) && (
             <>
               <button
@@ -4759,7 +4843,7 @@ export function TaskSpreadsheet({ clientId, projectId, boardType }: TaskSpreadsh
           )}
         </ContextMenuPanel>
       )}
-      {contextMenu?.kind === 'workspace' && (
+      {contextMenu?.kind === 'workspace' && !isAllProjectsScope && (
         <ContextMenuPanel
           key={`workspace-${contextMenu.x}-${contextMenu.y}`}
           x={contextMenu.x}
@@ -4824,6 +4908,7 @@ export function TaskSpreadsheet({ clientId, projectId, boardType }: TaskSpreadsh
           onClick={(e) => e.stopPropagation()}
         >
           {columnHeaderMenu.columnKey === 'title' &&
+            !isAllProjectsScope &&
             !isFlatBoardView &&
             ((columnHeaderMenu.sectionBoardType
               ? getSectionForBoard(

@@ -48,7 +48,18 @@ export function filterBoardCustomColumns(
 }
 
 function applyBoardColumnRules(boardType: ProjectBoardType, order: string[]): string[] {
-  return filterBoardColumnOrder(boardType, order);
+  // Project is dashboard-only (Spooling Dashboard all-projects scope).
+  return filterBoardColumnOrder(boardType, order).filter((id) => id !== 'project');
+}
+
+/** Insert Project after Title for cross-project Spooling Dashboard. */
+export function withCrossProjectColumnOrder(order: string[]): string[] {
+  const without = order.filter((id) => id !== 'project');
+  const titleIdx = without.indexOf('title');
+  if (titleIdx < 0) return ['project', ...without];
+  const next = [...without];
+  next.splice(titleIdx + 1, 0, 'project');
+  return next;
 }
 
 /** @deprecated Use filterBoardColumnOrder('documents', order) */
@@ -354,6 +365,7 @@ export const SHEET_COL_DRAG_PREFIX = 'col:';
 
 export const FIXED_SHEET_COLUMN_IDS = [
   'title',
+  'project',
   'description',
   'status',
   'assignee',
@@ -367,6 +379,7 @@ export type BoardSheetColumnOrderMap = Partial<Record<ProjectBoardType, string[]
 
 export const FIXED_SHEET_COLUMN_LABELS: Record<FixedSheetColumnId, string> = {
   title: 'Title',
+  project: 'Project',
   description: 'Description',
   status: 'Status',
   assignee: 'Assignee',

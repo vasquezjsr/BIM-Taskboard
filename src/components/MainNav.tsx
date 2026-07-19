@@ -1,6 +1,6 @@
 import { useStore } from '../store/useStore';
 import type { MainTab, Employee, DashboardType, OrgCategory } from '../types';
-import { canAccessOrgChart, canViewActivityLog, canViewOwnerDashboard, canViewTimeTracking, canViewVisibilityDashboard, canViewWeldLogDashboard, visibleDashboards } from '../utils/permissions';
+import { canAccessOrgChart, canViewActivityLog, canViewOwnerDashboard, canViewSpoolingDashboard, canViewTimeTracking, canViewVisibilityDashboard, canViewWeldLogDashboard, visibleDashboards } from '../utils/permissions';
 import { DASHBOARD_META } from '../data/dashboards';
 import type { EmployeePermissionsMap } from '../utils/orgChart';
 import styles from './MainNav.module.css';
@@ -29,6 +29,10 @@ function buildNavTabs(
 
   tabs.push({ id: 'clients', label: 'Clients' });
   tabs.push({ id: 'task-board', label: 'Task Board' });
+
+  if (canViewSpoolingDashboard(currentUserId, employees, employeePermissions)) {
+    tabs.push({ id: 'spooling-dashboard', label: 'Spooling Dashboard' });
+  }
 
   for (const dashboard of PHASE_DASHBOARDS) {
     if (dashboards.includes(dashboard)) {

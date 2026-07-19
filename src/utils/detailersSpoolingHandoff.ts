@@ -81,7 +81,47 @@ export function applyDetailersReadyForSpoolingHandoff(
   };
 }
 
-/** If status leaves the spooling handoff set, drop the mirror and return to Detailers. */
+/** Spooling status that explicitly hands the package back to Detailers as Rework. */
+export const RETURN_TO_DETAILING_STATUS = 'return-to-detailing';
+
+/**
+ * When Spooling sets Return to Detailing: move ownership back to Detailers,
+ * land on Rework (visible / actionable), and clear the mirror flag.
+ */
+export function applySpoolingReturnToDetailingHandoff(
+  task: Task,
+  updates: Partial<Task>
+): Partial<Task> {
+  if (!updates.status || updates.status !== RETURN_TO_DETAILING_STATUS) return updates;
+
+  const onSpooling =
+    task.boardType === 'spooling' ||
+    (updates.boardType as ProjectBoardType | undefined) === 'spooling' ||
+    task.customFields?.[DETAILERS_MIRROR_FIELD] === '1';
+
+  if (!onSpooling) return updates;
+
+  const detailersGroupId = detailersMirrorGroupId(task) ?? task.groupId;
+  const nextFields = clearDetailersSpoolingMirrorFields({
+    ...(task.customFields ?? {}),
+    ...(updates.customFields ?? {}),
+  });
+
+  return {
+    ...updates,
+    status: 'rework',
+    boardType: 'detailers',
+    groupId: detailersGroupId,
+    customFields: nextFields,
+  };
+}
+
+/**
+ * If status leaves the Detailers↔Spooling tracking set, drop the mirror flag.
+ * Only return ownership to Detailers when the task is still on Spooling
+ * (e.g. rework / not-started). Never yank Fab/Shipping/Field packages back —
+ * that was sending Material Pulled packages to Detailers as Not Started.
+ */
 export function applyDetailersSpoolingMirrorCleanup(
   task: Task,
   updates: Partial<Task>
@@ -98,10 +138,62 @@ export function applyDetailersSpoolingMirrorCleanup(
   delete nextFields[DETAILERS_MIRROR_FIELD];
   delete nextFields[DETAILERS_MIRROR_GROUP_FIELD];
 
+  const nextBoard =
+    (updates.boardType as ProjectBoardType | undefined) ??
+    (task.boardType !== 'employee' && task.boardType !== 'main'
+      ? (task.boardType as ProjectBoardType)
+      : null);
+
+  // Downstream shop boards own the package after Ready for Fab — clear mirror only.
+  if (
+    nextBoard === 'fab' ||
+    nextBoard === 'shipping' ||
+    nextBoard === 'field' ||
+    task.boardType === 'fab' ||
+    task.boardType === 'shipping' ||
+    task.boardType === 'field'
+  ) {
+    return {
+      ...updates,
+      customFields: nextFields,
+    };
+  }
+
+  // Still on Spooling (or Detailers mirror): hand ownership back to Detailers.
   return {
     ...updates,
     boardType: 'detailers',
     groupId: detailersGroupId,
     customFields: nextFields,
   };
+}
+
+/** Clear Detailers mirror stamps (e.g. when promoting Spooling → Fab). */
+export function clearDetailersSpoolingMirrorFields(
+  customFields: Record<string, string> | null | undefined
+): Record<string, string> {
+  const next = { ...(customFields ?? {}) };
+  delete next[DETAILERS_MIRROR_FIELD];
+  delete next[DETAILERS_MIRROR_GROUP_FIELD];
+  return next;
+}
+
+/** Nested assembly / subtask ids under a parent package task (BFS). */
+export function collectDescendantTaskIds(tasks: Task[], rootId: string): string[] {
+  const childrenByParent = new Map<string, string[]>();
+  for (const task of tasks) {
+    if (!task.parentTaskId) continue;
+    const list = childrenByParent.get(task.parentTaskId);
+    if (list) list.push(task.id);
+    else childrenByParent.set(task.parentTaskId, [task.id]);
+  }
+  const ids: string[] = [];
+  const queue = [...(childrenByParent.get(rootId) ?? [])];
+  while (queue.length > 0) {
+    const id = queue.shift()!;
+    ids.push(id);
+    const kids = childrenByParent.get(id);
+    if (kids?.length) queue.push(...kids);
+  }
+  return ids;
 }

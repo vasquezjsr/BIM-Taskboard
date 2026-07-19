@@ -112,8 +112,7 @@
 }
 
 .assignSelectPlaceholder {
-  display: inline-block;
-  min-width: 9rem;
+  display: none;
 }
 
 .assignReadout {
@@ -455,7 +454,8 @@
 .assemblyRowActive,
 .assemblyRowReleased {
   display: grid;
-  grid-template-columns: minmax(6rem, 1fr) minmax(9rem, 11rem) auto;
+  /* Title takes all leftover width; assign/status only size to their content. */
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 8px;
   padding: 7px 8px;
@@ -512,18 +512,19 @@
 .assemblyTitle,
 .fileName {
   font-size: 0.84rem;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  /* Use the full title column; wrap only when the pane edge reaches the text. */
   white-space: normal;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 
 .rowHint,
 .fileType {
   font-size: 0.7rem;
   color: var(--text-secondary, #9ba3b8);
-  overflow-wrap: anywhere;
-  word-break: break-word;
   white-space: normal;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 
 .openBtn,

@@ -16,6 +16,7 @@ import {
   type BoardroomPackageBatch,
   type BoardroomPackageManifest,
 } from './boardroomPackageImport';
+import { clearDetailersSpoolingMirrorFields } from './detailersSpoolingHandoff';
 
 type TaskTreeContext = {
   projects: Project[];
@@ -439,20 +440,19 @@ export function promoteSsv3SpoolingTaskToFab(
 
   tasks = tasks.map((task) => {
     if (!treeIds.has(task.id)) return task;
+    // Detailers↔Spooling mirror must not follow the package into Fab — otherwise
+    // Material Pulled (and other fab statuses) get yanked back to Detailers.
+    const fields = clearDetailersSpoolingMirrorFields(task.customFields);
+    if (task.id === spoolingTask.id) {
+      fields[SSV3_FIELD.kind] = SSV3_KIND_PACKAGE;
+      fields[SSV3_FIELD.fabPackageTaskId] = spoolingTask.id;
+    }
     return {
       ...task,
       boardType: 'fab',
       groupId: null,
       status: 'queued',
-      customFields: {
-        ...task.customFields,
-        ...(task.id === spoolingTask.id
-          ? {
-              [SSV3_FIELD.kind]: SSV3_KIND_PACKAGE,
-              [SSV3_FIELD.fabPackageTaskId]: spoolingTask.id,
-            }
-          : {}),
-      },
+      customFields: fields,
     };
   });
 

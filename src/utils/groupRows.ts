@@ -1,4 +1,4 @@
-import type { CustomBoard, Project, ProjectBoardType, Task, TaskDurationRange, TaskGroup } from '../types';
+import type { Client, CustomBoard, Project, ProjectBoardType, Task, TaskDurationRange, TaskGroup } from '../types';
 import { getBoardTaskStatuses, isCompleteStatus, type BoardTaskStatusesMap, type ProjectBoardTaskStatusesMap } from './taskStatuses';
 import {
   effectiveGroupIdForDetailersBoard,
@@ -12,6 +12,8 @@ import {
   isSubBoardType,
   normalizeSubBoardTabOrder,
 } from '../types';
+import { isTemplateProject } from './projectTemplate';
+import { projectJobLabel } from './projectJobLabel';
 
 export type SheetRow =
   | { type: 'group'; group: TaskGroup; depth: number; isGhost?: boolean }
@@ -831,6 +833,50 @@ export function buildSheetRows(
     pushSectionUngroupedTasks(mergedUngrouped);
   }
 
+  return rows;
+}
+
+/**
+ * Spooling Dashboard: concatenate each non-template project's Spooling board rows,
+ * ordered by project job label so jobs cluster without Clients-style nav.
+ */
+export function buildCrossProjectSpoolingSheetRows(
+  groups: TaskGroup[],
+  tasks: Task[],
+  projects: Project[],
+  clients: Client[],
+  collapsedIds: Set<string>,
+  subBoardTabOrder: ProjectBoardType[],
+  customBoards: CustomBoard[] = []
+): SheetRow[] {
+  const sortedProjects = projects
+    .filter((project) => !isTemplateProject(project))
+    .map((project) => ({
+      project,
+      label: projectJobLabel(project.id, projects, clients),
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }));
+
+  const rows: SheetRow[] = [];
+  for (const { project } of sortedProjects) {
+    const projectOrder = getProjectSubBoardOrder(
+      project.id,
+      subBoardTabOrder,
+      customBoards
+    );
+    const projectRows = buildSheetRows(
+      groups,
+      tasks,
+      project.clientId,
+      project.id,
+      'spooling',
+      collapsedIds,
+      projectOrder,
+      customBoards
+    );
+    if (projectRows.length === 0) continue;
+    rows.push(...projectRows);
+  }
   return rows;
 }
 

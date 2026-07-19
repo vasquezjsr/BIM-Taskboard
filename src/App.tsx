@@ -20,6 +20,7 @@ import { FabWorkstationView } from './components/FabWorkstationView';
 import { FieldWorkstationView } from './components/FieldWorkstationView';
 import { ShippingWorkstationView } from './components/ShippingWorkstationView';
 import { WeldLogDashboardView } from './components/WeldLogDashboardView';
+import { SpoolingDashboardView } from './components/SpoolingDashboardView';
 
 import { OwnerDashboardView } from './components/OwnerDashboardView';
 import { VisibilityDashboardView } from './components/VisibilityDashboardView';
@@ -309,6 +310,8 @@ function App() {
         {activeMainTab === 'fab-dashboard' && <FabWorkstationView />}
 
         {activeMainTab === 'weld-log-dashboard' && <WeldLogDashboardView />}
+
+        {activeMainTab === 'spooling-dashboard' && <SpoolingDashboardView />}
 
         {activeMainTab === 'shipping-dashboard' && <ShippingWorkstationView />}
 
