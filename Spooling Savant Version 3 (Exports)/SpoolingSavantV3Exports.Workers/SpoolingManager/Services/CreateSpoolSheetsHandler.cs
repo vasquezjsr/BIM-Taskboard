@@ -22,7 +22,7 @@ namespace SpoolingSavantV3Exports.Workers.SpoolingManager.Services;
 
 public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 {
-	public const string DiagnosticBuildTag = "2026-07-18-1910-TAG-CLEAR-SOLID";
+	public const string DiagnosticBuildTag = "2026-07-18-2248-NO-WELD-ORGANIZE";
 
 	internal static string GetWorkersBuildBanner()
 	{
@@ -4962,9 +4962,8 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 	}
 
 	/// <summary>
-	/// Post-pass after existing placement/overlap/leader finalize: nudge tag heads so
-	/// the item-number body clears silhouette geometry and other tags (host ring).
-	/// Organizes every IndependentTag in the view on this assembly — not only newly created.
+	/// Post-pass after placement: optional host-ring organize for MEP item tags only.
+	/// Never runs on View3D and never touches weld (SWeld) tags — both crash Revit.
 	/// </summary>
 	private static void TryOrganizeCreatedSpoolTags(
 		Document doc,
@@ -4973,6 +4972,13 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 		IList<TagLayoutData> layoutTags)
 	{
 		if (doc == null || assembly == null || view == null)
+		{
+			return;
+		}
+
+		// Weld tags on 3D + SpoolTagOrganizer have crashed Revit (stack overflow).
+		// Leave weld tags exactly where AppendSWeldTags placed them.
+		if (view is View3D)
 		{
 			return;
 		}
@@ -4990,7 +4996,7 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 			{
 				foreach (TagLayoutData layout in layoutTags)
 				{
-					if (layout?.Tag != null)
+					if (layout?.Tag != null && !IsWeldIndependentTag(doc, layout.Tag))
 					{
 						tagIds.Add(((Element)layout.Tag).Id);
 					}
@@ -5002,7 +5008,7 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 				.OfClass(typeof(IndependentTag))
 				.Cast<IndependentTag>())
 			{
-				if (tag == null || tag.IsOrphaned)
+				if (tag == null || tag.IsOrphaned || IsWeldIndependentTag(doc, tag))
 				{
 					continue;
 				}
@@ -5057,12 +5063,43 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 				File.AppendAllText(
 					Path.Combine(logDir, "SpoolTagOrganizer.log"),
 					DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
-					+ "\tWRAPPER_ERROR " + ex.Message + Environment.NewLine);
+					+ "\tWRAPPER_ERROR " + DiagnosticBuildTag + " " + ex.Message + Environment.NewLine);
 			}
 			catch
 			{
 			}
 		}
+	}
+
+	/// <summary>True when the tag is hosted on a fabrication weld / SWeld part.</summary>
+	private static bool IsWeldIndependentTag(Document doc, IndependentTag tag)
+	{
+		if (doc == null || tag == null)
+		{
+			return false;
+		}
+
+		try
+		{
+			foreach (Reference reference in tag.GetTaggedReferences())
+			{
+				if (reference == null)
+				{
+					continue;
+				}
+
+				FabricationPart part = doc.GetElement(reference.ElementId) as FabricationPart;
+				if (part != null && ShouldReceiveSWeldTag(part))
+				{
+					return true;
+				}
+			}
+		}
+		catch
+		{
+		}
+
+		return false;
 	}
 
 	private static List<FabricationPart> GetTaggablePartsForView(Document doc, AssemblyInstance assembly, View view)
@@ -7920,8 +7957,9 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 				}
 			}
 
-			// If tags/dims still collide after the viewbox rule, push farther down.
-			EnsureViewportTitleClearance(doc, viewport, view, clearanceInches: 0.125);
+			// Do NOT call EnsureViewportTitleClearance here. On elevations with wide
+			// dims it shoved titles to the title block. GitHub rule stays: 1/8" under
+			// the blue viewbox only.
 		}
 		catch
 		{

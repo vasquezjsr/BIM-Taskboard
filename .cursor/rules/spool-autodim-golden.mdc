@@ -1,0 +1,24 @@
+---
+description: Spooling Savant V3 auto-dimension locked rules and golden examples
+globs: Spooling Savant Version 3 (Exports)/**/*
+alwaysApply: false
+---
+
+# Spool auto-dimension (LOCKED)
+
+When editing Workers auto-dim (`CreateSpoolSheetsHandler*`, `FabricationPartClassification`, related):
+
+1. Read `Spooling Savant Version 3 (Exports)/AUTO_DIMENSION_RULES.md` first.
+2. Read `GOLDEN_AUTODIM_EXAMPLES.json` — do not regress captured examples.
+3. **Material does not matter.** Snap law (follow to a T):
+   - **Elbow/tee** → pipe **centerline intersection** (the corner “dot”), never body/outer curve.
+   - **Flange (any orientation)** → **middle node on the OUTER face only**, first try. Never snap the back/pipe joint and “push” to the face. Face gaskets are not the back. Never bottom/corner node.
+   - **Olet / OLED** → **short end of host PIPE → olet center** only. Never flange face. Never olet→olet.
+   - Only view H/V Linear — never Aligned / never leave a tilted dim after regen.
+4. **Offset:** First dim on a side clears **only the parts it originates from** (olet locate → olet + host end — never flange OD / whole assembly). Never through those origin parts. **Stacked dims only** (next dim on that same side) nest by the dim style **Dimension Line Snap Distance** (this style = **1/4″**) from the dim under them — not by re-clearing wider geometry. **Olet locate:** pull to the side the olet faces. Facing user on V → L/R discretionary, no dim contact. Flange-to-flange on V stacks on the **same** side as the olet (outer, + snap).
+5. **Never delete a dim** unless a proven square replacement already exists.
+6. Lesson indices are soft prefs — reject if sample > ½″ from geometric C/F.
+7. After Workers code changes: rebuild via `scripts/Build-Workers.ps1`, then user clicks **SS Manager V3**. Confirm `DiagnosticBuildTag` dialog. Do not ask the user to build.
+8. Do not invent copper-only / steel-only dim behavior. Universal rules only.
+
+Adding a new approved sheet or teaching board: capture into `GOLDEN_AUTODIM_EXAMPLES.json` per `GOLDEN_AUTODIM.md`. From the canvas: user says “capture this board as golden” or clicks **Submit as golden**.

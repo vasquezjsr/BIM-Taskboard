@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
@@ -237,6 +238,7 @@ public partial class SpoolingManagerPane : System.Windows.Controls.UserControl
 	public void LoadAssemblies(UIApplication uiapp)
 	{
 		_uiapp = uiapp;
+		TryShowWorkersHotloadBanner();
 		ApplyPlotPackagesButtonVisibility();
 		if (((uiapp != null) ? uiapp.Application : null) != null)
 		{
@@ -245,6 +247,40 @@ public partial class SpoolingManagerPane : System.Windows.Controls.UserControl
 		LoadSavedLogo();
 		ApplyUiAppearance();
 		RefreshAssemblies();
+	}
+
+	/// <summary>
+	/// Banner lives in Workers (not the locked host DLL) so every SS Manager ribbon
+	/// reload shows which build is actually running.
+	/// </summary>
+	private static void TryShowWorkersHotloadBanner()
+	{
+		try
+		{
+			Assembly asm = typeof(SpoolingManagerPane).Assembly;
+			string tag = CreateSpoolSheetsHandler.DiagnosticBuildTag;
+			string ver = asm.GetName().Version?.ToString() ?? "?";
+			string loc = asm.Location ?? "(no location)";
+			string lwt = File.Exists(loc) ? File.GetLastWriteTime(loc).ToString("yyyy-MM-dd HH:mm:ss") : "n/a";
+			// Always show — proves which Workers build the ribbon actually loaded.
+			TaskDialog.Show(
+				"SS Manager V3",
+				"Workers loaded:\n"
+				+ tag + "\n"
+				+ "Version: " + ver + "\n"
+				+ "LastWriteTime: " + lwt + "\n\n"
+				+ loc);
+		}
+		catch (Exception ex)
+		{
+			try
+			{
+				TaskDialog.Show("SS Manager V3", "Workers banner failed:\n" + ex.Message);
+			}
+			catch
+			{
+			}
+		}
 	}
 
 	private void RefreshAssemblies()

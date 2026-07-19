@@ -51,6 +51,12 @@ export const DEFAULT_DETAILERS_TASK_STATUSES: TaskStatusDefinition[] = [
   { id: 'hangers-supports', label: 'Hangers & Supports', color: '#7dd3fc' },
   { id: 'detailer-qa', label: 'Detailer QA', color: '#fde68a' },
   { id: 'ready-for-coordination', label: 'Ready for Coordination', color: '#6ee7b7' },
+  {
+    id: 'ready-for-spooling',
+    label: 'Ready for Spooling',
+    color: '#fdba74',
+    autoAssignTeam: 'support',
+  },
   { id: 'rework', label: 'Rework', color: '#fca5a5' },
   { id: 'on-hold', label: 'On Hold', color: '#d8b4fe' },
   { id: 'complete', label: 'Complete', color: '#86efac', countsAsComplete: true },
@@ -357,6 +363,38 @@ export function ensureFabWorkstationStatuses(
   );
 }
 
+/** Inject Ready for Spooling into persisted Detailers lists that predate the handoff status. */
+export function ensureDetailersReadyForSpoolingStatus(
+  statuses: TaskStatusDefinition[]
+): TaskStatusDefinition[] {
+  if (statuses.some((status) => status.id === 'ready-for-spooling')) return statuses;
+  const insert: TaskStatusDefinition = {
+    id: 'ready-for-spooling',
+    label: 'Ready for Spooling',
+    color: '#fdba74',
+    autoAssignTeam: 'support',
+  };
+  const afterIdx = statuses.findIndex((status) => status.id === 'ready-for-coordination');
+  if (afterIdx >= 0) {
+    const next = [...statuses];
+    next.splice(afterIdx + 1, 0, insert);
+    return next;
+  }
+  const reworkIdx = statuses.findIndex((status) => status.id === 'rework');
+  if (reworkIdx >= 0) {
+    const next = [...statuses];
+    next.splice(reworkIdx, 0, insert);
+    return next;
+  }
+  const completeIdx = statuses.findIndex((status) => status.id === 'complete');
+  if (completeIdx >= 0) {
+    const next = [...statuses];
+    next.splice(completeIdx, 0, insert);
+    return next;
+  }
+  return [...statuses, insert];
+}
+
 /** Terminal / leave-Shipping package status (handoff to Field). */
 export const SHIPPING_HANDED_TO_FIELD_STATUSES = ['received-field'] as const;
 
@@ -471,12 +509,16 @@ export function getBoardTaskStatuses(
 
   if (projectId && projectBoardTaskStatuses?.[projectId]?.[boardType]?.length) {
     const list = normalizeTaskStatuses(projectBoardTaskStatuses[projectId]![boardType]);
-    return boardType === 'fab' ? ensureFabWorkstationStatuses(list) : list;
+    if (boardType === 'fab') return ensureFabWorkstationStatuses(list);
+    if (boardType === 'detailers') return ensureDetailersReadyForSpoolingStatus(list);
+    return list;
   }
   const list = boardTaskStatuses[boardType];
   if (list?.length) {
     const normalized = normalizeTaskStatuses(list);
-    return boardType === 'fab' ? ensureFabWorkstationStatuses(normalized) : normalized;
+    if (boardType === 'fab') return ensureFabWorkstationStatuses(normalized);
+    if (boardType === 'detailers') return ensureDetailersReadyForSpoolingStatus(normalized);
+    return normalized;
   }
   const main = boardTaskStatuses.main;
   if (main?.length) return normalizeTaskStatuses(main);

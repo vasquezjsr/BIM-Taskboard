@@ -1,6 +1,10 @@
 import type { CustomBoard, Project, ProjectBoardType, Task, TaskDurationRange, TaskGroup } from '../types';
 import { getBoardTaskStatuses, isCompleteStatus, type BoardTaskStatusesMap, type ProjectBoardTaskStatusesMap } from './taskStatuses';
 import {
+  effectiveGroupIdForDetailersBoard,
+  isDetailersMirroredSpoolingTask,
+} from './detailersSpoolingHandoff';
+import {
   MAIN_SECTION_BOARDS,
   getBoardLabel,
   getProjectSubBoardOrder,
@@ -354,6 +358,15 @@ export function taskCountsAsUngroupedInSection(
   groups: TaskGroup[]
 ): boolean {
   if (task.parentTaskId) return false;
+  // Mirrored handoff tasks stay under their Detailers level on Main Overview —
+  // Spooling board tab still lists them; don't also dump them in Spooling Ungrouped.
+  if (
+    isDetailersMirroredSpoolingTask(task) &&
+    section.sectionBoardType === 'spooling' &&
+    effectiveGroupIdForDetailersBoard(task)
+  ) {
+    return false;
+  }
   if (taskBranchBoardType(task, groups) !== section.sectionBoardType) return false;
   if (!task.groupId) return true;
   const group = groups.find((g) => g.id === task.groupId);
@@ -498,6 +511,8 @@ export function repairTasksOnWrongBoardSection(tasks: Task[], groups: TaskGroup[
   return tasks.map((task) => {
     if (!task.groupId || !task.projectId || task.parentTaskId) return task;
     if (task.boardType === 'main' || task.boardType === 'employee') return task;
+    // Mirrored Detailers→Spooling tasks keep their Detailers level group on purpose.
+    if (isDetailersMirroredSpoolingTask(task)) return task;
 
     let current = groups.find((g) => g.id === task.groupId);
     let sectionBoard: ProjectBoardType | null = null;
@@ -543,7 +558,10 @@ export function taskBelongsToGhostBoard(
 ): boolean {
   if (task.clientId !== clientId || task.projectId !== projectId) return false;
   const root = taskRootForBoard(task, projectTasks.length > 0 ? projectTasks : [task]);
-  return taskBranchBoardType(root, groups) === boardType;
+  if (taskBranchBoardType(root, groups) === boardType) return true;
+  // Ready for Spooling moves ownership to Spooling but Detailers still tracks process.
+  if (boardType === 'detailers' && isDetailersMirroredSpoolingTask(root)) return true;
+  return false;
 }
 
 export function getSectionForBoard(
@@ -635,7 +653,14 @@ export function buildSheetRows(
 
   const tasksInGroup = (groupId: string) => {
     return sortTasksByPriority(
-      boardTasks.filter((t) => t.groupId === groupId && !t.parentTaskId)
+      boardTasks.filter((t) => {
+        if (t.parentTaskId) return false;
+        // Mirrored Spooling tasks still sit under their Detailers level on that board.
+        if (boardType === 'detailers') {
+          return effectiveGroupIdForDetailersBoard(t) === groupId;
+        }
+        return t.groupId === groupId;
+      })
     );
   };
 
@@ -714,8 +739,14 @@ export function buildSheetRows(
       for (const child of childrenOf(section.id)) {
         pushGroup(child, 0, true);
       }
+      // Include tasks with no group, plus handoff tasks whose group still lives under Detailers
+      // (Ready for Spooling keeps the Detailers level but must show on the Spooling board).
       const ungroupedInSection = sortTasksByPriority(
-        ghostTasks.filter((t) => !t.groupId && !t.parentTaskId)
+        ghostTasks.filter((t) => {
+          if (t.parentTaskId) return false;
+          if (!t.groupId) return true;
+          return !isGroupUnderSection(groups, t.groupId, section.id);
+        })
       );
       // No dedicated Ungrouped group row — list ungrouped tasks at the end with a title suffix.
       for (const task of ungroupedInSection) {

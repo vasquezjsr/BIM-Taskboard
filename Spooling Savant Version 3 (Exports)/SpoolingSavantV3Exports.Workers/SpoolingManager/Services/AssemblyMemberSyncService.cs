@@ -51,7 +51,14 @@ internal static class AssemblyMemberSyncService
 			CreateSpoolSheetsHandler.AssignAssemblyContinuationValues(app, doc, assembly);
 
 		RefreshTagsIfSheetExists(doc, assembly, productKind, settings, membersNeedingSync, forceFullSheetRefresh || membersNeedProcessing);
-		RefreshWeldLogIfSheetExists(doc, assembly, productKind, settings, forceFullSheetRefresh || settings.NumberWeldsEnabled);
+		// Only rewrite weld-log notes when welds/members actually changed — not on every sync
+		// while Number Welds is merely enabled.
+		RefreshWeldLogIfSheetExists(
+			doc,
+			assembly,
+			productKind,
+			settings,
+			forceFullSheetRefresh || weldMembersNeedingSync || membersNeedProcessing);
 	}
 
 	private static bool AssemblyHasWeldMemberNeedingSync(Document doc, AssemblyInstance assembly)

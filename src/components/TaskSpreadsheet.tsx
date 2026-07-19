@@ -131,6 +131,7 @@ import { TaskModal } from './TaskModal';
 import { boardTypeForGroup } from '../utils/history';
 import {
   getMainOverviewSectionBoardTypes,
+  getMainOverviewSectionColumns,
   getMainOverviewSectionColumnOrder,
   getMainOverviewSectionSheetLayout,
   overviewSectionColDragId,
@@ -343,12 +344,26 @@ function groupDropHintPlacement(
   return pointerPlacement === 'before' ? 'before' : 'after';
 }
 
+function isSheetColumnDragId(id: string): boolean {
+  return Boolean(parseSheetColDragId(id) || parseOverviewSectionColDragId(id));
+}
+
 const sheetCollisionDetection: CollisionDetection = (args) => {
   const activeId = String(args.active.id);
   const containers = args.droppableContainers.filter(
     (container) => String(container.id) !== activeId
   );
   if (containers.length === 0) return [];
+
+  // Column reorder must never compete with row/group/board droppables — otherwise
+  // drag-end resolves a task/group id, reorder is skipped, and the header snaps back.
+  if (isSheetColumnDragId(activeId)) {
+    const columnContainers = containers.filter((container) =>
+      isSheetColumnDragId(String(container.id))
+    );
+    if (columnContainers.length === 0) return [];
+    return closestCenter({ ...args, droppableContainers: columnContainers });
+  }
 
   const pickAtPointer = (candidates: typeof containers) => {
     if (!args.pointerCoordinates) return [];
@@ -1836,14 +1851,46 @@ export function TaskSpreadsheet({ clientId, projectId, boardType }: TaskSpreadsh
     boardSheetColumnOrder,
     boardSheetColumns,
   ]);
-  const sheetColumns = useMemo(
-    () => getBoardSheetColumns(boardType, boardSheetColumns),
-    [boardType, boardSheetColumns]
-  );
-  const columnOrder = useMemo(
-    () => getBoardSheetColumnOrder(boardType, boardSheetColumnOrder, boardSheetColumns, isOverview),
-    [boardType, boardSheetColumnOrder, boardSheetColumns, isOverview]
-  );
+  const sheetColumns = useMemo(() => {
+    // Board tabs use the same column set as their Main Overview section.
+    if (!isOverview && boardType !== 'main') {
+      return getMainOverviewSectionColumns(
+        boardType,
+        mainOverviewSectionSheetColumns,
+        boardSheetColumns
+      );
+    }
+    return getBoardSheetColumns(boardType, boardSheetColumns);
+  }, [
+    isOverview,
+    boardType,
+    boardSheetColumns,
+    mainOverviewSectionSheetColumns,
+  ]);
+  const columnOrder = useMemo(() => {
+    if (!isOverview && boardType !== 'main') {
+      return getMainOverviewSectionColumnOrder(
+        boardType,
+        mainOverviewSectionColumnOrder,
+        mainOverviewSectionSheetColumns,
+        boardSheetColumnOrder,
+        boardSheetColumns
+      );
+    }
+    return getBoardSheetColumnOrder(
+      boardType,
+      boardSheetColumnOrder,
+      boardSheetColumns,
+      isOverview
+    );
+  }, [
+    isOverview,
+    boardType,
+    boardSheetColumnOrder,
+    boardSheetColumns,
+    mainOverviewSectionColumnOrder,
+    mainOverviewSectionSheetColumns,
+  ]);
   const columnSlots = useMemo(
     () => buildSheetColumnSlots(columnOrder, sheetColumns, isOverview),
     [columnOrder, sheetColumns, isOverview]
@@ -3539,7 +3586,12 @@ export function TaskSpreadsheet({ clientId, projectId, boardType }: TaskSpreadsh
 
   const handleDragStart = (event: DragStartEvent) => {
     const activeId = String(event.active.id);
-    if (parseSheetColDragId(activeId) || parseOverviewSectionColDragId(activeId)) return;
+    if (isSheetColumnDragId(activeId)) {
+      lastDragOverIdRef.current = null;
+      setSheetDropHint(null);
+      setSheetDragHoverBoard(null);
+      return;
+    }
 
     lastDragOverIdRef.current = null;
     lastValidGroupActionRef.current = null;
@@ -3599,6 +3651,18 @@ export function TaskSpreadsheet({ clientId, projectId, boardType }: TaskSpreadsh
   };
 
   const handleDragOver = (event: DragOverEvent) => {
+    const activeId = String(event.active.id);
+    // Column reorder uses SortableContext + closestCenter; do not remap to row drops.
+    if (isSheetColumnDragId(activeId)) {
+      const overId = event.over ? String(event.over.id) : null;
+      if (overId && isSheetColumnDragId(overId)) {
+        lastDragOverIdRef.current = overId;
+      }
+      setSheetDropHint(null);
+      setSheetDragHoverBoard(null);
+      return;
+    }
+
     const target = resolveDragOverTarget(event, scrollAreaRef.current);
     if (!target) {
       setSheetDropHint(null);
@@ -3728,23 +3792,76 @@ export function TaskSpreadsheet({ clientId, projectId, boardType }: TaskSpreadsh
     const movingTaskIds = activeDragTaskIds;
     const movingGroupIds = activeDragGroupIds;
     const { active } = event;
+    const activeId = String(active.id);
     const savedValidGroupAction = lastValidGroupActionRef.current;
     const savedValidTaskDrop = lastValidTaskDropRef.current;
     const savedOverId = lastDragOverIdRef.current;
     const savedPlacement = lastDropPlacementRef.current;
+
+    // Column drops must use the sortable over-id only. Row hit-testing under the
+    // pointer would steal the target and abort reorder (header snaps back).
+    if (isSheetColumnDragId(activeId)) {
+      const overId =
+        (event.over && isSheetColumnDragId(String(event.over.id))
+          ? String(event.over.id)
+          : null) ??
+        (savedOverId && isSheetColumnDragId(savedOverId) ? savedOverId : null);
+      clearSheetDragState();
+      if (!overId || overId === activeId) return;
+
+      const overviewActiveCol = parseOverviewSectionColDragId(activeId);
+      if (overviewActiveCol) {
+        const overParsed = parseOverviewSectionColDragId(overId);
+        if (
+          !overParsed ||
+          overParsed.sectionBoardType !== overviewActiveCol.sectionBoardType ||
+          overviewActiveCol.columnId === overParsed.columnId
+        ) {
+          return;
+        }
+        const sectionOrder = getMainOverviewSectionColumnOrder(
+          overviewActiveCol.sectionBoardType,
+          mainOverviewSectionColumnOrder,
+          mainOverviewSectionSheetColumns,
+          boardSheetColumnOrder,
+          boardSheetColumns
+        );
+        const oldIndex = sectionOrder.indexOf(overviewActiveCol.columnId);
+        const newIndex = sectionOrder.indexOf(overParsed.columnId);
+        if (oldIndex === -1 || newIndex === -1) return;
+        reorderMainOverviewSectionColumns(
+          overviewActiveCol.sectionBoardType,
+          arrayMove(sectionOrder, oldIndex, newIndex)
+        );
+        return;
+      }
+
+      const activeColId = parseSheetColDragId(activeId);
+      if (activeColId) {
+        if (isOverview) return;
+        const overCol = parseSheetColDragId(overId);
+        if (!overCol || activeColId === overCol) return;
+        const oldIndex = columnOrder.indexOf(activeColId);
+        const newIndex = columnOrder.indexOf(overCol);
+        if (oldIndex === -1 || newIndex === -1) return;
+        reorderBoardSheetColumns(boardType, arrayMove(columnOrder, oldIndex, newIndex));
+      }
+      return;
+    }
+
     const dragTarget = resolveDragOverTarget(event, scrollAreaRef.current, {
       overId: savedOverId,
       placement: savedPlacement,
     });
     const placement = dragTarget?.placement ?? savedPlacement;
     let overId = dragTarget?.overId ?? savedOverId;
-    if (!overId || overId === String(active.id)) {
+    if (!overId || overId === activeId) {
       overId = savedOverId;
     }
 
     const targetBoard = overId ? parseBoardDropId(overId) : null;
-    const activeGroupId = parseGroupDropId(String(active.id));
-    const activeTaskId = parseTaskDragId(String(active.id));
+    const activeGroupId = parseGroupDropId(activeId);
+    const activeTaskId = parseTaskDragId(activeId);
 
     if (targetBoard && (activeGroupId || activeTaskId)) {
       if (activeGroupId) {
@@ -3771,46 +3888,7 @@ export function TaskSpreadsheet({ clientId, projectId, boardType }: TaskSpreadsh
     }
 
     clearSheetDragState();
-    if (!overId || overId === String(active.id)) return;
-
-    const overviewActiveCol = parseOverviewSectionColDragId(String(active.id));
-    if (overviewActiveCol) {
-      const overParsed = parseOverviewSectionColDragId(overId);
-      if (
-        !overParsed ||
-        overParsed.sectionBoardType !== overviewActiveCol.sectionBoardType ||
-        overviewActiveCol.columnId === overParsed.columnId
-      ) {
-        return;
-      }
-      const sectionOrder = getMainOverviewSectionColumnOrder(
-        overviewActiveCol.sectionBoardType,
-        mainOverviewSectionColumnOrder,
-        mainOverviewSectionSheetColumns,
-        boardSheetColumnOrder,
-        boardSheetColumns
-      );
-      const oldIndex = sectionOrder.indexOf(overviewActiveCol.columnId);
-      const newIndex = sectionOrder.indexOf(overParsed.columnId);
-      if (oldIndex === -1 || newIndex === -1) return;
-      reorderMainOverviewSectionColumns(
-        overviewActiveCol.sectionBoardType,
-        arrayMove(sectionOrder, oldIndex, newIndex)
-      );
-      return;
-    }
-
-    const activeColId = parseSheetColDragId(String(active.id));
-    if (activeColId) {
-      if (isOverview) return;
-      const overCol = parseSheetColDragId(overId);
-      if (!overCol || activeColId === overCol) return;
-      const oldIndex = columnOrder.indexOf(activeColId);
-      const newIndex = columnOrder.indexOf(overCol);
-      if (oldIndex === -1 || newIndex === -1) return;
-      reorderBoardSheetColumns(boardType, arrayMove(columnOrder, oldIndex, newIndex));
-      return;
-    }
+    if (!overId || overId === activeId) return;
 
     if (activeGroupId) {
       const groupIds = movingGroupIds.length > 0 ? movingGroupIds : [activeGroupId];

@@ -100,7 +100,8 @@ public static class SpoolTagOrganizer
 			return Array.Empty<ElementId>();
 		}
 
-		doc.Regenerate();
+		// Avoid doc.Regenerate() here — during Create Spool Sheets it stacks on top of
+		// AssemblyViewUtils greps and has crashed Revit with STATUS_STACK_OVERFLOW.
 
 		ViewPlane plane = new ViewPlane(spoolView);
 

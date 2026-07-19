@@ -159,17 +159,16 @@ function isLegacyMaterialColumn(column: SheetColumnDefinition): boolean {
 }
 
 function insertColumnIdInOrder(order: string[], columnId: string): string[] {
-  // Trade always sits immediately after Title (reposition if misplaced).
-  if (columnId === PREMADE_TRADE_COLUMN_ID) {
-    const without = order.filter((id) => id !== columnId);
-    const titleIndex = without.indexOf('title');
-    const insertAt = titleIndex >= 0 ? titleIndex + 1 : 0;
-    return [...without.slice(0, insertAt), columnId, ...without.slice(insertAt)];
-  }
-
+  // Respect saved order — never yank Trade/Material back after the user moves them.
   if (order.includes(columnId)) return order;
 
-  // Material sits right after Trade when present, otherwise after Title.
+  // First-time seed only: Trade after Title, Material after Trade (or Title).
+  if (columnId === PREMADE_TRADE_COLUMN_ID) {
+    const titleIndex = order.indexOf('title');
+    const insertAt = titleIndex >= 0 ? titleIndex + 1 : 0;
+    return [...order.slice(0, insertAt), columnId, ...order.slice(insertAt)];
+  }
+
   if (columnId === PREMADE_MATERIAL_COLUMN_ID) {
     const tradeIndex = order.indexOf(PREMADE_TRADE_COLUMN_ID);
     if (tradeIndex >= 0) {
@@ -260,24 +259,21 @@ export function ensurePremadeSheetColumns(
         boardType === 'main'
       ).filter((id) => !removedIds.has(id));
 
-      // Respect intentional removals from a stored order. Only seed into order when
-      // there is no stored order yet, or the column definition is being added for the first time.
+      // Respect intentional removals and user reorders. Only seed when missing from a
+      // brand-new order, or when the column definition is being added for the first time.
       if (!stored?.length || !hasColumn) {
         nextOrder = {
           ...nextOrder,
           [boardType]: insertColumnIdInOrder(order, template.id),
         };
       } else if (!stored.includes(template.id)) {
+        // Column exists in definitions but was removed from this board's order — leave out.
         nextOrder = {
           ...nextOrder,
           [boardType]: order.filter((id) => id !== template.id),
         };
-      } else {
-        nextOrder = {
-          ...nextOrder,
-          [boardType]: insertColumnIdInOrder(order, template.id),
-        };
       }
+      // else: already in stored order — do not reposition
     }
   }
 
@@ -444,7 +440,7 @@ export function listAvailablePremadeForTargets(
   });
 }
 
-/** Seed/place Trade in stored Main Overview section orders (Title → Trade → Material). */
+/** Seed Trade into Main Overview section orders only when missing (never force-reorder). */
 export function ensurePremadeInMainOverviewSectionOrders(
   mainOverviewSectionColumnOrder: BoardSheetColumnOrderMap
 ): BoardSheetColumnOrderMap {
@@ -453,6 +449,7 @@ export function ensurePremadeInMainOverviewSectionOrders(
   for (const boardType of WORKFLOW_DUE_DATE_BOARDS) {
     const stored = nextOrder[boardType];
     if (!stored?.length) continue;
+    if (stored.includes(PREMADE_TRADE_COLUMN_ID)) continue;
     nextOrder = {
       ...nextOrder,
       [boardType]: insertColumnIdInOrder(stored, PREMADE_TRADE_COLUMN_ID),

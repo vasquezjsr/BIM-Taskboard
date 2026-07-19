@@ -114,6 +114,10 @@ import {
   attachSsv3HierarchyFromManifest,
   clearSsv3ExportFromSpoolingTask,
 } from '../utils/promoteSsv3ToFab';
+import {
+  applyDetailersReadyForSpoolingHandoff,
+  applyDetailersSpoolingMirrorCleanup,
+} from '../utils/detailersSpoolingHandoff';
 import { normalizeTimeEntry, prepareTimeEntryPayload } from '../utils/timeEntry';
 import {
   createDefaultEmployeeCredentials,
@@ -1493,7 +1497,7 @@ function enrichTaskUpdates(
   projectBoardTaskStatuses: ProjectBoardTaskStatusesMap
 ): Partial<Task> {
   // Treat customFields / durationFields as patches so one-column edits never wipe siblings.
-  const patched: Partial<Task> = { ...updates };
+  let patched: Partial<Task> = { ...updates };
   if (updates.customFields) {
     patched.customFields = {
       ...(task.customFields ?? {}),
@@ -1510,6 +1514,9 @@ function enrichTaskUpdates(
     }
     patched.durationFields = next;
   }
+
+  patched = applyDetailersReadyForSpoolingHandoff(task, patched);
+  patched = applyDetailersSpoolingMirrorCleanup(task, patched);
 
   const withBranch = enrichTaskUpdatesWithBranchGroup(
     task,
@@ -6476,6 +6483,25 @@ export const useStore = create<AppState>()(
               s.boardSheetColumns,
               isOverview
             );
+            // Sub-board tabs and Main Overview sections share one column layout.
+            if (!isOverview) {
+              const overviewNormalized = resolveStoredMainOverviewSectionColumnOrder(
+                boardType,
+                normalized,
+                s.mainOverviewSectionSheetColumns,
+                s.boardSheetColumns
+              );
+              return {
+                boardSheetColumnOrder: {
+                  ...s.boardSheetColumnOrder,
+                  [boardType]: normalized,
+                },
+                mainOverviewSectionColumnOrder: {
+                  ...s.mainOverviewSectionColumnOrder,
+                  [boardType]: overviewNormalized,
+                },
+              };
+            }
             return {
               boardSheetColumnOrder: {
                 ...s.boardSheetColumnOrder,
@@ -6493,10 +6519,15 @@ export const useStore = create<AppState>()(
               s.mainOverviewSectionSheetColumns,
               s.boardSheetColumns
             );
+            const boardOrder = normalized.filter((id) => id !== 'board');
             return {
               mainOverviewSectionColumnOrder: {
                 ...s.mainOverviewSectionColumnOrder,
                 [sectionBoardType]: normalized,
+              },
+              boardSheetColumnOrder: {
+                ...s.boardSheetColumnOrder,
+                [sectionBoardType]: boardOrder,
               },
             };
           });

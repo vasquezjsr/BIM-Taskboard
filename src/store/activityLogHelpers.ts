@@ -320,12 +320,18 @@ export function stripColumnFromState(
       },
       false
     ).filter((id) => id !== columnId);
+    // Keep the board tab layout identical to this Main Overview section.
+    const boardOrder = order.filter((id) => id !== 'board');
     return {
       ...state,
       mainOverviewSectionSheetColumns: nextSectionSheetColumns,
       mainOverviewSectionColumnOrder: {
         ...state.mainOverviewSectionColumnOrder,
         [sectionBoardType]: order,
+      },
+      boardSheetColumnOrder: {
+        ...state.boardSheetColumnOrder,
+        [sectionBoardType]: boardOrder,
       },
       tasks: state.tasks.map((task) => {
         const customFields = { ...(task.customFields ?? {}) };
@@ -355,6 +361,7 @@ export function stripColumnFromState(
       };
 
   const nextBoardSheetColumnOrder = { ...state.boardSheetColumnOrder };
+  let nextMainOverviewSectionColumnOrder = { ...state.mainOverviewSectionColumnOrder };
   if (sharedFromMain) {
     for (const type of allBoardTypes) {
       nextBoardSheetColumnOrder[type] = getBoardSheetColumnOrder(
@@ -363,6 +370,12 @@ export function stripColumnFromState(
         nextBoardSheetColumns,
         type === 'main'
       ).filter((id) => id !== columnId);
+      if (type !== 'main') {
+        const overviewOrder = (
+          nextMainOverviewSectionColumnOrder[type] ?? nextBoardSheetColumnOrder[type] ?? []
+        ).filter((id) => id !== columnId);
+        nextMainOverviewSectionColumnOrder[type] = overviewOrder;
+      }
     }
   } else {
     nextBoardSheetColumnOrder[boardType] = getBoardSheetColumnOrder(
@@ -371,13 +384,19 @@ export function stripColumnFromState(
       nextBoardSheetColumns,
       isOverview
     ).filter((id) => id !== columnId);
+    if (boardType !== 'main') {
+      const overviewOrder = (
+        nextMainOverviewSectionColumnOrder[boardType] ?? nextBoardSheetColumnOrder[boardType] ?? []
+      ).filter((id) => id !== columnId);
+      nextMainOverviewSectionColumnOrder[boardType] = overviewOrder;
+    }
   }
 
   return {
     boardSheetColumns: nextBoardSheetColumns,
     boardSheetColumnOrder: nextBoardSheetColumnOrder,
     mainOverviewSectionSheetColumns: state.mainOverviewSectionSheetColumns,
-    mainOverviewSectionColumnOrder: state.mainOverviewSectionColumnOrder,
+    mainOverviewSectionColumnOrder: nextMainOverviewSectionColumnOrder,
     tasks: state.tasks.map((task) => {
       const customFields = { ...(task.customFields ?? {}) };
       const durationFields = { ...(task.durationFields ?? {}) };

@@ -71,13 +71,27 @@ namespace SpoolingSavantV3Exports
                 return existingAtPath;
             }
 
-            if (TryLoadWorkersInCollectibleContext(fullPath, out Assembly collectible)
+            // Revit 2024 (.NET Framework): LoadFile/LoadFrom on the same path returns the
+            // already-loaded assembly even after the file on disk was overwritten. Shadow
+            // copy to a unique folder so the new Workers build can actually load.
+            string loadPath = fullPath;
+            if (existingAtPath != null
+                || FindWorkersAssemblyBySimpleName() != null)
+            {
+                string shadowPath = TryCreateWorkersShadowCopy(fullPath, diskVersion, fileTicks);
+                if (!string.IsNullOrWhiteSpace(shadowPath))
+                {
+                    loadPath = shadowPath;
+                }
+            }
+
+            if (TryLoadWorkersInCollectibleContext(loadPath, out Assembly collectible)
                 && AssemblyVersionsMatch(collectible, diskVersion))
             {
                 return collectible;
             }
 
-            Assembly loadFile = TryLoadWorkersWithLoadFile(fullPath);
+            Assembly loadFile = TryLoadWorkersWithLoadFile(loadPath);
             if (loadFile != null && AssemblyVersionsMatch(loadFile, diskVersion))
             {
                 RememberCollectibleWorkers(loadFile, fullPath, null, fileTicks);
@@ -86,7 +100,7 @@ namespace SpoolingSavantV3Exports
 
             try
             {
-                Assembly loaded = Assembly.LoadFrom(fullPath);
+                Assembly loaded = Assembly.LoadFrom(loadPath);
                 if (AssemblyVersionsMatch(loaded, diskVersion))
                 {
                     RememberCollectibleWorkers(loaded, fullPath, null, fileTicks);
@@ -97,20 +111,124 @@ namespace SpoolingSavantV3Exports
             {
             }
 
-            if (TryLoadWorkersInCollectibleContext(fullPath, out collectible)
+            if (TryLoadWorkersInCollectibleContext(loadPath, out collectible)
                 && AssemblyVersionsMatch(collectible, diskVersion))
             {
                 return collectible;
             }
 
-            loadFile = TryLoadWorkersWithLoadFile(fullPath);
-            if (loadFile != null)
+            // Last resort: another unique shadow + LoadFile (never return a stale same-path load).
+            string forcedShadow = TryCreateWorkersShadowCopy(fullPath, diskVersion, fileTicks);
+            if (!string.IsNullOrWhiteSpace(forcedShadow))
+            {
+                loadFile = TryLoadWorkersWithLoadFile(forcedShadow);
+                if (loadFile != null && AssemblyVersionsMatch(loadFile, diskVersion))
+                {
+                    RememberCollectibleWorkers(loadFile, fullPath, null, fileTicks);
+                    return loadFile;
+                }
+            }
+
+            if (loadFile != null && AssemblyVersionsMatch(loadFile, diskVersion))
             {
                 RememberCollectibleWorkers(loadFile, fullPath, null, fileTicks);
                 return loadFile;
             }
 
-            return collectible ?? loadFile ?? existingAtPath;
+            if (collectible != null && AssemblyVersionsMatch(collectible, diskVersion))
+            {
+                return collectible;
+            }
+
+            // Prefer a version-matched in-domain assembly over a stale mismatch.
+            if (existingAtPath != null && AssemblyVersionsMatch(existingAtPath, diskVersion))
+            {
+                return existingAtPath;
+            }
+
+            throw new FileLoadException(
+                "Could not load a matching SpoolingSavantV3Exports.Workers.dll (disk version "
+                + (diskVersion != null ? diskVersion.ToString() : "?")
+                + "). Close Revit and reopen, or click SS Manager V3 after a rebuild.",
+                fullPath);
+        }
+
+        /// <summary>
+        /// Copy Workers (+ satellite DLLs) into Hotload\shadow\{ticks}\ so LoadFile gets a
+        /// unique path. Safe on Revit 2024 where overwriting the hotload DLL does not reload.
+        /// </summary>
+        private static string TryCreateWorkersShadowCopy(string sourceWorkersPath, Version diskVersion, long fileTicks)
+        {
+            try
+            {
+                string sourceDir = Path.GetDirectoryName(sourceWorkersPath);
+                if (string.IsNullOrWhiteSpace(sourceDir) || !Directory.Exists(sourceDir))
+                {
+                    return null;
+                }
+
+                string shadowRoot = Path.Combine(sourceDir, "shadow");
+                string shadowDir = Path.Combine(
+                    shadowRoot,
+                    (diskVersion != null ? diskVersion.ToString() : "v")
+                    + "_"
+                    + fileTicks.ToString());
+                Directory.CreateDirectory(shadowDir);
+
+                string destWorkers = Path.Combine(shadowDir, WorkersDllFileName);
+                File.Copy(sourceWorkersPath, destWorkers, overwrite: true);
+
+                foreach (string satellite in Directory.GetFiles(sourceDir, "*.dll"))
+                {
+                    string name = Path.GetFileName(satellite);
+                    if (string.Equals(name, WorkersDllFileName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        File.Copy(satellite, Path.Combine(shadowDir, name), overwrite: true);
+                    }
+                    catch
+                    {
+                    }
+                }
+
+                TryPruneOldWorkerShadows(shadowRoot, keepNewest: 5);
+                return destWorkers;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static void TryPruneOldWorkerShadows(string shadowRoot, int keepNewest)
+        {
+            try
+            {
+                if (!Directory.Exists(shadowRoot) || keepNewest < 1)
+                {
+                    return;
+                }
+
+                DirectoryInfo[] dirs = new DirectoryInfo(shadowRoot).GetDirectories();
+                Array.Sort(dirs, (a, b) => b.CreationTimeUtc.CompareTo(a.CreationTimeUtc));
+                for (int i = keepNewest; i < dirs.Length; i++)
+                {
+                    try
+                    {
+                        dirs[i].Delete(recursive: true);
+                    }
+                    catch
+                    {
+                    }
+                }
+            }
+            catch
+            {
+            }
         }
 
         private static bool CanReuseCachedWorkers(string fullPath, long fileTicks, Version diskVersion)
