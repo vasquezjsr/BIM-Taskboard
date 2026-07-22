@@ -498,15 +498,7 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 	private const int DefaultWeldLogRowCount = 6;
 
 
-	// Four 4" weld-log sets after the 1/8" left inset (WELD 1.5 + DATE 1 + ID 27/32 + INITIALS 21/32).
-	private const double WeldLogWeldNumberColumnWidthInches = 1.5;
-
-	private const double WeldLogDateColumnWidthInches = 1.0;
-
-	private const double WeldLogWelderIdColumnWidthInches = 27.0 / 32.0;
-
-	private const double WeldLogInitialsColumnWidthInches = 21.0 / 32.0;
-
+	// Four weld-log column sets after the 1/8" left inset.
 	/// <summary>
 	/// WELD NUMBER column lines relative to the left inset (1/8").
 	/// Measured set widths: 4-3/16", 4-3/16", 4-1/16" (+ trailing set to match).
@@ -9865,116 +9857,6 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 			select doc.GetElement(id)).OfType<FabricationPart>().ToList();
 		_assemblyPartsCache[assemblyId] = parts;
 		return parts;
-	}
-
-	internal static List<WeldLogEntryFieldRect> GetWeldLogEntryFieldRects(
-		Document doc,
-		ViewSheet sheet,
-		AssemblyInstance assembly,
-		SpoolingManagerSettings settings)
-	{
-		List<WeldLogEntryFieldRect> result = new List<WeldLogEntryFieldRect>();
-		if (doc == null || sheet == null || assembly == null || settings == null)
-		{
-			return result;
-		}
-
-		View sourceView = FindAssemblyViewOnSheetForWeldLog(doc, sheet, assembly, settings.WeldLogSourceViewLabel);
-		if (sourceView == null)
-		{
-			return result;
-		}
-
-		List<string> weldNumbers = GetAssemblySWeldValuesForView(doc, assembly, sourceView);
-		if (weldNumbers == null || weldNumbers.Count == 0)
-		{
-			return result;
-		}
-
-		int rowCount = GetWeldLogRowCount(settings);
-		int maxSlots = DefaultWeldLogColumnCount * rowCount;
-		double fieldHeightFeet = Math.Max(0.08 / 12.0, GetWeldLogRowSpacingFeet(settings) * 0.7);
-		double padFeet = DefaultWeldLogTextPaddingInches / 12.0;
-
-		for (int i = 0; i < weldNumbers.Count && i < maxSlots; i++)
-		{
-			int rowIndex = i % rowCount;
-			int columnIndex = i / rowCount;
-			XYZ weldPoint = GetWeldLogSlotPoint(doc, sheet, settings, columnIndex, rowIndex);
-			double setLeftInches = (columnIndex <= 0)
-				? 0.0
-				: DefaultWeldLogWeldNumberColumnLeftOffsetsInches[
-					Math.Min(columnIndex, DefaultWeldLogWeldNumberColumnLeftOffsetsInches.Length - 1)];
-
-			double dateLeftInches = setLeftInches + WeldLogWeldNumberColumnWidthInches;
-			double idLeftInches = dateLeftInches + WeldLogDateColumnWidthInches;
-			double initialsLeftInches = idLeftInches + WeldLogWelderIdColumnWidthInches;
-
-			double originX = weldPoint.X - (GetWeldLogColumnOffsetFeet(columnIndex) + GetWeldLogTextOffsetLeftFeet(settings));
-			double baselineY = weldPoint.Y;
-
-			AddEntryFieldRect(
-				result,
-				originX,
-				baselineY,
-				dateLeftInches / 12.0,
-				WeldLogDateColumnWidthInches / 12.0,
-				fieldHeightFeet,
-				padFeet,
-				"date",
-				weldNumbers[i],
-				i);
-			AddEntryFieldRect(
-				result,
-				originX,
-				baselineY,
-				idLeftInches / 12.0,
-				WeldLogWelderIdColumnWidthInches / 12.0,
-				fieldHeightFeet,
-				padFeet,
-				"welderId",
-				weldNumbers[i],
-				i);
-			AddEntryFieldRect(
-				result,
-				originX,
-				baselineY,
-				initialsLeftInches / 12.0,
-				WeldLogInitialsColumnWidthInches / 12.0,
-				fieldHeightFeet,
-				padFeet,
-				"initials",
-				weldNumbers[i],
-				i);
-		}
-
-		return result;
-	}
-
-	private static void AddEntryFieldRect(
-		List<WeldLogEntryFieldRect> result,
-		double setOriginXFeet,
-		double baselineYFeet,
-		double leftOffsetFeet,
-		double widthFeet,
-		double heightFeet,
-		double padFeet,
-		string kind,
-		string weldNumber,
-		int slotIndex)
-	{
-		double left = setOriginXFeet + leftOffsetFeet + padFeet;
-		double bottom = baselineYFeet - heightFeet * 0.35;
-		result.Add(new WeldLogEntryFieldRect
-		{
-			Kind = kind,
-			WeldNumber = weldNumber ?? string.Empty,
-			SlotIndex = slotIndex,
-			MinX = left,
-			MinY = bottom,
-			MaxX = left + Math.Max(0.05 / 12.0, widthFeet - 2.0 * padFeet),
-			MaxY = bottom + heightFeet,
-		});
 	}
 
 	internal static void AssignAssemblyItemNumbers(

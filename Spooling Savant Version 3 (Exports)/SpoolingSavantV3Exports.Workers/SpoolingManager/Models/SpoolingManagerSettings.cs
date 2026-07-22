@@ -45,12 +45,6 @@ public class SpoolingManagerSettings
 
 	public bool WeldLogEnabled { get; set; }
 
-	/// <summary>
-	/// When true, Spools Combined PDFs get fillable Date, Welder ID, and Initials
-	/// fields next to each weld number for shop entry.
-	/// </summary>
-	public bool WeldLogEntryFieldsEnabled { get; set; } = true;
-
 	public bool ContinuationTagsEnabled { get; set; }
 
 	public string AssemblyTagTypeName { get; set; } = string.Empty;

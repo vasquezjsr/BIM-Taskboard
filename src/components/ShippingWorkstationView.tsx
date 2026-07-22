@@ -3,25 +3,30 @@ import { useStore } from '../store/useStore';
 import type { Task } from '../types';
 import {
   isSsv3AssemblyTask,
-  isSsv3PackageTask,
-  isSsv3ShippingPackageTask,
   SSV3_FIELD,
 } from '../utils/boardroomPackageImport';
+import { isShippingVisiblePackage } from '../utils/shippingWorkstationAccess';
 import {
   findAssemblyByQr,
   formatQrDisplayLabel,
   formatShipDateShort,
+  getAssemblyShippingStatus,
   getEstimatedArrival,
+  getPackageShippingStatus,
   getShippedAt,
   getTaskQr,
+  isAssemblyReleasedForShipView,
+  PARTIAL_STILL_IN_FAB_COLOR,
+  PARTIAL_STILL_IN_FAB_LABEL,
+  PARTIAL_STILL_IN_FAB_STATUS_ID,
   toDateInputValue,
   withPackageStatusShippedStamp,
   withShippingStatusCustomFields,
+  type ShippingWorkflowLaneId,
 } from '../utils/shippingTracking';
 import {
   getBoardTaskStatuses,
   isAssemblyReleasedFromFabStatus,
-  isShippingHandedToFieldStatus,
 } from '../utils/taskStatuses';
 import { canLogTime } from '../utils/permissions';
 import {
@@ -59,39 +64,9 @@ function nextLaneId(status: string): ShippingLaneId | null {
   return SHIPPING_LANES[idx + 1].id;
 }
 
-function isShippingLaneId(value: string | null | undefined): value is ShippingLaneId {
-  return SHIPPING_LANES.some((lane) => lane.id === value);
-}
-
-/** Assembly shipping lane — independent of fab Complete status. */
-function getAssemblyShippingStatus(task: Task): ShippingLaneId {
-  const raw = task.customFields?.[SSV3_FIELD.shippingStatus];
-  return isShippingLaneId(raw) ? raw : 'staging';
-}
-
 /** Left staging count as “shipped” (on a load / en route / delivered). */
-function isAssemblyShippedLane(status: ShippingLaneId): boolean {
+function isAssemblyShippedLane(status: ShippingWorkflowLaneId): boolean {
   return status !== 'staging';
-}
-
-/** Package is fully on Shipping, or still on Fab with ≥1 assembly released for ship. */
-function isShippingVisiblePackage(task: Task, allTasks: Task[]): boolean {
-  if (isSsv3ShippingPackageTask(task) && !isShippingHandedToFieldStatus(task.status)) {
-    return true;
-  }
-  if (!isSsv3PackageTask(task)) return false;
-  return allTasks.some(
-    (child) =>
-      isSsv3AssemblyTask(child) &&
-      child.parentTaskId === task.id &&
-      isAssemblyReleasedFromFabStatus(child.status)
-  );
-}
-
-/** Effective lane for filters — Fab partial packages count as Staging. */
-function packageShippingLane(pkg: Task): ShippingLaneId {
-  if (pkg.boardType !== 'shipping') return 'staging';
-  return isShippingLaneId(pkg.status) ? pkg.status : 'staging';
 }
 
 function formatScanTime(iso: string | null): string {
@@ -111,7 +86,7 @@ export function ShippingWorkstationView() {
   const projectBoardTaskStatuses = useStore((s) => s.projectBoardTaskStatuses);
   const updateTask = useStore((s) => s.updateTask);
   const updateTasksWith = useStore((s) => s.updateTasksWith);
-  const selectedProjectId = useStore((s) => s.selectedProjectId);
+  const activeProjectId = useStore((s) => s.activeProjectId);
   const currentUserId = useStore((s) => s.currentUserId);
   const employees = useStore((s) => s.employees);
   const employeePermissions = useStore((s) => s.employeePermissions);
@@ -139,19 +114,19 @@ export function ShippingWorkstationView() {
 
   const allPackageTasks = useMemo(() => {
     let list = tasks.filter((task) => isShippingVisiblePackage(task, tasks));
-    const filterId = projectFilterId ?? selectedProjectId;
+    const filterId = projectFilterId ?? activeProjectId;
     if (filterId) {
       list = list.filter((task) => task.projectId === filterId);
     }
     return list.sort((a, b) => (a.title ?? '').localeCompare(b.title ?? ''));
-  }, [tasks, projectFilterId, selectedProjectId]);
+  }, [tasks, projectFilterId, activeProjectId]);
 
   const laneCounts = useMemo(() => {
     const counts: Record<string, number> = Object.fromEntries(
       SHIPPING_LANES.map((lane) => [lane.id, 0])
     );
     for (const pkg of allPackageTasks) {
-      const key = packageShippingLane(pkg);
+      const key = getPackageShippingStatus(pkg);
       counts[key] = (counts[key] ?? 0) + 1;
     }
     return counts;
@@ -160,9 +135,9 @@ export function ShippingWorkstationView() {
   const packageTasks = useMemo(() => {
     if (laneFilter === 'all') return allPackageTasks;
     if (laneFilter === 'active') {
-      return allPackageTasks.filter((pkg) => packageShippingLane(pkg) !== 'complete');
+      return allPackageTasks.filter((pkg) => getPackageShippingStatus(pkg) !== 'complete');
     }
-    return allPackageTasks.filter((pkg) => packageShippingLane(pkg) === laneFilter);
+    return allPackageTasks.filter((pkg) => getPackageShippingStatus(pkg) === laneFilter);
   }, [allPackageTasks, laneFilter]);
 
   useEffect(() => {
@@ -294,6 +269,7 @@ export function ShippingWorkstationView() {
         returnPackageUpstream(pkg, status);
         return;
       }
+      if (status === PARTIAL_STILL_IN_FAB_STATUS_ID) return;
       setPackageShippingStatus(pkg, status);
     },
     [returnPackageUpstream, setPackageShippingStatus]
@@ -578,7 +554,7 @@ export function ShippingWorkstationView() {
         >
           Active
           <span className={styles.laneCount}>
-            {allPackageTasks.filter((pkg) => packageShippingLane(pkg) !== 'complete').length}
+            {allPackageTasks.filter((pkg) => getPackageShippingStatus(pkg) !== 'complete').length}
           </span>
         </button>
         {SHIPPING_LANES.map((lane) => (
@@ -721,7 +697,7 @@ export function ShippingWorkstationView() {
                 </p>
                 <div className={styles.workflowBar}>
                   {SHIPPING_LANES.map((lane, index) => {
-                    const currentLane = packageShippingLane(selectedPackage);
+                    const currentLane = getPackageShippingStatus(selectedPackage);
                     const currentIdx = SHIPPING_LANES.findIndex(
                       (entry) => entry.id === currentLane
                     );
@@ -779,17 +755,17 @@ export function ShippingWorkstationView() {
                       className={fabStyles.statusSelect}
                       value={
                         selectedPackage.boardType === 'fab'
-                          ? 'staging'
+                          ? PARTIAL_STILL_IN_FAB_STATUS_ID
                           : selectedPackage.status
                       }
                       style={{
                         borderColor:
                           selectedPackage.boardType === 'fab'
-                            ? '#fdba74'
+                            ? PARTIAL_STILL_IN_FAB_COLOR
                             : statusMeta(selectedPackage).color,
                         color:
                           selectedPackage.boardType === 'fab'
-                            ? '#fdba74'
+                            ? PARTIAL_STILL_IN_FAB_COLOR
                             : statusMeta(selectedPackage).color,
                       }}
                       onChange={(e) =>
@@ -797,7 +773,9 @@ export function ShippingWorkstationView() {
                       }
                     >
                       {selectedPackage.boardType === 'fab' ? (
-                        <option value="staging">Partial · still in Fab</option>
+                        <option value={PARTIAL_STILL_IN_FAB_STATUS_ID}>
+                          {PARTIAL_STILL_IN_FAB_LABEL}
+                        </option>
                       ) : null}
                       {shippingStatusesFor(selectedPackage).map((status) => (
                         <option key={status.id} value={status.id}>
@@ -869,11 +847,17 @@ export function ShippingWorkstationView() {
                 ) : (
                   <ul className={fabStyles.assemblyList}>
                     {assemblies.map((task) => {
-                      const released =
-                        selectedPackage.boardType === 'shipping' ||
-                        isAssemblyReleasedFromFabStatus(task.status);
+                      const released = isAssemblyReleasedForShipView(task, selectedPackage);
                       const shipStatus = getAssemblyShippingStatus(task);
-                      const shipMeta = shippingLaneMeta(shipStatus, selectedPackage);
+                      const displayShipStatus = released
+                        ? shipStatus
+                        : PARTIAL_STILL_IN_FAB_STATUS_ID;
+                      const shipMeta = released
+                        ? shippingLaneMeta(shipStatus, selectedPackage)
+                        : {
+                            label: PARTIAL_STILL_IN_FAB_LABEL,
+                            color: PARTIAL_STILL_IN_FAB_COLOR,
+                          };
                       const nextShip = released ? nextLaneId(shipStatus) : null;
                       const nextShipLabel = nextShip
                         ? SHIPPING_LANES.find((lane) => lane.id === nextShip)?.label
@@ -945,7 +929,7 @@ export function ShippingWorkstationView() {
                               <span className={fabStyles.srOnly}>Ship status</span>
                               <select
                                 className={fabStyles.statusSelect}
-                                value={shipStatus}
+                                value={displayShipStatus}
                                 disabled={!released}
                                 style={{
                                   borderColor: shipMeta.color,
@@ -964,6 +948,11 @@ export function ShippingWorkstationView() {
                                     : 'Still in Fab — mark Ready for Shipping on the Fabrication Dashboard first'
                                 }
                               >
+                                {!released ? (
+                                  <option value={PARTIAL_STILL_IN_FAB_STATUS_ID}>
+                                    {PARTIAL_STILL_IN_FAB_LABEL}
+                                  </option>
+                                ) : null}
                                 {SHIPPING_LANES.map((lane) => (
                                   <option key={lane.id} value={lane.id}>
                                     {lane.label}

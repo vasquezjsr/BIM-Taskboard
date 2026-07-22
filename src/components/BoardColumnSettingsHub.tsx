@@ -9,7 +9,8 @@ import {
   tabLabelForDropdownColumn,
 } from '../data/premadeSheetColumns';
 import { useStore } from '../store/useStore';
-import { getBoardLabel, type ProjectBoardType, type SheetColumnDefinition } from '../types';
+import { getBoardLabel, isSubBoardType, type ProjectBoardType, type SheetColumnDefinition } from '../types';
+import { isFlatBoard } from '../utils/flatBoards';
 import {
   canAddColumns,
   canManageColumns,
@@ -17,7 +18,7 @@ import {
   canManageStatuses,
 } from '../utils/permissions';
 import { getBoardSheetColumns } from '../utils/sheetColumns';
-import { BUILT_IN_BOARD_TYPES } from '../utils/taskStatuses';
+import { BUILT_IN_BOARD_TYPES, isDashboardDrivenStatusBoard } from '../utils/taskStatuses';
 import { ColumnSettings } from './ColumnSettings';
 import { StatusSettings } from './StatusSettings';
 import styles from './ColumnSettings.module.css';
@@ -386,7 +387,9 @@ export function BoardColumnSettingsHub({
   }, [onClose]);
 
   const boards = useMemo(() => {
-    const builtIn = BUILT_IN_BOARD_TYPES.filter((id) => id !== 'main').map((id) => ({
+    const builtIn = BUILT_IN_BOARD_TYPES.filter(
+      (id) => id !== 'main' && !isDashboardDrivenStatusBoard(id)
+    ).map((id) => ({
       id,
       label: getBoardLabel(id, customBoards),
     }));
@@ -400,6 +403,24 @@ export function BoardColumnSettingsHub({
       ...custom,
     ];
   }, [customBoards]);
+
+  /** Ghost shop boards display Main Overview section column order — Column Settings must edit that too. */
+  const columnSettingsUseOverviewSections = Boolean(
+    activeBoardType &&
+      activeBoardType !== 'main' &&
+      isSubBoardType(activeBoardType) &&
+      !isFlatBoard(activeBoardType)
+  );
+
+  const overviewSectionBoards = useMemo(() => {
+    if (!columnSettingsUseOverviewSections || !activeBoardType) return undefined;
+    return [
+      {
+        id: activeBoardType,
+        label: getBoardLabel(activeBoardType, customBoards),
+      },
+    ];
+  }, [activeBoardType, columnSettingsUseOverviewSections, customBoards]);
 
   const canOpen =
     allowColumns || allowManageColumns || allowDropdowns || allowStatuses;
@@ -480,8 +501,14 @@ export function BoardColumnSettingsHub({
               {tab === 'columns' && (allowColumns || allowManageColumns) && (
                 <ColumnSettings
                   embedded
-                  initialBoardType={activeBoardType || 'detailers'}
+                  initialBoardType={
+                    columnSettingsUseOverviewSections ? 'main' : activeBoardType || 'detailers'
+                  }
                   boards={boards}
+                  overviewSectionBoards={overviewSectionBoards}
+                  overviewSectionBoardType={
+                    columnSettingsUseOverviewSections ? activeBoardType : null
+                  }
                   onClose={onClose}
                 />
               )}
@@ -492,7 +519,11 @@ export function BoardColumnSettingsHub({
                 <StatusSettings
                   embedded
                   initialBoardType={
-                    activeBoardType && activeBoardType !== 'main' ? activeBoardType : 'detailers'
+                    activeBoardType &&
+                    activeBoardType !== 'main' &&
+                    !isDashboardDrivenStatusBoard(activeBoardType)
+                      ? activeBoardType
+                      : 'detailers'
                   }
                   boards={boards.filter((board) => board.id !== 'main')}
                   projectId={activeProjectId}

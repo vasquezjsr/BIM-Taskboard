@@ -25,7 +25,12 @@ import {
   buildStatusAutoAssignOptions,
   type StatusAutoAssignChoice,
 } from '../utils/taskAssigneesAuto';
-import { getBoardTaskStatuses, isRfiBoardStatusListLocked } from '../utils/taskStatuses';
+import {
+  getBoardTaskStatuses,
+  isBoardStatusListLocked,
+  isDashboardDrivenStatusBoard,
+  isRfiBoardStatusListLocked,
+} from '../utils/taskStatuses';
 import { findStatusColorConflicts } from '../utils/statusColorSync';
 import { findDuplicateStatusLabels } from '../utils/statusConsolidation';
 import styles from './StatusSettings.module.css';
@@ -244,7 +249,13 @@ export function StatusSettings({
 
   const showApplyAllOption = Boolean(projectId && selectedBoard === 'deliverables');
   const effectiveApplyAll = showApplyAllOption && applyToAllDeliverables;
+  const isStatusListLocked = isBoardStatusListLocked(selectedBoard);
   const isRfiBoard = isRfiBoardStatusListLocked(selectedBoard);
+
+  const editableBoards = useMemo(
+    () => boards.filter((board) => !isDashboardDrivenStatusBoard(board.id)),
+    [boards]
+  );
 
   const assignOptions = useMemo(
     () => buildStatusAutoAssignOptions(employees.map((employee) => ({ id: employee.id, name: employee.name }))),
@@ -271,8 +282,16 @@ export function StatusSettings({
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
   useEffect(() => {
-    setSelectedBoard(initialBoardType);
-  }, [initialBoardType]);
+    const next = isDashboardDrivenStatusBoard(initialBoardType)
+      ? (editableBoards[0]?.id ?? 'detailers')
+      : initialBoardType;
+    setSelectedBoard(next);
+  }, [initialBoardType, editableBoards]);
+
+  useEffect(() => {
+    if (editableBoards.some((board) => board.id === selectedBoard)) return;
+    if (editableBoards[0]) setSelectedBoard(editableBoards[0].id);
+  }, [editableBoards, selectedBoard]);
 
   useEffect(() => {
     setSyncMessage(null);
@@ -302,6 +321,7 @@ export function StatusSettings({
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
+    if (isStatusListLocked) return;
     const { active, over } = event;
     if (!over || active.id === over.id) return;
     const oldIndex = statuses.findIndex((status) => status.id === active.id);
@@ -334,7 +354,7 @@ export function StatusSettings({
           value={selectedBoard}
           onChange={(e) => setSelectedBoard(e.target.value as ProjectBoardType)}
         >
-          {boards.map((board) => (
+          {editableBoards.map((board) => (
             <option key={board.id} value={board.id}>
               {board.label}
             </option>
@@ -344,6 +364,11 @@ export function StatusSettings({
       {isRfiBoard && (
         <p className={styles.rfiHint}>
           RFI uses <strong>Waiting for Response</strong> and <strong>Complete</strong> only.
+        </p>
+      )}
+      {isStatusListLocked && !isRfiBoard && (
+        <p className={styles.rfiHint}>
+          Spooling, Fabrication, Shipping, and Field statuses are set by their dashboards.
         </p>
       )}
       {showApplyAllOption && (
@@ -386,7 +411,7 @@ export function StatusSettings({
                   <SortableStatusItem
                     key={status.id}
                     status={status}
-                    canRemove={!isRfiBoard && statuses.length > 1}
+                    canRemove={!isStatusListLocked && statuses.length > 1}
                     applyAll={effectiveApplyAll}
                     projectId={projectId}
                     selectedBoard={selectedBoard}
@@ -398,7 +423,7 @@ export function StatusSettings({
               </ul>
             </SortableContext>
           </DndContext>
-          {!isRfiBoard && (
+          {!isStatusListLocked && (
           <div className={styles.addSection}>
             <div className={styles.addRow}>
               <input

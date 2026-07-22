@@ -1,4 +1,6 @@
-import type { Project, ProjectBoardType, Task, TaskGroup } from '../types';
+import type { Employee, Project, ProjectBoardType, Task, TaskGroup } from '../types';
+import { findEmployeeJobTitle, type EmployeeJobTitleDef } from './employeeJobs';
+import { inferOrgCategory } from './orgChart';
 import {
   getBoardTaskStatuses,
   statusBoardForTask,
@@ -114,6 +116,37 @@ function teamIds(project: Project, team: 'detailers' | 'support'): string[] {
   return team === 'detailers' ? [...project.detailerIds] : [...project.supportIds];
 }
 
+/** Support Manager org role, or job title Support/Spooling Manager (when that title is added). */
+export function isSupportOrSpoolingManager(
+  employee: Employee,
+  jobTitles: EmployeeJobTitleDef[] = []
+): boolean {
+  if (inferOrgCategory(employee) === 'support-manager') return true;
+  const title = employee.jobTitleId
+    ? findEmployeeJobTitle(jobTitles, employee.jobTitleId)
+    : undefined;
+  const label = (title?.label ?? '').trim().toLowerCase();
+  if (!label) return false;
+  return label.includes('spooling manager') || label.includes('support manager');
+}
+
+/** Leads who receive Ready for Spooling packages and distribute work to spoolers. */
+export function supportManagerEmployeeIds(
+  employees: Employee[] | undefined | null,
+  jobTitles: EmployeeJobTitleDef[] = []
+): string[] {
+  if (!employees?.length) return [];
+  return employees
+    .filter((employee) => isSupportOrSpoolingManager(employee, jobTitles))
+    .map((employee) => employee.id);
+}
+
+export type AutoAssignEmployeeContext = {
+  employees?: Employee[];
+  employeeJobTitles?: EmployeeJobTitleDef[];
+  force?: boolean;
+};
+
 export function resolveStatusAutoAssignTeam(
   board: ProjectBoardType,
   statusId: string,
@@ -149,7 +182,9 @@ export function resolveAutoAssigneeIds(
   projects: Project[],
   taskGroups: TaskGroup[] = [],
   boardTaskStatuses: BoardTaskStatusesMap = {},
-  projectBoardTaskStatuses: import('./taskStatuses').ProjectBoardTaskStatusesMap = {}
+  projectBoardTaskStatuses: import('./taskStatuses').ProjectBoardTaskStatusesMap = {},
+  employees: Employee[] = [],
+  employeeJobTitles: EmployeeJobTitleDef[] = []
 ): string[] | null {
   const project = projectForTask(task, projects);
   if (!project) return null;
@@ -164,6 +199,11 @@ export function resolveAutoAssigneeIds(
   const def = statuses.find((s) => s.id === task.status);
   if (def?.autoAssignEmployeeId) {
     return [def.autoAssignEmployeeId];
+  }
+
+  // Ready for Spooling → Support Manager / Spooling Manager only (they distribute to spoolers).
+  if (task.status === 'ready-for-spooling') {
+    return supportManagerEmployeeIds(employees, employeeJobTitles);
   }
 
   const team = resolveStatusAutoAssignTeam(
@@ -210,14 +250,18 @@ export function reconcileTaskAssigneeLock(
   projects: Project[],
   taskGroups: TaskGroup[] = [],
   boardTaskStatuses: BoardTaskStatusesMap = {},
-  projectBoardTaskStatuses: import('./taskStatuses').ProjectBoardTaskStatusesMap = {}
+  projectBoardTaskStatuses: import('./taskStatuses').ProjectBoardTaskStatusesMap = {},
+  employees: Employee[] = [],
+  employeeJobTitles: EmployeeJobTitleDef[] = []
 ): Task {
   const autoAssigneeIds = resolveAutoAssigneeIds(
     task,
     projects,
     taskGroups,
     boardTaskStatuses,
-    projectBoardTaskStatuses
+    projectBoardTaskStatuses,
+    employees,
+    employeeJobTitles
   );
 
   if (shouldResumeStatusAutoAssign(task.assigneeIds, autoAssigneeIds)) {
@@ -239,7 +283,7 @@ export function applyAutoAssigneesToTask(
   taskGroups: TaskGroup[] = [],
   boardTaskStatuses: BoardTaskStatusesMap = {},
   projectBoardTaskStatuses: import('./taskStatuses').ProjectBoardTaskStatusesMap = {},
-  options?: { force?: boolean }
+  options?: AutoAssignEmployeeContext
 ): Task {
   if (task.assigneesLocked && !options?.force) return task;
 
@@ -248,7 +292,9 @@ export function applyAutoAssigneesToTask(
     projects,
     taskGroups,
     boardTaskStatuses,
-    projectBoardTaskStatuses
+    projectBoardTaskStatuses,
+    options?.employees ?? [],
+    options?.employeeJobTitles ?? []
   );
   if (assigneeIds === null) return task;
   return { ...task, assigneeIds, assigneesLocked: false };
@@ -260,11 +306,15 @@ export function enrichTaskUpdatesWithAutoAssignees(
   projects: Project[],
   taskGroups: TaskGroup[] = [],
   boardTaskStatuses: BoardTaskStatusesMap = {},
-  projectBoardTaskStatuses: import('./taskStatuses').ProjectBoardTaskStatusesMap = {}
+  projectBoardTaskStatuses: import('./taskStatuses').ProjectBoardTaskStatusesMap = {},
+  employees: Employee[] = [],
+  employeeJobTitles: EmployeeJobTitleDef[] = []
 ): Partial<Task> {
   const statusTouched = updates.status !== undefined;
   const boardTouched = updates.boardType !== undefined;
   const assigneesLocked = updates.assigneesLocked ?? task.assigneesLocked ?? false;
+  const forcingReadyForSpooling =
+    statusTouched && updates.status === 'ready-for-spooling';
 
   if (updates.assigneeIds !== undefined && !statusTouched && !boardTouched) {
     const autoAssigneeIds = resolveAutoAssigneeIds(
@@ -272,7 +322,9 @@ export function enrichTaskUpdatesWithAutoAssignees(
       projects,
       taskGroups,
       boardTaskStatuses,
-      projectBoardTaskStatuses
+      projectBoardTaskStatuses,
+      employees,
+      employeeJobTitles
     );
     const nextAssigneeIds = updates.assigneeIds;
 
@@ -287,7 +339,8 @@ export function enrichTaskUpdatesWithAutoAssignees(
     return { ...updates, assigneesLocked: true };
   }
 
-  if (assigneesLocked && updates.assigneesLocked !== false) {
+  // Ready for Spooling always reassigns to Support/Spooling Managers, even if manually locked.
+  if (assigneesLocked && updates.assigneesLocked !== false && !forcingReadyForSpooling) {
     return updates;
   }
 
@@ -299,7 +352,9 @@ export function enrichTaskUpdatesWithAutoAssignees(
     projects,
     taskGroups,
     boardTaskStatuses,
-    projectBoardTaskStatuses
+    projectBoardTaskStatuses,
+    employees,
+    employeeJobTitles
   );
   if (assigneeIds === null) return updates;
   return { ...updates, assigneeIds, assigneesLocked: false };

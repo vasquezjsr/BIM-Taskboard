@@ -4,15 +4,22 @@ import {
   getSectionForBoard,
   isSectionUngroupedGroupId,
   isGroupUnderSection,
+  sectionBoardTypeFromUngroupedBucketId,
   type SheetRow,
 } from './groupRows';
+import {
+  isDetailersMirroredSpoolingTask,
+  isDetailersSpoolingHandoffPackage,
+} from './detailersSpoolingHandoff';
 
 export const GROUP_DROP_PREFIX = 'group:';
 export const TASK_DRAG_PREFIX = 'task:';
 export const BOARD_DROP_PREFIX = 'board:';
 export const TRASH_DROP_ID = 'trash-drop';
 
-export function taskDragId(taskId: string): string {
+/** Optional `@board` suffix scopes drag ids when the same task appears in two Main Overview sections. */
+export function taskDragId(taskId: string, boardScope?: ProjectBoardType | null): string {
+  if (boardScope) return `${TASK_DRAG_PREFIX}${taskId}@${boardScope}`;
   return `${TASK_DRAG_PREFIX}${taskId}`;
 }
 
@@ -25,7 +32,18 @@ export function boardDropId(boardType: ProjectBoardType): string {
 }
 
 export function parseTaskDragId(id: string): string | null {
-  return id.startsWith(TASK_DRAG_PREFIX) ? id.slice(TASK_DRAG_PREFIX.length) : null;
+  if (!id.startsWith(TASK_DRAG_PREFIX)) return null;
+  const rest = id.slice(TASK_DRAG_PREFIX.length);
+  const at = rest.lastIndexOf('@');
+  return at === -1 ? rest : rest.slice(0, at);
+}
+
+export function parseTaskDragBoardScope(id: string): ProjectBoardType | null {
+  if (!id.startsWith(TASK_DRAG_PREFIX)) return null;
+  const rest = id.slice(TASK_DRAG_PREFIX.length);
+  const at = rest.lastIndexOf('@');
+  if (at === -1) return null;
+  return rest.slice(at + 1) as ProjectBoardType;
 }
 
 export function parseGroupDropId(id: string): string | null {
@@ -35,6 +53,25 @@ export function parseGroupDropId(id: string): string | null {
 export function parseBoardDropId(id: string): ProjectBoardType | null {
   if (!id.startsWith(BOARD_DROP_PREFIX)) return null;
   return id.slice(BOARD_DROP_PREFIX.length) as ProjectBoardType;
+}
+
+/** Section board for a sheet drop id (task@scope, group under a section, or board: tab). */
+export function sheetDropBoardScope(
+  overId: string,
+  groups: TaskGroup[]
+): ProjectBoardType | null {
+  const taskScope = parseTaskDragBoardScope(overId);
+  if (taskScope) return taskScope;
+  const boardTab = parseBoardDropId(overId);
+  if (boardTab) return boardTab;
+  const groupId = parseGroupDropId(overId);
+  if (groupId) {
+    if (isSectionUngroupedGroupId(groupId)) {
+      return sectionBoardTypeFromUngroupedBucketId(groupId);
+    }
+    return findSectionBoardType(groups, groupId);
+  }
+  return null;
 }
 
 function isVirtualGroupId(groupId: string): boolean {
@@ -63,6 +100,11 @@ function ghostUngroupedBoardType(groupId: string): ProjectBoardType | null {
 export function syncTaskBoardFromGroupPlacement(groups: TaskGroup[], tasks: Task[]): Task[] {
   return tasks.map((task) => {
     if (!task.groupId || task.boardType === 'employee') return task;
+    // Dual-visibility handoff packages keep a Detailers-level group on purpose —
+    // never yank ownership back to Detailers from that placement.
+    if (isDetailersSpoolingHandoffPackage(task) || isDetailersMirroredSpoolingTask(task)) {
+      return task;
+    }
     const sectionBoard = findSectionBoardType(groups, task.groupId);
     if (sectionBoard && task.boardType !== sectionBoard) {
       return { ...task, boardType: sectionBoard };
@@ -139,16 +181,15 @@ export interface SheetDropHint {
   placement: DropPlacement;
 }
 
+/** Upper half = before, lower half = after. No center/"inside" band for row reorder. */
 export function placementFromPointer(
   pointerY: number,
   rect: { top: number; height: number },
-  edgeRatio = 0.35
+  _edgeRatio = 0.5
 ): DropPlacement {
   const relative = pointerY - rect.top;
   const ratio = rect.height > 0 ? relative / rect.height : 0.5;
-  if (ratio < edgeRatio) return 'before';
-  if (ratio > 1 - edgeRatio) return 'after';
-  return 'inside';
+  return ratio < 0.5 ? 'before' : 'after';
 }
 
 export function dropIntentLabel(intent: SheetDropIntent): string {
@@ -212,7 +253,7 @@ function walkSheetRowsToContainingGroup(
   return null;
 }
 
-/** Resolve task drop: task rows reorder within/across groups; group headers regroup. */
+/** Resolve task drop: blue line before/after a concrete row = insert there. */
 export function resolveTaskDropTarget(
   overId: string,
   activeTaskIds: string[],
@@ -224,6 +265,8 @@ export function resolveTaskDropTarget(
   const leadTask = tasks.find((task) => task.id === activeTaskIds[0]);
   if (!leadTask) return null;
 
+  const edge: 'before' | 'after' = placement === 'before' ? 'before' : 'after';
+
   const directGroupId = parseGroupDropId(overId);
   if (directGroupId) {
     if (isVirtualGroupId(directGroupId) || isSectionUngroupedGroupId(directGroupId)) {
@@ -234,25 +277,17 @@ export function resolveTaskDropTarget(
         insertAfterTaskId: null,
       };
     }
+    // Gap above/under a group header = first slot under that group.
     const groupTasks = sortByPriority(
       tasks.filter((task) => task.groupId === directGroupId && !task.parentTaskId)
     );
-    const firstTask = groupTasks[0];
-    const lastTask = groupTasks[groupTasks.length - 1];
-    if (placement === 'before' && firstTask) {
+    const firstTask = groupTasks.find((task) => !movingSet.has(task.id));
+    if (firstTask) {
       return {
-        intent: 'regroup',
+        intent: leadTask.groupId === directGroupId ? 'reorder' : 'regroup',
         targetGroupId: directGroupId,
         insertBeforeTaskId: firstTask.id,
         insertAfterTaskId: null,
-      };
-    }
-    if (placement === 'after' && lastTask) {
-      return {
-        intent: 'regroup',
-        targetGroupId: directGroupId,
-        insertBeforeTaskId: null,
-        insertAfterTaskId: lastTask.id,
       };
     }
     return {
@@ -267,12 +302,7 @@ export function resolveTaskDropTarget(
   if (!overTaskId) return null;
 
   if (movingSet.has(overTaskId)) {
-    return {
-      intent: 'reorder',
-      targetGroupId: leadTask.groupId,
-      insertBeforeTaskId: null,
-      insertAfterTaskId: null,
-    };
+    return resolveDropAmongMovingTask(overTaskId, leadTask, movingSet, tasks, edge);
   }
 
   const overTask = tasks.find((task) => task.id === overTaskId);
@@ -283,8 +313,94 @@ export function resolveTaskDropTarget(
   return {
     intent: sameGroup ? 'reorder' : 'regroup',
     targetGroupId,
-    insertBeforeTaskId: placement === 'before' ? overTaskId : null,
-    insertAfterTaskId: placement === 'before' ? null : overTaskId,
+    insertBeforeTaskId: edge === 'before' ? overTaskId : null,
+    insertAfterTaskId: edge === 'before' ? null : overTaskId,
+  };
+}
+
+/**
+ * Hovering the dragged row maps to the nearest non-moving sibling so the blue
+ * line always resolves to a real before/after insert.
+ */
+function resolveDropAmongMovingTask(
+  overTaskId: string,
+  leadTask: Task,
+  movingSet: Set<string>,
+  tasks: Task[],
+  placement: 'before' | 'after'
+): TaskDropTarget {
+  const siblings = sortByPriority(
+    tasks.filter(
+      (task) =>
+        task.projectId === leadTask.projectId &&
+        task.groupId === leadTask.groupId &&
+        !task.parentTaskId &&
+        task.boardType !== 'employee'
+    )
+  );
+  const overIdx = siblings.findIndex((task) => task.id === overTaskId);
+  if (overIdx === -1) {
+    return {
+      intent: 'reorder',
+      targetGroupId: leadTask.groupId,
+      insertBeforeTaskId: null,
+      insertAfterTaskId: null,
+    };
+  }
+
+  const findNonMoving = (from: number, step: 1 | -1): Task | undefined => {
+    for (let i = from; i >= 0 && i < siblings.length; i += step) {
+      const candidate = siblings[i]!;
+      if (!movingSet.has(candidate.id)) return candidate;
+    }
+    return undefined;
+  };
+
+  if (placement === 'before') {
+    const next = findNonMoving(overIdx, 1);
+    if (next) {
+      return {
+        intent: 'reorder',
+        targetGroupId: leadTask.groupId,
+        insertBeforeTaskId: next.id,
+        insertAfterTaskId: null,
+      };
+    }
+    const prev = findNonMoving(overIdx - 1, -1);
+    if (prev) {
+      return {
+        intent: 'reorder',
+        targetGroupId: leadTask.groupId,
+        insertBeforeTaskId: null,
+        insertAfterTaskId: prev.id,
+      };
+    }
+  } else {
+    const next = findNonMoving(overIdx + 1, 1);
+    if (next) {
+      return {
+        intent: 'reorder',
+        targetGroupId: leadTask.groupId,
+        insertBeforeTaskId: next.id,
+        insertAfterTaskId: null,
+      };
+    }
+    const prev = findNonMoving(overIdx - 1, -1);
+    if (prev) {
+      return {
+        intent: 'reorder',
+        targetGroupId: leadTask.groupId,
+        insertBeforeTaskId: null,
+        insertAfterTaskId: prev.id,
+      };
+    }
+  }
+
+  return {
+    intent: 'reorder',
+    targetGroupId: leadTask.groupId,
+    insertBeforeTaskId: null,
+    insertAfterTaskId: null,
   };
 }
 
@@ -313,7 +429,7 @@ export function isSheetGroupContainer(
   return group.tier === 'section' || groupHasChildGroups(taskGroups, group.id);
 }
 
-/** Sibling leaf → reorder line; container center → nest; container edge → reorder. */
+/** Sibling before/after reorder; after a container header nests as first child. */
 export function resolveGroupDropAction(
   overId: string,
   activeGroupId: string,
@@ -325,16 +441,18 @@ export function resolveGroupDropAction(
   const active = taskGroups.find((group) => group.id === activeGroupId);
   if (!active) return null;
 
+  const edge: 'before' | 'after' = placement === 'before' ? 'before' : 'after';
+
   const buildReorder = (
     overGroupId: string,
-    reorderPlacement: DropPlacement
+    reorderPlacement: 'before' | 'after',
+    hint?: { hintTargetGroupId?: string; hintPlacement?: DropPlacement }
   ): GroupDropAction | null => {
     const over = taskGroups.find((group) => group.id === overGroupId);
     if (!over || over.id === active.id) return null;
     if (collectDescendantGroupIds(taskGroups, active.id).includes(over.id)) {
       return null;
     }
-    // Reparent+reorder under over's parent is allowed (existing compute path).
     if (
       over.parentId &&
       collectDescendantGroupIds(taskGroups, active.id).includes(over.parentId)
@@ -344,25 +462,9 @@ export function resolveGroupDropAction(
     return {
       mode: 'reorder',
       targetOverId: groupDropId(over.id),
-      reorderPlacement: reorderPlacement === 'before' ? 'before' : 'after',
+      reorderPlacement,
+      ...hint,
     };
-  };
-
-  const buildNest = (overGroupId: string): GroupDropActionResult | null => {
-    if (collectDescendantGroupIds(taskGroups, active.id).includes(overGroupId)) {
-      return { blockedReason: 'Cannot move a group into one of its own sub-groups.' };
-    }
-    const { targetOverId, blockedReason } = resolveGroupDropTargetForMove(
-      groupDropId(overGroupId),
-      taskGroups,
-      activeGroupId,
-      tasks,
-      sheetRows
-    );
-    if (!targetOverId) {
-      return blockedReason ? { blockedReason } : null;
-    }
-    return { mode: 'nest', targetOverId, reorderPlacement: 'inside' };
   };
 
   const buildNestAsFirstChild = (overGroupId: string): GroupDropActionResult | null => {
@@ -384,7 +486,7 @@ export function resolveGroupDropAction(
       targetOverId,
       reorderPlacement: 'before',
       hintTargetGroupId: overGroupId,
-      hintPlacement: placement === 'before' ? 'before' : 'after',
+      hintPlacement: 'after',
     };
   };
 
@@ -392,13 +494,12 @@ export function resolveGroupDropAction(
     const over = taskGroups.find((group) => group.id === overGroupId);
     if (!over) return null;
 
-    const sameParent = active.parentId === over.parentId && over.id !== active.id;
-    const overIsContainer = groupHasChildGroups(taskGroups, overGroupId);
-    const edgePlacement = placement === 'before' ? 'before' : 'after';
+    const overIsContainer =
+      over.tier === 'section' || groupHasChildGroups(taskGroups, overGroupId);
 
-    // Section header: reorder among section children — never "nest into section"
-    if (over.tier === 'section') {
-      const sectionChildren = sortGroupsByOrder(
+    // Section / own parent header: blue line under header = first slot among children.
+    if (over.tier === 'section' || active.parentId === overGroupId) {
+      const children = sortGroupsByOrder(
         taskGroups.filter(
           (group) =>
             group.parentId === overGroupId &&
@@ -406,66 +507,39 @@ export function resolveGroupDropAction(
             !group.id.startsWith('__')
         )
       );
-      if (sectionChildren.length === 0) return null;
-
-      const activeInSection =
-        active.parentId === overGroupId || isGroupUnderSection(taskGroups, active.id, overGroupId);
-
-      if (activeInSection) {
-        // Section header (any edge/center) = first slot under the section — the gap
-        // between the section row and its first child. Use a sibling's after-edge to go last.
-        return {
-          mode: 'reorder',
-          targetOverId: groupDropId(sectionChildren[0]!.id),
-          reorderPlacement: 'before',
-          hintTargetGroupId: overGroupId,
-          hintPlacement: placement === 'before' ? 'before' : 'after',
-        };
+      if (children.length === 0) {
+        if (over.tier === 'section') return null;
+        return buildNestAsFirstChild(overGroupId);
       }
-
-      if (placement === 'inside') return buildNest(overGroupId);
-      return null;
-    }
-
-    // Reorder among children via parent container header.
-    // The gap between the parent row and its first child is the parent's bottom edge
-    // (`after`) — that must become "before first sibling", not "after last sibling".
-    if (active.parentId === overGroupId && overIsContainer) {
-      const siblings = sortGroupsByOrder(
-        taskGroups.filter(
-          (group) => group.parentId === overGroupId && group.id !== activeGroupId
-        )
-      );
-      if (!siblings[0]) return null;
+      const activeInSection =
+        over.tier !== 'section' ||
+        active.parentId === overGroupId ||
+        isGroupUnderSection(taskGroups, active.id, overGroupId);
+      if (!activeInSection) {
+        // Dragging in from outside a section — nest as first child under the section.
+        return buildNestAsFirstChild(overGroupId);
+      }
       return {
         mode: 'reorder',
-        targetOverId: groupDropId(siblings[0].id),
+        targetOverId: groupDropId(children[0]!.id),
         reorderPlacement: 'before',
         hintTargetGroupId: overGroupId,
-        hintPlacement: placement === 'before' ? 'before' : 'after',
+        hintPlacement: 'after',
       };
     }
 
-    // Same parent: edges reorder; center drop nests into the hovered group
-    if (sameParent) {
-      if (placement === 'inside') {
-        const nested = buildNest(overGroupId);
-        if (nested) return nested;
-      }
-      return buildReorder(overGroupId, edgePlacement);
+    // before G → sit in front of G (same parent as G)
+    if (edge === 'before') {
+      return buildReorder(overGroupId, 'before');
     }
 
-    // Different branch:
-    // - container center → nest as last child
-    // - container edge → nest as first child (gap under header)
-    // - leaf edge → become sibling under over's parent (before/after)
-    // - leaf center → nest into that group
+    // after container → first child under that container (folder-style)
     if (overIsContainer) {
-      if (placement === 'inside') return buildNest(overGroupId);
       return buildNestAsFirstChild(overGroupId);
     }
-    if (placement === 'inside') return buildNest(overGroupId);
-    return buildReorder(overGroupId, edgePlacement);
+
+    // after leaf → sit behind G as sibling
+    return buildReorder(overGroupId, 'after');
   };
 
   const directGroupId = parseGroupDropId(overId);
@@ -473,6 +547,7 @@ export function resolveGroupDropAction(
     return resolveOverGroup(directGroupId);
   }
 
+  // Group dragged over a task: treat as before/after that task's containing group.
   const overTaskId = parseTaskDragId(overId);
   if (overTaskId) {
     const rowIndex = sheetRows.findIndex(
@@ -1145,7 +1220,7 @@ export function getSheetDragIds(sheetRows: SheetRow[]): string[] {
       ids.push(groupDropId(row.group.id));
     }
     if (row.type === 'task') {
-      ids.push(taskDragId(row.task.id));
+      ids.push(taskDragId(row.task.id, row.dragBoardType));
     }
   }
   return ids;

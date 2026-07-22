@@ -385,10 +385,14 @@ export function appendPremadeColumnToOverviewSectionState(
     boardUpdate.boardSheetColumns
   );
   if (order.includes(premadeId)) {
-    return {
-      ...boardUpdate,
-      mainOverviewSectionColumnOrder,
-    };
+    // Board tab layouts read Main Overview section order — keep them aligned when the
+    // column is already on the board order but missing from the section order.
+    if (mainOverviewSectionColumnOrder[sectionBoardType]?.includes(premadeId)) {
+      return {
+        ...boardUpdate,
+        mainOverviewSectionColumnOrder,
+      };
+    }
   }
 
   const nextOrder = insertColumnIdInOrder(order, premadeId);
@@ -440,21 +444,69 @@ export function listAvailablePremadeForTargets(
   });
 }
 
-/** Seed Trade into Main Overview section orders only when missing (never force-reorder). */
+/** Seed Trade + Material into Main Overview section orders only when missing (never force-reorder). */
 export function ensurePremadeInMainOverviewSectionOrders(
   mainOverviewSectionColumnOrder: BoardSheetColumnOrderMap
 ): BoardSheetColumnOrderMap {
   let nextOrder = { ...mainOverviewSectionColumnOrder };
 
   for (const boardType of WORKFLOW_DUE_DATE_BOARDS) {
-    const stored = nextOrder[boardType];
+    if (boardType === 'main') continue;
+    let stored = nextOrder[boardType];
     if (!stored?.length) continue;
-    if (stored.includes(PREMADE_TRADE_COLUMN_ID)) continue;
-    nextOrder = {
-      ...nextOrder,
-      [boardType]: insertColumnIdInOrder(stored, PREMADE_TRADE_COLUMN_ID),
-    };
+    for (const columnId of [PREMADE_TRADE_COLUMN_ID, PREMADE_MATERIAL_COLUMN_ID]) {
+      if (stored.includes(columnId)) continue;
+      stored = insertColumnIdInOrder(stored, columnId);
+      nextOrder = {
+        ...nextOrder,
+        [boardType]: stored,
+      };
+    }
   }
 
   return nextOrder;
+}
+
+/**
+ * Ensure Trade / Material definitions exist and are visible on every workflow board
+ * tab (Main Overview section order + board order stay in sync).
+ */
+export function repairWorkflowTradeMaterialColumnVisibility(
+  boardSheetColumns: BoardSheetColumnsMap,
+  boardSheetColumnOrder: BoardSheetColumnOrderMap,
+  mainOverviewSectionColumnOrder: BoardSheetColumnOrderMap,
+  mainOverviewSectionSheetColumns: BoardSheetColumnsMap
+): {
+  boardSheetColumns: BoardSheetColumnsMap;
+  boardSheetColumnOrder: BoardSheetColumnOrderMap;
+  mainOverviewSectionColumnOrder: BoardSheetColumnOrderMap;
+} {
+  let nextColumns = boardSheetColumns;
+  let nextBoardOrder = boardSheetColumnOrder;
+  let nextSectionOrder = mainOverviewSectionColumnOrder;
+
+  for (const boardType of WORKFLOW_DUE_DATE_BOARDS) {
+    if (boardType === 'main') continue;
+    for (const template of PREMADE_SHEET_COLUMNS) {
+      if (!premadeAppliesToBoard(template, boardType)) continue;
+      const updated = appendPremadeColumnToOverviewSectionState(
+        boardType,
+        template.id,
+        nextColumns,
+        nextBoardOrder,
+        nextSectionOrder,
+        mainOverviewSectionSheetColumns
+      );
+      if (!updated) continue;
+      nextColumns = updated.boardSheetColumns;
+      nextBoardOrder = updated.boardSheetColumnOrder;
+      nextSectionOrder = updated.mainOverviewSectionColumnOrder;
+    }
+  }
+
+  return {
+    boardSheetColumns: nextColumns,
+    boardSheetColumnOrder: nextBoardOrder,
+    mainOverviewSectionColumnOrder: nextSectionOrder,
+  };
 }

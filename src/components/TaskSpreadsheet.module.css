@@ -1400,9 +1400,18 @@
   background: var(--sheet-subtask-bg);
 }
 
+.taskRowStillInFab td {
+  opacity: 0.45;
+  filter: grayscale(0.35);
+}
+
 .taskRow:hover td,
 .taskRowSubtask:hover td {
   filter: brightness(1.05);
+}
+
+.taskRowStillInFab:hover td {
+  filter: grayscale(0.35) brightness(1.05);
 }
 
 .dragHandle {

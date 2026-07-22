@@ -3,7 +3,11 @@ import { getBoardTaskStatuses, isCompleteStatus, type BoardTaskStatusesMap, type
 import {
   effectiveGroupIdForDetailersBoard,
   isDetailersMirroredSpoolingTask,
+  isDetailersSpoolingHandoffPackage,
 } from './detailersSpoolingHandoff';
+import { isPackageVisibleOnFieldDashboard } from './fieldWorkstationAccess';
+import { isShippingVisiblePackage } from './shippingWorkstationAccess';
+import { isFlatBoard } from './flatBoards';
 import {
   MAIN_SECTION_BOARDS,
   getBoardLabel,
@@ -15,9 +19,11 @@ import {
 import { isTemplateProject } from './projectTemplate';
 import { projectJobLabel } from './projectJobLabel';
 
+export const SPOOLING_DUE_DATE_COLUMN_ID = 'col-spooling-due-date';
+
 export type SheetRow =
-  | { type: 'group'; group: TaskGroup; depth: number; isGhost?: boolean }
-  | { type: 'task'; task: Task; depth: number; isGhost?: boolean };
+  | { type: 'group'; group: TaskGroup; depth: number; isGhost?: boolean; dragBoardType?: ProjectBoardType }
+  | { type: 'task'; task: Task; depth: number; isGhost?: boolean; dragBoardType?: ProjectBoardType };
 
 /** Match drag-handle / collapse column width in TaskSpreadsheet */
 export const SHEET_ROW_COL_WIDTH = 44;
@@ -28,8 +34,6 @@ export const SHEET_INDENT_PX = 24;
 export function sheetRowPaddingLeft(depth: number): number {
   return depth * SHEET_INDENT_PX;
 }
-
-import { isFlatBoard } from './flatBoards';
 
 function taskDepthForGroup(parentDepth: number): number {
   return parentDepth + 1;
@@ -378,6 +382,17 @@ export function taskCountsAsUngroupedInSection(
 
 /** Top-level task with no valid group — show "(Ungrouped)" on the title instead of an Ungrouped row. */
 export function taskShowsUngroupedTitleSuffix(task: Task, groups: TaskGroup[]): boolean {
+  // Shop boards have no package groups — never label rows as ungrouped.
+  if (
+    task.boardType === 'spooling' ||
+    task.boardType === 'fab' ||
+    task.boardType === 'shipping' ||
+    task.boardType === 'field'
+  ) {
+    return false;
+  }
+  // Detailers↔Spooling handoff keeps a Detailers group id; don't badge if mirrored.
+  if (isDetailersMirroredSpoolingTask(task)) return false;
   if (task.parentTaskId) return false;
   if (!task.groupId) return true;
   return !groups.some((g) => g.id === task.groupId);
@@ -514,7 +529,9 @@ export function repairTasksOnWrongBoardSection(tasks: Task[], groups: TaskGroup[
     if (!task.groupId || !task.projectId || task.parentTaskId) return task;
     if (task.boardType === 'main' || task.boardType === 'employee') return task;
     // Mirrored Detailers→Spooling tasks keep their Detailers level group on purpose.
-    if (isDetailersMirroredSpoolingTask(task)) return task;
+    if (isDetailersMirroredSpoolingTask(task) || isDetailersSpoolingHandoffPackage(task)) {
+      return task;
+    }
 
     let current = groups.find((g) => g.id === task.groupId);
     let sectionBoard: ProjectBoardType | null = null;
@@ -559,10 +576,17 @@ export function taskBelongsToGhostBoard(
   projectTasks: Task[] = []
 ): boolean {
   if (task.clientId !== clientId || task.projectId !== projectId) return false;
-  const root = taskRootForBoard(task, projectTasks.length > 0 ? projectTasks : [task]);
+  const pool = projectTasks.length > 0 ? projectTasks : [task];
+  const root = taskRootForBoard(task, pool);
   if (taskBranchBoardType(root, groups) === boardType) return true;
   // Ready for Spooling moves ownership to Spooling but Detailers still tracks process.
   if (boardType === 'detailers' && isDetailersMirroredSpoolingTask(root)) return true;
+  // Detailers packages stuck on Ready for Spooling (or yanked boardType) still belong on Spooling.
+  if (boardType === 'spooling' && isDetailersSpoolingHandoffPackage(root)) return true;
+  // Fab partial release: Ready-for-Shipping assemblies — same rule as Shipping Dashboard.
+  if (boardType === 'shipping' && isShippingVisiblePackage(root, pool)) return true;
+  // Inbound from Shipping / Fab partial ship — same rule as Field Dashboard.
+  if (boardType === 'field' && isPackageVisibleOnFieldDashboard(root, pool)) return true;
   return false;
 }
 
@@ -616,6 +640,37 @@ export function sortTasksByPriority(tasks: Task[]): Task[] {
   );
 }
 
+/** Spooling Due Date from custom fields (YYYY-MM-DD). */
+export function taskSpoolingDueDate(task: Task): string | null {
+  const raw = task.customFields?.[SPOOLING_DUE_DATE_COLUMN_ID];
+  return raw && raw.trim() ? raw.trim() : null;
+}
+
+/** Earliest Spooling Due Date first; missing dates last; stable tie-breakers. */
+export function sortTasksBySpoolingDueDate(tasks: Task[]): Task[] {
+  return [...tasks].sort((a, b) => {
+    const dateA = taskSpoolingDueDate(a);
+    const dateB = taskSpoolingDueDate(b);
+    if (dateA && dateB) {
+      const byDate = dateA.localeCompare(dateB);
+      if (byDate !== 0) return byDate;
+    } else if (dateA) {
+      return -1;
+    } else if (dateB) {
+      return 1;
+    }
+    return (
+      a.priority - b.priority ||
+      a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }) ||
+      a.createdAt.localeCompare(b.createdAt)
+    );
+  });
+}
+
+function sortTasksForBoard(tasks: Task[], boardType: ProjectBoardType): Task[] {
+  return boardType === 'spooling' ? sortTasksBySpoolingDueDate(tasks) : sortTasksByPriority(tasks);
+}
+
 export function buildSheetRows(
   groups: TaskGroup[],
   tasks: Task[],
@@ -654,7 +709,7 @@ export function buildSheetRows(
       .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
 
   const tasksInGroup = (groupId: string) => {
-    return sortTasksByPriority(
+    return sortTasksForBoard(
       boardTasks.filter((t) => {
         if (t.parentTaskId) return false;
         // Mirrored Spooling tasks still sit under their Detailers level on that board.
@@ -662,26 +717,38 @@ export function buildSheetRows(
           return effectiveGroupIdForDetailersBoard(t) === groupId;
         }
         return t.groupId === groupId;
-      })
+      }),
+      isGhostBoard ? boardType : 'main'
     );
   };
 
-  const pushTaskTree = (groupTasks: Task[], isGhost: boolean, parentDepth: number) => {
+  const pushTaskTree = (
+    groupTasks: Task[],
+    isGhost: boolean,
+    parentDepth: number,
+    dragBoardType?: ProjectBoardType
+  ) => {
     const taskDepth = taskDepthForGroup(parentDepth);
     const subtaskDepth = subtaskDepthForGroup(parentDepth);
     for (const task of groupTasks) {
-      rows.push({ type: 'task', task, depth: taskDepth, isGhost });
+      rows.push({ type: 'task', task, depth: taskDepth, isGhost, dragBoardType });
+      if (collapsedIds.has(task.id)) continue;
       const subtasks = sortTasksByPriority(
         boardTasks.filter((t) => t.parentTaskId === task.id)
       );
       for (const sub of subtasks) {
-        rows.push({ type: 'task', task: sub, depth: subtaskDepth, isGhost });
+        rows.push({ type: 'task', task: sub, depth: subtaskDepth, isGhost, dragBoardType });
       }
     }
   };
 
-  const pushGroup = (group: TaskGroup, depth: number, isGhost = false) => {
-    rows.push({ type: 'group', group, depth, isGhost });
+  const pushGroup = (
+    group: TaskGroup,
+    depth: number,
+    isGhost = false,
+    dragBoardType?: ProjectBoardType
+  ) => {
+    rows.push({ type: 'group', group, depth, isGhost, dragBoardType });
     // Board sections on Main Overview always stay expanded so sub-board tabs stay in sync.
     if (collapsedIds.has(group.id) && !(isOverview && group.tier === 'section')) return;
 
@@ -694,17 +761,17 @@ export function buildSheetRows(
     // All children share one sortOrder list — do not split by tier
     if (isZonedLevel) {
       for (const task of tasksInGroup(group.id)) {
-        pushTaskTree([task], isGhost, depth);
+        pushTaskTree([task], isGhost, depth, dragBoardType);
       }
     }
 
     for (const child of childrenOf(group.id)) {
-      pushGroup(child, depth + 1, isGhost);
+      pushGroup(child, depth + 1, isGhost, dragBoardType);
     }
 
     if (!isZonedLevel) {
       for (const task of tasksInGroup(group.id)) {
-        pushTaskTree([task], isGhost, depth);
+        pushTaskTree([task], isGhost, depth, dragBoardType);
       }
     }
   };
@@ -743,19 +810,23 @@ export function buildSheetRows(
       }
       // Include tasks with no group, plus handoff tasks whose group still lives under Detailers
       // (Ready for Spooling keeps the Detailers level but must show on the Spooling board).
-      const ungroupedInSection = sortTasksByPriority(
+      const ungroupedInSection = sortTasksForBoard(
         ghostTasks.filter((t) => {
           if (t.parentTaskId) return false;
           if (!t.groupId) return true;
           return !isGroupUnderSection(groups, t.groupId, section.id);
-        })
+        }),
+        boardType
       );
       // No dedicated Ungrouped group row — list ungrouped tasks at the end with a title suffix.
       for (const task of ungroupedInSection) {
         pushTaskTree([task], true, 0);
       }
     } else if (ghostTasks.length > 0) {
-      for (const task of sortTasksByPriority(ghostTasks.filter((t) => !t.parentTaskId))) {
+      for (const task of sortTasksForBoard(
+        ghostTasks.filter((t) => !t.parentTaskId),
+        boardType
+      )) {
         pushTaskTree([task], true, 0);
       }
     }
@@ -768,11 +839,14 @@ export function buildSheetRows(
     sections.map((section) => [section.sectionBoardType!, section] as const)
   );
 
-  const pushSectionUngroupedTasks = (ungroupedTasks: Task[]) => {
+  const pushSectionUngroupedTasks = (
+    ungroupedTasks: Task[],
+    dragBoardType: ProjectBoardType
+  ) => {
     if (ungroupedTasks.length === 0) return;
     // No Ungrouped group header — tasks render with an "(Ungrouped)" title suffix.
     for (const task of ungroupedTasks) {
-      pushTaskTree([task], false, 1);
+      pushTaskTree([task], false, 1, dragBoardType);
     }
   };
 
@@ -791,10 +865,11 @@ export function buildSheetRows(
   for (const boardId of sectionOrder) {
     const section = sectionByBoard.get(boardId);
     if (!section) continue;
+    const sectionBoard = section.sectionBoardType!;
 
     const rowIndexBeforeSection = rows.length;
 
-    pushGroup(section, 0, false);
+    pushGroup(section, 0, false, sectionBoard);
 
     const includedTaskIds = new Set(
       rows
@@ -803,12 +878,13 @@ export function buildSheetRows(
         .map((row) => row.task.id)
     );
 
-    const ungroupedInSection = sortTasksByPriority(
-      boardTasks.filter((t) => taskCountsAsUngroupedInSection(t, section, groups))
+    const ungroupedInSection = sortTasksForBoard(
+      boardTasks.filter((t) => taskCountsAsUngroupedInSection(t, section, groups)),
+      sectionBoard
     );
     // Tasks under a collapsed trade/level still "belong" to this section — do NOT spill them
     // out as flat ungrouped rows when their parent group is collapsed.
-    const supplementalBoardTasks = sortTasksByPriority(
+    const supplementalBoardTasks = sortTasksForBoard(
       projectTasks.filter((t) => {
         if (t.parentTaskId || includedTaskIds.has(t.id)) return false;
         if (t.groupId && isGroupUnderSection(groups, t.groupId, section.id)) {
@@ -816,21 +892,25 @@ export function buildSheetRows(
         }
         return taskBelongsToGhostBoard(
           t,
-          section.sectionBoardType!,
+          sectionBoard,
           groups,
           clientId,
           projectId,
           projectTasks
         );
-      })
+      }),
+      sectionBoard
     );
-    const mergedUngrouped = sortTasksByPriority([
-      ...ungroupedInSection,
-      ...supplementalBoardTasks.filter(
-        (task) => !ungroupedInSection.some((existing) => existing.id === task.id)
-      ),
-    ]);
-    pushSectionUngroupedTasks(mergedUngrouped);
+    const mergedUngrouped = sortTasksForBoard(
+      [
+        ...ungroupedInSection,
+        ...supplementalBoardTasks.filter(
+          (task) => !ungroupedInSection.some((existing) => existing.id === task.id)
+        ),
+      ],
+      sectionBoard
+    );
+    pushSectionUngroupedTasks(mergedUngrouped, sectionBoard);
   }
 
   return rows;

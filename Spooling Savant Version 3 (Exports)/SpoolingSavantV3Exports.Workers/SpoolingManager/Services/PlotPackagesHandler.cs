@@ -150,13 +150,6 @@ public class PlotPackagesHandler : IExternalEventHandler
 							EnsureTrackingQrBeforePlot(val, batch.AssemblyIds, regularBranch, pendingRequest.ProductKind);
 							TryDeleteExistingOutput(text5);
 							PlotSheetsToPdf(val, list3, text5);
-							TryStampWeldLogEntryFields(
-								val,
-								list3,
-								batch.AssemblyIds,
-								regularBranch,
-								pendingRequest.ProductKind,
-								text5);
 							list.Add(text2 + " - Spools Combined (Plotted)");
 						}
 						catch (Exception ex)
@@ -806,65 +799,6 @@ public class PlotPackagesHandler : IExternalEventHandler
 				tx.RollBack();
 			}
 		}
-	}
-
-	private static void TryStampWeldLogEntryFields(
-		Document doc,
-		IList<ViewSheet> sheets,
-		IEnumerable<ElementId> assemblyIds,
-		bool regularBranch,
-		SpoolingManagerKind productKind,
-		string pdfFullPath)
-	{
-		if (doc == null || sheets == null || sheets.Count == 0 || string.IsNullOrWhiteSpace(pdfFullPath))
-		{
-			return;
-		}
-
-		SpoolingManagerSettings settings = SpoolingManagerSettings.Load(productKind);
-		if (settings == null || !settings.WeldLogEntryFieldsEnabled)
-		{
-			return;
-		}
-
-		Dictionary<ElementId, ViewSheet> sheetsByAssembly =
-			CreateSpoolSheetsHandler.FindSpoolSheetsForAssemblies(
-				doc,
-				regularBranch,
-				assemblyIds?.ToList() ?? new List<ElementId>());
-		if (sheetsByAssembly == null || sheetsByAssembly.Count == 0)
-		{
-			return;
-		}
-
-		Dictionary<ElementId, AssemblyInstance> assemblyBySheetId =
-			new Dictionary<ElementId, AssemblyInstance>();
-		foreach (KeyValuePair<ElementId, ViewSheet> pair in sheetsByAssembly)
-		{
-			if (pair.Value == null || pair.Key == null || pair.Key == ElementId.InvalidElementId)
-			{
-				continue;
-			}
-
-			ElementId sheetId = ((Element)pair.Value).Id;
-			if (assemblyBySheetId.ContainsKey(sheetId))
-			{
-				continue;
-			}
-
-			AssemblyInstance assembly = doc.GetElement(pair.Key) as AssemblyInstance;
-			if (assembly != null)
-			{
-				assemblyBySheetId[sheetId] = assembly;
-			}
-		}
-
-		WeldLogPdfEntryFieldsService.TryStampEntryFields(
-			doc,
-			sheets,
-			assemblyBySheetId,
-			settings,
-			pdfFullPath);
 	}
 
 	private static void PlotSheetsToPdf(Document doc, IList<ViewSheet> sheets, string outputPdfFullPath)

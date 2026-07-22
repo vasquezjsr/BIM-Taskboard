@@ -1,5 +1,9 @@
 import { v4 as uuid } from 'uuid';
 import type { Project, Task, TaskAttachment, TaskGroup } from '../types';
+import {
+  PREMADE_MATERIAL_COLUMN_ID,
+  PREMADE_TRADE_COLUMN_ID,
+} from '../data/premadeSheetColumns';
 import type { BoardTaskStatusesMap, ProjectBoardTaskStatusesMap } from './taskStatuses';
 import { applyAutoAssigneesToTask } from './taskAssigneesAuto';
 import { nextTaskNumberForProject } from './taskNumbers';
@@ -16,8 +20,64 @@ import {
   type BoardroomPackageBatch,
   type BoardroomPackageManifest,
 } from './boardroomPackageImport';
-import { clearDetailersSpoolingMirrorFields } from './detailersSpoolingHandoff';
+import {
+  clearDetailersMirrorFlagKeepGroup,
+  DETAILERS_MIRROR_GROUP_FIELD,
+  detailersMirrorGroupId,
+  stampDetailersSpoolingMirror,
+  stickyDetailersGroupId,
+} from './detailersSpoolingHandoff';
 
+/** Copy Trade / Material from the main Spooling package onto nested assemblies. */
+export function tradeMaterialFieldsFromPackage(pkg: Task): Record<string, string | null> {
+  return {
+    [PREMADE_TRADE_COLUMN_ID]: pkg.customFields?.[PREMADE_TRADE_COLUMN_ID] ?? null,
+    [PREMADE_MATERIAL_COLUMN_ID]: pkg.customFields?.[PREMADE_MATERIAL_COLUMN_ID] ?? null,
+  };
+}
+
+/** Walk to the top-level package task for an assembly. */
+function packageRootForTask(tasks: Task[], task: Task): Task {
+  const byId = new Map(tasks.map((entry) => [entry.id, entry]));
+  let current = task;
+  const seen = new Set<string>();
+  while (current.parentTaskId && !seen.has(current.id)) {
+    seen.add(current.id);
+    const parent = byId.get(current.parentTaskId);
+    if (!parent) break;
+    current = parent;
+  }
+  return current;
+}
+
+/**
+ * Ensure every SSv3 assembly inherits Trade / Material from its main package task.
+ * Safe to run repeatedly (idempotent).
+ */
+export function syncAssemblyTradeMaterialFromPackageRoots(tasks: Task[]): Task[] {
+  return tasks.map((task) => {
+    if (task.customFields?.[SSV3_FIELD.kind] !== SSV3_KIND_ASSEMBLY) return task;
+    if (!task.parentTaskId) return task;
+    const root = packageRootForTask(tasks, task);
+    if (root.id === task.id) return task;
+    const tradeMaterial = tradeMaterialFieldsFromPackage(root);
+    const currentTrade = task.customFields?.[PREMADE_TRADE_COLUMN_ID] ?? null;
+    const currentMaterial = task.customFields?.[PREMADE_MATERIAL_COLUMN_ID] ?? null;
+    if (
+      currentTrade === tradeMaterial[PREMADE_TRADE_COLUMN_ID] &&
+      currentMaterial === tradeMaterial[PREMADE_MATERIAL_COLUMN_ID]
+    ) {
+      return task;
+    }
+    return {
+      ...task,
+      customFields: {
+        ...task.customFields,
+        ...tradeMaterial,
+      },
+    };
+  });
+}
 type TaskTreeContext = {
   projects: Project[];
   tasks: Task[];
@@ -177,9 +237,11 @@ function upsertAssemblyUnderParent(
   boardType: Task['boardType'],
   sPackage: string,
   assembly: BoardroomPackageAssembly,
-  status: string
+  status: string,
+  packageRoot: Task
 ): { tasks: Task[]; projects: Project[]; created: boolean } {
   const revitId = String(assembly.revitElementId ?? '');
+  const tradeMaterial = tradeMaterialFieldsFromPackage(packageRoot);
   const existing = tasks.find(
     (task) =>
       task.parentTaskId === parentId &&
@@ -211,6 +273,7 @@ function upsertAssemblyUnderParent(
                 [SSV3_FIELD.qr]: assembly.qr ?? '',
                 [SSV3_FIELD.sheetName]: assembly.sheetName ?? '',
                 [SSV3_FIELD.sheetNumber]: assembly.sheetNumber ?? '',
+                ...tradeMaterial,
               },
             }
           : task
@@ -245,6 +308,7 @@ function upsertAssemblyUnderParent(
       [SSV3_FIELD.qr]: assembly.qr ?? '',
       [SSV3_FIELD.sheetName]: assembly.sheetName ?? '',
       [SSV3_FIELD.sheetNumber]: assembly.sheetNumber ?? '',
+      ...tradeMaterial,
     },
     createdAt: new Date().toISOString(),
   });
@@ -364,7 +428,8 @@ export function attachSsv3HierarchyToTask(
         boardType,
         sPackage,
         assembly,
-        childStatus
+        childStatus,
+        rootTask
       );
       tasks = result.tasks;
       projects = result.projects;
@@ -372,7 +437,12 @@ export function attachSsv3HierarchyToTask(
     }
   }
 
-  return { projects, tasks, packagesUpserted, assembliesUpserted };
+  return {
+    projects,
+    tasks: syncAssemblyTradeMaterialFromPackageRoots(tasks),
+    packagesUpserted,
+    assembliesUpserted,
+  };
 }
 
 export function attachSsv3HierarchyFromManifest(
@@ -440,9 +510,16 @@ export function promoteSsv3SpoolingTaskToFab(
 
   tasks = tasks.map((task) => {
     if (!treeIds.has(task.id)) return task;
-    // Detailers↔Spooling mirror must not follow the package into Fab — otherwise
-    // Material Pulled (and other fab statuses) get yanked back to Detailers.
-    const fields = clearDetailersSpoolingMirrorFields(task.customFields);
+    // Drop live Detailers mirror so Fab statuses aren't yanked back to Detailers,
+    // but keep bbDetailersGroupId sticky so demote can remirror.
+    const sticky =
+      task.id === spoolingTask.id
+        ? stickyDetailersGroupId(task)
+        : detailersMirrorGroupId(task);
+    const fields = clearDetailersMirrorFlagKeepGroup(task.customFields);
+    if (sticky) {
+      fields[DETAILERS_MIRROR_GROUP_FIELD] = sticky;
+    }
     if (task.id === spoolingTask.id) {
       fields[SSV3_FIELD.kind] = SSV3_KIND_PACKAGE;
       fields[SSV3_FIELD.fabPackageTaskId] = spoolingTask.id;
@@ -490,11 +567,23 @@ export function demoteSsv3FabTaskToSpooling(
   }
 
   const treeIds = collectDescendantIds(ctx.tasks, fabTask.id);
+  const stickyGroup = stickyDetailersGroupId(fabTask);
   const tasks = ctx.tasks.map((task) => {
     if (!treeIds.has(task.id)) return task;
     const customFields = { ...(task.customFields ?? {}) };
     if (task.id === fabTask.id) {
       delete customFields[SSV3_FIELD.fabPackageTaskId];
+      const stamped = stampDetailersSpoolingMirror(
+        { ...task, customFields },
+        stickyGroup ?? detailersMirrorGroupId(task)
+      );
+      return {
+        ...task,
+        boardType: 'spooling' as const,
+        groupId: stamped.groupId,
+        status: 'spool-in-progress',
+        customFields: stamped.customFields,
+      };
     }
     return {
       ...task,
@@ -707,11 +796,23 @@ export function demoteSsv3ShippingTaskToSpooling(
   }
 
   const treeIds = collectDescendantIds(ctx.tasks, shippingTask.id);
+  const stickyGroup = stickyDetailersGroupId(shippingTask);
   const tasks = ctx.tasks.map((task) => {
     if (!treeIds.has(task.id)) return task;
     const customFields = { ...(task.customFields ?? {}) };
     if (task.id === shippingTask.id) {
       delete customFields[SSV3_FIELD.fabPackageTaskId];
+      const stamped = stampDetailersSpoolingMirror(
+        { ...task, customFields },
+        stickyGroup ?? detailersMirrorGroupId(task)
+      );
+      return {
+        ...task,
+        boardType: 'spooling' as const,
+        groupId: stamped.groupId,
+        status: 'spool-in-progress',
+        customFields: stamped.customFields,
+      };
     }
     return {
       ...task,

@@ -155,8 +155,6 @@ public class AssemblySettingsWindow : Window
 
 	internal CheckBox chkFillWeldLog;
 
-	internal CheckBox chkWeldLogEntryFields;
-
 	internal CheckBox chkContinuationTags;
 
 	internal CheckBox chkWeldTagPackagePrefix;
@@ -1330,10 +1328,6 @@ public class AssemblySettingsWindow : Window
 		SelectWeldLogSourceView(cmbWeldLogSourceView, _settings.WeldLogSourceViewLabel);
 		chkNumberWelds.IsChecked = _settings.NumberWeldsEnabled;
 		chkFillWeldLog.IsChecked = _settings.WeldLogEnabled;
-		if (chkWeldLogEntryFields != null)
-		{
-			chkWeldLogEntryFields.IsChecked = _settings.WeldLogEntryFieldsEnabled;
-		}
 		chkContinuationTags.IsChecked = _settings.ContinuationTagsEnabled;
 		chkWeldTagPackagePrefix.IsChecked = _settings.WeldTagIncludePackageNumber;
 		if (chkItemNumberCustomFormat != null)
@@ -1694,7 +1688,6 @@ public class AssemblySettingsWindow : Window
 		_settings.WeldLogSourceViewLabel = GetWeldLogSourceViewLabel(cmbWeldLogSourceView);
 		_settings.NumberWeldsEnabled = chkNumberWelds.IsChecked == true;
 		_settings.WeldLogEnabled = chkFillWeldLog.IsChecked == true;
-		_settings.WeldLogEntryFieldsEnabled = chkWeldLogEntryFields?.IsChecked == true;
 		_settings.ContinuationTagsEnabled = chkContinuationTags.IsChecked == true;
 		_settings.WeldTagIncludePackageNumber = chkWeldTagPackagePrefix.IsChecked == true;
 		_settings.ItemNumberCustomFormatEnabled = chkItemNumberCustomFormat?.IsChecked == true;
@@ -2048,7 +2041,6 @@ public class AssemblySettingsWindow : Window
 		chkTopAutoDim = SpoolingManagerXamlLoader.Find<CheckBox>(this, "chkTopAutoDim");
 		chkNumberWelds = SpoolingManagerXamlLoader.Find<CheckBox>(this, "chkNumberWelds");
 		chkFillWeldLog = SpoolingManagerXamlLoader.Find<CheckBox>(this, "chkFillWeldLog");
-		chkWeldLogEntryFields = SpoolingManagerXamlLoader.Find<CheckBox>(this, "chkWeldLogEntryFields");
 		chkContinuationTags = SpoolingManagerXamlLoader.Find<CheckBox>(this, "chkContinuationTags");
 		chkWeldTagPackagePrefix = SpoolingManagerXamlLoader.Find<CheckBox>(this, "chkWeldTagPackagePrefix");
 		chkItemNumberCustomFormat = SpoolingManagerXamlLoader.Find<CheckBox>(this, "chkItemNumberCustomFormat");

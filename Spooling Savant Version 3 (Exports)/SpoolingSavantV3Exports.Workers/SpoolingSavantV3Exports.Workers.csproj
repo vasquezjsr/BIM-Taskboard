@@ -109,7 +109,6 @@
     <Compile Include="SpoolingManager\Models\SpoolingManagerSettings.cs" />
     <Compile Include="SpoolingManager\Models\SpoolScheduleOption.cs" />
     <Compile Include="SpoolingManager\Models\WeldLogExportRow.cs" />
-    <Compile Include="SpoolingManager\Models\WeldLogEntryFieldRect.cs" />
     <Compile Include="SpoolingManager\Services\ApplyAssemblyPackageHandler.cs" />
     <Compile Include="SpoolingManager\Services\AssemblyMemberChangeBootstrap.cs" />
     <Compile Include="SpoolingManager\Services\AssemblyMemberChangeCoordinator.cs" />
@@ -161,7 +160,6 @@
     <Compile Include="SpoolingManager\Services\RenameSheetsHandler.cs" />
     <Compile Include="SpoolingManager\Services\RevitRequestBridge.cs" />
     <Compile Include="SpoolingManager\Services\WeldLogExcelExportService.cs" />
-    <Compile Include="SpoolingManager\Services\WeldLogPdfEntryFieldsService.cs" />
     <Compile Include="SpoolingManager\ViewModels\AssemblyRow.cs" />
     <Compile Include="SpoolingManager\ViewModels\PackageAssemblyGroup.cs" />
     <Compile Include="SpoolingManager\ViewModels\RenameSheetRow.cs" />

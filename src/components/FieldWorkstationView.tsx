@@ -23,6 +23,10 @@ import {
   getEstimatedArrival,
   getShippedAt,
   getTaskQr,
+  isAssemblyReleasedForShipView,
+  PARTIAL_STILL_IN_FAB_COLOR,
+  PARTIAL_STILL_IN_FAB_LABEL,
+  PARTIAL_STILL_IN_FAB_STATUS_ID,
 } from '../utils/shippingTracking';
 import {
   extractPdfPageBlobUrl,
@@ -282,28 +286,67 @@ export function FieldWorkstationView() {
 
   const assemblies = useMemo(() => {
     if (!selectedPackage) return [];
-    const children = tasks
+    // Show every assembly (still-in-Fab rows are grayed); Field install stays on In Transit+.
+    return tasks
       .filter((task) => isSsv3AssemblyTask(task) && task.parentTaskId === selectedPackage.id)
       .sort((a, b) => (a.title ?? '').localeCompare(b.title ?? ''));
-    return assembliesForFieldDashboardView(selectedPackage, children);
   }, [tasks, selectedPackage]);
 
   const selectedInbound = selectedPackage
     ? isPackageInboundFromShipping(selectedPackage)
     : false;
 
+  const selectedInboundAssemblies = useMemo(() => {
+    if (!selectedPackage) return [];
+    return assembliesForFieldDashboardView(selectedPackage, assemblies);
+  }, [selectedPackage, assemblies]);
+
   const selectedInboundLane = selectedPackage
-    ? inboundShippingLabel(selectedPackage, assemblies)
+    ? inboundShippingLabel(selectedPackage, selectedInboundAssemblies)
     : null;
+
+  const selectedPartialFab = Boolean(
+    selectedPackage && selectedInbound && selectedPackage.boardType === 'fab'
+  );
 
   useEffect(() => {
     if (!selectedPackage) {
       setSelectedAssemblyId(null);
       return;
     }
-    if (assemblies.some((assembly) => assembly.id === selectedAssemblyId)) return;
-    setSelectedAssemblyId(assemblies[0]?.id ?? null);
-  }, [selectedPackage, assemblies, selectedAssemblyId]);
+    if (assemblies.some((assembly) => assembly.id === selectedAssemblyId)) {
+      const current = assemblies.find((assembly) => assembly.id === selectedAssemblyId);
+      if (
+        current &&
+        selectedInbound &&
+        !isAssemblyReleasedForShipView(current, selectedPackage)
+      ) {
+        // Prefer a released / inbound assembly when current pick is still in Fab.
+        const preferred =
+          selectedInboundAssemblies[0] ??
+          assemblies.find((assembly) =>
+            isAssemblyReleasedForShipView(assembly, selectedPackage)
+          ) ??
+          null;
+        setSelectedAssemblyId(preferred?.id ?? null);
+      }
+      return;
+    }
+    const preferred =
+      selectedInboundAssemblies[0] ??
+      assemblies.find((assembly) =>
+        !selectedInbound || isAssemblyReleasedForShipView(assembly, selectedPackage)
+      ) ??
+      assemblies[0] ??
+      null;
+    setSelectedAssemblyId(preferred?.id ?? null);
+  }, [
+    selectedPackage,
+    assemblies,
+    selectedAssemblyId,
+    selectedInbound,
+    selectedInboundAssemblies,
+  ]);
 
   const selectedAssembly =
     assemblies.find((assembly) => assembly.id === selectedAssemblyId) ?? null;
@@ -613,7 +656,9 @@ export function FieldWorkstationView() {
 
   const selectedAdvance = selectedPackage ? nextFieldLaneId(selectedPackage.status) : null;
   const selectedAdvanceLabel = selectedAdvance ? laneChipLabel(selectedAdvance) : null;
-  const selectedInstallProgress = assemblyInstallProgress(assemblies);
+  const selectedInstallProgress = assemblyInstallProgress(
+    selectedInbound ? selectedInboundAssemblies : assemblies
+  );
 
   return (
     <div className={`${fabStyles.wrapper} ${styles.fieldRoot}`}>
@@ -712,22 +757,26 @@ export function FieldWorkstationView() {
               {packageTasks.map((task) => {
                 const sPackage = task.customFields?.[SSV3_FIELD.package] ?? '';
                 const inbound = isPackageInboundFromShipping(task);
-                const children = assembliesForFieldDashboardView(
-                  task,
-                  tasks.filter(
-                    (entry) => isSsv3AssemblyTask(entry) && entry.parentTaskId === task.id
-                  )
+                const allChildren = tasks.filter(
+                  (entry) => isSsv3AssemblyTask(entry) && entry.parentTaskId === task.id
                 );
+                const children = assembliesForFieldDashboardView(task, allChildren);
                 const inboundLane = inboundShippingLabel(task, children);
+                const partialFab = inbound && task.boardType === 'fab';
                 const meta = inbound
-                  ? {
-                      label: inboundLane
-                        ? shippingLaneLabel(inboundLane, task)
-                        : 'Inbound',
-                      color:
-                        shippingStatusesFor(task).find((status) => status.id === inboundLane)
-                          ?.color ?? '#fdba74',
-                    }
+                  ? partialFab
+                    ? {
+                        label: PARTIAL_STILL_IN_FAB_LABEL,
+                        color: PARTIAL_STILL_IN_FAB_COLOR,
+                      }
+                    : {
+                        label: inboundLane
+                          ? shippingLaneLabel(inboundLane, task)
+                          : 'Inbound',
+                        color:
+                          shippingStatusesFor(task).find((status) => status.id === inboundLane)
+                            ?.color ?? '#fdba74',
+                      }
                   : statusMeta(task.status, task);
                 const selected = task.id === selectedPackageId;
                 const statuses = inbound
@@ -749,10 +798,13 @@ export function FieldWorkstationView() {
                         <span className={fabStyles.packageName}>{task.title}</span>
                         <span className={fabStyles.packageMeta}>
                           {sPackage} · {projectLabel(task.projectId)}
+                          {partialFab ? ' · partial release' : ''}
                         </span>
                         {inbound ? (
                           <span className={styles.inboundBadge}>
-                            Inbound · {meta.label}
+                            {partialFab
+                              ? PARTIAL_STILL_IN_FAB_LABEL
+                              : `Inbound · ${meta.label}`}
                           </span>
                         ) : progress.total > 0 ? (
                           <span className={fabStyles.assemblyProgress}>
@@ -800,9 +852,11 @@ export function FieldWorkstationView() {
                     ? ` · exported ${formatScanTime(selectedPackage.customFields[SSV3_FIELD.exportedAt])}`
                     : null}
                 </p>
-                {selectedInbound && selectedInboundLane ? (
+                {selectedInbound && (selectedPartialFab || selectedInboundLane) ? (
                   <p className={styles.inboundCallout}>
-                    Inbound from Shipping · {shippingLaneLabel(selectedInboundLane, selectedPackage)}
+                    {selectedPartialFab
+                      ? `${PARTIAL_STILL_IN_FAB_LABEL} — some assemblies are still on Fabrication.`
+                      : `Inbound from Shipping · ${shippingLaneLabel(selectedInboundLane!, selectedPackage)}`}
                     {getEstimatedArrival(selectedPackage)
                       ? ` · Expected ${formatShipDateShort(getEstimatedArrival(selectedPackage))}`
                       : ''}
@@ -867,7 +921,7 @@ export function FieldWorkstationView() {
                 <h4 className={fabStyles.sectionHeading}>Assemblies</h4>
                 <p className={styles.sectionHint}>
                   {selectedInbound
-                    ? 'Only assemblies In Transit or later are listed. Open a spool sheet to prep install.'
+                    ? 'Assemblies still in Fab are grayed out. Prefabricated In Transit+ assemblies can open spool sheets; Field stages unlock after handoff.'
                     : 'Select an assembly to open its spool sheet and update install status.'}
                 </p>
                 {assemblies.length === 0 ? (
@@ -876,8 +930,21 @@ export function FieldWorkstationView() {
                   <ul className={fabStyles.assemblyList}>
                     {assemblies.map((task) => {
                       const active = task.id === selectedAssemblyId;
-                      const fieldStatus = getAssemblyFieldStatus(task);
-                      const fieldMeta = statusMeta(fieldStatus, selectedPackage);
+                      const stillInFab =
+                        selectedInbound &&
+                        !isAssemblyReleasedForShipView(task, selectedPackage);
+                      const fieldReady =
+                        !selectedInbound ||
+                        isShippingStatusVisibleToField(getAssemblyShippingLane(task));
+                      const fieldStatus = stillInFab
+                        ? PARTIAL_STILL_IN_FAB_STATUS_ID
+                        : getAssemblyFieldStatus(task);
+                      const fieldMeta = stillInFab
+                        ? {
+                            label: PARTIAL_STILL_IN_FAB_LABEL,
+                            color: PARTIAL_STILL_IN_FAB_COLOR,
+                          }
+                        : statusMeta(fieldStatus, selectedPackage);
                       const sheetLabel = [
                         task.customFields?.[SSV3_FIELD.sheetName],
                         task.customFields?.[SSV3_FIELD.sheetNumber],
@@ -887,7 +954,9 @@ export function FieldWorkstationView() {
                         .join(' · ');
                       const shipLane = getAssemblyShippingLane(task);
                       const shipMeta =
-                        selectedInbound && isShippingStatusVisibleToField(shipLane)
+                        selectedInbound &&
+                        !stillInFab &&
+                        isShippingStatusVisibleToField(shipLane)
                           ? shippingStatusesFor(selectedPackage).find(
                               (status) => status.id === shipLane
                             )
@@ -897,18 +966,28 @@ export function FieldWorkstationView() {
                         <li key={task.id}>
                           <div
                             className={
-                              active
-                                ? `${fabStyles.assemblyRow} ${styles.assemblyRowActive}`
-                                : fabStyles.assemblyRow
+                              stillInFab
+                                ? fabStyles.assemblyRowReleased
+                                : active
+                                  ? `${fabStyles.assemblyRow} ${styles.assemblyRowActive}`
+                                  : fabStyles.assemblyRow
                             }
                           >
                             <button
                               type="button"
                               className={styles.assemblySelectBtn}
-                              onClick={() => setSelectedAssemblyId(task.id)}
+                              onClick={() => {
+                                if (stillInFab) return;
+                                setSelectedAssemblyId(task.id);
+                              }}
+                              disabled={stillInFab}
                             >
                               <span className={fabStyles.assemblyTitle}>{task.title}</span>
-                              {shipMeta ? (
+                              {stillInFab ? (
+                                <span className={styles.assemblyMeta}>
+                                  {PARTIAL_STILL_IN_FAB_LABEL}
+                                </span>
+                              ) : shipMeta ? (
                                 <span className={styles.assemblyMeta}>
                                   Shipping: {shipMeta.label}
                                   {qrLabel ? ` · QR ${qrLabel}` : ''}
@@ -928,20 +1007,35 @@ export function FieldWorkstationView() {
                             <select
                               className={fabStyles.statusSelect}
                               value={fieldStatus}
+                              disabled={stillInFab || (selectedInbound && !fieldReady)}
                               style={{
                                 borderColor: fieldMeta.color,
                                 color: fieldMeta.color,
                               }}
                               onChange={(e) => setAssemblyFieldStatus(task, e.target.value)}
                               onClick={(e) => e.stopPropagation()}
-                              title="Assembly install status"
+                              title={
+                                stillInFab
+                                  ? 'Still in Fab — mark Ready for Shipping first'
+                                  : selectedInbound && !fieldReady
+                                    ? 'Waiting for In Transit from Shipping'
+                                    : 'Assembly install status'
+                              }
                             >
-                              <option value="not-started">Not Started</option>
-                              {FIELD_WORKFLOW_LANES.map((lane) => (
-                                <option key={lane} value={lane}>
-                                  {statusMeta(lane, selectedPackage).label}
+                              {stillInFab ? (
+                                <option value={PARTIAL_STILL_IN_FAB_STATUS_ID}>
+                                  {PARTIAL_STILL_IN_FAB_LABEL}
                                 </option>
-                              ))}
+                              ) : (
+                                <>
+                                  <option value="not-started">Not Started</option>
+                                  {FIELD_WORKFLOW_LANES.map((lane) => (
+                                    <option key={lane} value={lane}>
+                                      {statusMeta(lane, selectedPackage).label}
+                                    </option>
+                                  ))}
+                                </>
+                              )}
                             </select>
                           </div>
                         </li>

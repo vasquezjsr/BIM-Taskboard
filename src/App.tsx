@@ -250,8 +250,6 @@ function App() {
 
         </div>
 
-        <div className={styles.headerSpacer} />
-
         <div className={styles.headerActions}>
           <button
             type="button"

@@ -1,31 +1,51 @@
 {
   "schema": "bim-boardroom-package-v1",
-  "exportedAt": "2026-07-12T11:38:28.4729086-05:00",
+  "exportedAt": "2026-07-19T13:07:32.4204457-05:00",
   "targets": ["fab", "shipping"],
   "boardroomProject": {
-    "id": "1f2598d6-430f-42c0-a9a3-d43e2605f465",
+    "id": "19b7141d-6bbf-43ae-bd28-a5b9f980e987",
     "name": "Campus Utility Upgrade",
     "clientName": "Demo Mechanical",
     "jobCode": "25-1003"
   },
   "boardroomTask": {
-    "id": "6123eb08-ee9c-481f-9416-435d27c1a6be",
-    "taskNumber": "25-1003-0001",
-    "title": "TP007 - Mechanical Pipe"
+    "id": "7ea7481f-7883-4a95-bb9f-6acf4a4ea635",
+    "taskNumber": "",
+    "title": "Level 01 Area A - Mechanical Pipe (Weld)"
   },
   "packages": [
     {
-      "sPackage": "TP007",
+      "sPackage": "Level 01 Area A - Mechanical Pipe (Weld)",
       "assemblies": [
-        { "revitElementId": 2810233, "name": "CHWR-TEST-01", "qr": "SSV2|P=TP007|A=CHWR-TEST-01" },
-        { "revitElementId": 2810235, "name": "CHWR-TEST-02", "qr": "SSV2|P=TP007|A=CHWR-TEST-02" },
-        { "revitElementId": 2810237, "name": "CHWS-TEST-01", "qr": "SSV2|P=TP007|A=CHWS-TEST-01" },
-        { "revitElementId": 2810239, "name": "CHWS-TEST-02", "qr": "SSV2|P=TP007|A=CHWS-TEST-02" }
+        { "revitElementId": 1781849, "name": "CRAH-5401-01-R-03", "sheetName": "CRAH-5401-01-R-03 Spool Sheet", "sheetNumber": "CRAH-5401-01-R-03", "qr": "SSV3|P=Level 01 Area A - Mechanical Pipe (Weld)|A=CRAH-5401-01-R-03" },
+        { "revitElementId": 1781853, "name": "CRAH-5401-02-R-03", "sheetName": "CRAH-5401-02-R-03 Spool Sheet", "sheetNumber": "CRAH-5401-02-R-03", "qr": "SSV3|P=Level 01 Area A - Mechanical Pipe (Weld)|A=CRAH-5401-02-R-03" },
+        { "revitElementId": 1781857, "name": "CRAH-5401-03-R-03", "sheetName": "CRAH-5401-03-R-03 Spool Sheet", "sheetNumber": "CRAH-5401-03-R-03", "qr": "SSV3|P=Level 01 Area A - Mechanical Pipe (Weld)|A=CRAH-5401-03-R-03" },
+        { "revitElementId": 1781861, "name": "CRAH-5401-04-R-03", "sheetName": "CRAH-5401-04-R-03 Spool Sheet", "sheetNumber": "CRAH-5401-04-R-03", "qr": "SSV3|P=Level 01 Area A - Mechanical Pipe (Weld)|A=CRAH-5401-04-R-03" },
+        { "revitElementId": 1781865, "name": "CRAH-5401-05-R-03", "sheetName": "CRAH-5401-05-R-03 Spool Sheet", "sheetNumber": "CRAH-5401-05-R-03", "qr": "SSV3|P=Level 01 Area A - Mechanical Pipe (Weld)|A=CRAH-5401-05-R-03" },
+        { "revitElementId": 1781869, "name": "CRAH-5401-06-R-03", "sheetName": "CRAH-5401-06-R-03 Spool Sheet", "sheetNumber": "CRAH-5401-06-R-03", "qr": "SSV3|P=Level 01 Area A - Mechanical Pipe (Weld)|A=CRAH-5401-06-R-03" },
+        { "revitElementId": 1781873, "name": "CRAH-5404-01-R-03", "sheetName": "CRAH-5404-01-R-03 Spool Sheet", "sheetNumber": "CRAH-5404-01-R-03", "qr": "SSV3|P=Level 01 Area A - Mechanical Pipe (Weld)|A=CRAH-5404-01-R-03" },
+        { "revitElementId": 1781877, "name": "CRAH-5404-02-R-03", "sheetName": "CRAH-5404-02-R-03 Spool Sheet", "sheetNumber": "CRAH-5404-02-R-03", "qr": "SSV3|P=Level 01 Area A - Mechanical Pipe (Weld)|A=CRAH-5404-02-R-03" },
+        { "revitElementId": 1781881, "name": "CRAH-5404-03-R-03", "sheetName": "CRAH-5404-03-R-03 Spool Sheet", "sheetNumber": "CRAH-5404-03-R-03", "qr": "SSV3|P=Level 01 Area A - Mechanical Pipe (Weld)|A=CRAH-5404-03-R-03" },
+        { "revitElementId": 1781885, "name": "CRAH-5404-04-R-03", "sheetName": "CRAH-5404-04-R-03 Spool Sheet", "sheetNumber": "CRAH-5404-04-R-03", "qr": "SSV3|P=Level 01 Area A - Mechanical Pipe (Weld)|A=CRAH-5404-04-R-03" },
+        { "revitElementId": 1781889, "name": "CRAH-5404-05-R-03", "sheetName": "CRAH-5404-05-R-03 Spool Sheet", "sheetNumber": "CRAH-5404-05-R-03", "qr": "SSV3|P=Level 01 Area A - Mechanical Pipe (Weld)|A=CRAH-5404-05-R-03" },
+        { "revitElementId": 1781893, "name": "CRAH-5404-06-R-03", "sheetName": "CRAH-5404-06-R-03 Spool Sheet", "sheetNumber": "CRAH-5404-06-R-03", "qr": "SSV3|P=Level 01 Area A - Mechanical Pipe (Weld)|A=CRAH-5404-06-R-03" }
       ]
     }
   ],
   "files": [
     { "fileName": "boardroom-package.json.bak-before-live-export", "type": "bak-before-live-export" },
+    { "fileName": "Level 01 - Mechanical Pipe (Weld) - Assembly List.pdf", "type": "pdf" },
+    { "fileName": "Level 01 - Mechanical Pipe (Weld) - Bill of Materials.pdf", "type": "pdf" },
+    { "fileName": "Level 01 - Mechanical Pipe (Weld) - Cut List.pdf", "type": "pdf" },
+    { "fileName": "Level 01 - Mechanical Pipe (Weld) - PCF - Steel.pcf", "type": "pcf" },
+    { "fileName": "Level 01 - Mechanical Pipe (Weld) - Spools Combined.pdf", "type": "pdf" },
+    { "fileName": "Level 01 - Mechanical Pipe (Weld) - Weld Log.xlsx", "type": "xlsx" },
+    { "fileName": "Level 01 Area A - Mechanical Pipe (Weld) - Assembly List.pdf", "type": "pdf" },
+    { "fileName": "Level 01 Area A - Mechanical Pipe (Weld) - Bill of Materials.pdf", "type": "pdf" },
+    { "fileName": "Level 01 Area A - Mechanical Pipe (Weld) - Cut List.pdf", "type": "pdf" },
+    { "fileName": "Level 01 Area A - Mechanical Pipe (Weld) - PCF - Steel.pcf", "type": "pcf" },
+    { "fileName": "Level 01 Area A - Mechanical Pipe (Weld) - Spools Combined.pdf", "type": "pdf" },
+    { "fileName": "Level 01 Area A - Mechanical Pipe (Weld) - Weld Log.xlsx", "type": "xlsx" },
     { "fileName": "Piping Specification Catalog.xlsx", "type": "xlsx" },
     { "fileName": "TP007 - Assembly List.pdf", "type": "pdf" },
     { "fileName": "TP007 - Bill of Materials.pdf", "type": "pdf" },

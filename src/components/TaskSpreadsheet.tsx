@@ -51,11 +51,31 @@ import {
 import { projectJobLabel } from '../utils/projectJobLabel';
 import { isTemplateProject } from '../utils/projectTemplate';
 import {
+  assemblyCascadeUpdatesFromParent,
+  assemblyIdsUnderParent,
+  parentHasAssemblyCascade,
+} from '../utils/spoolingDashboardCascade';
+import {
   getProjectSubBoardOrder,
   getAssignableBoards,
   PROJECT_BOARD_TYPES,
 } from '../types';
-import { getBoardTaskStatuses, getStatusColor, statusBoardForTask, type BoardTaskStatusesMap, type ProjectBoardTaskStatusesMap } from '../utils/taskStatuses';
+import {
+  getBoardTaskStatuses,
+  getStatusColor,
+  statusBoardForSpreadsheetView,
+  isDashboardDrivenStatusBoard,
+  type BoardTaskStatusesMap,
+  type ProjectBoardTaskStatusesMap,
+} from '../utils/taskStatuses';
+import {
+  isAssemblyReleasedForShipView,
+  PARTIAL_STILL_IN_FAB_COLOR,
+  PARTIAL_STILL_IN_FAB_LABEL,
+  PARTIAL_STILL_IN_FAB_STATUS_ID,
+  shippingStatusValueForSpreadsheet,
+  updatesForShippingSpreadsheetStatus,
+} from '../utils/shippingTracking';
 import {
   canAddColumns,
   canAssignTasks,
@@ -113,16 +133,18 @@ import {
   computeSheetGroupsDrop,
   computeSheetTasksDrop,
   dropIntentLabel,
+  findSectionBoardType,
   groupDropId,
   GROUP_DROP_PREFIX,
   BOARD_DROP_PREFIX,
   parseBoardDropId,
   parseGroupDropId,
   parseTaskDragId,
+  parseTaskDragBoardScope,
   placementFromPointer,
   resolveGroupDropAction,
   resolveTaskDropTarget,
-  isSheetGroupContainer,
+  sheetDropBoardScope,
   taskDragId,
   TRASH_DROP_ID,
   type DropPlacement,
@@ -156,10 +178,7 @@ type SheetContextMenu =
   | { kind: 'group'; group: TaskGroup; x: number; y: number }
   | { kind: 'workspace'; x: number; y: number };
 
-/** Pixels near a row edge that count as before/after insert (not center/inside). */
-const SHEET_ROW_EDGE_HIT_PX = 10;
-
-/** Live pointer while a sheet drag is active — drop lines track the cursor, not the ghost. */
+/** Row hit-test uses a simple upper/lower half split (before / after). */
 const sheetLivePointer: { current: { x: number; y: number } | null } = { current: null };
 
 function setSheetLivePointer(point: { x: number; y: number } | null) {
@@ -229,19 +248,15 @@ function resolveSheetDropAtPoint(
   }
 
   if (containing) {
-    const { droppableId, rect } = containing;
-    const fromTop = y - rect.top;
-    const fromBottom = rect.bottom - y;
-    if (fromTop <= SHEET_ROW_EDGE_HIT_PX && fromTop <= fromBottom) {
-      return { droppableId, rect, placement: 'before' };
-    }
-    if (fromBottom <= SHEET_ROW_EDGE_HIT_PX) {
-      return { droppableId, rect, placement: 'after' };
-    }
-    return { droppableId, rect };
+    const midY = containing.rect.top + containing.rect.height / 2;
+    return {
+      droppableId: containing.droppableId,
+      rect: containing.rect,
+      placement: y < midY ? 'before' : 'after',
+    };
   }
 
-  // True gap between consecutive rows (cursor not inside either).
+  // Gap between consecutive rows — attach to the nearer edge.
   for (let i = 0; i < measured.length - 1; i++) {
     const upper = measured[i]!;
     const lower = measured[i + 1]!;
@@ -254,7 +269,11 @@ function resolveSheetDropAtPoint(
     const gapTop = Math.min(upper.rect.bottom, lower.rect.top);
     const gapBottom = Math.max(upper.rect.bottom, lower.rect.top);
     if (y < gapTop - 1 || y > gapBottom + 1) continue;
-    return { droppableId: upper.droppableId, rect: upper.rect, placement: 'after' };
+    const gapMid = (gapTop + gapBottom) / 2;
+    if (y <= gapMid) {
+      return { droppableId: upper.droppableId, rect: upper.rect, placement: 'after' };
+    }
+    return { droppableId: lower.droppableId, rect: lower.rect, placement: 'before' };
   }
 
   let nearest: { droppableId: string; rect: DOMRect; dist: number } | null = null;
@@ -262,7 +281,7 @@ function resolveSheetDropAtPoint(
     const { droppableId, rect } = entry;
     const dist =
       y < rect.top ? rect.top - y : y > rect.bottom ? y - rect.bottom : 0;
-    if (dist > 20) continue;
+    if (dist > 24) continue;
     if (!nearest || dist < nearest.dist) {
       nearest = { droppableId, rect, dist };
     }
@@ -278,20 +297,14 @@ function resolveSheetDropAtPoint(
 
 function dropPlacementFromEvent(
   event: DragOverEvent | DragEndEvent,
-  rowRect?: DOMRect,
-  edgeRatio = 0.35
+  rowRect?: DOMRect
 ): DropPlacement {
   const point = dragFeedbackPoint(event);
   const overRect = rowRect ?? event.over?.rect;
   if (point != null && overRect) {
-    return placementFromPointer(point.y, overRect, edgeRatio);
+    return placementFromPointer(point.y, overRect);
   }
   return 'after';
-}
-
-function groupOnGroupEdgeRatio(activeId: string, overId: string): number {
-  // Slightly larger edges so insert lines are easier to hit than "move inside".
-  return parseGroupDropId(activeId) && parseGroupDropId(overId) ? 0.28 : 0.35;
 }
 
 function resolveDragOverTarget(
@@ -309,28 +322,24 @@ function resolveDragOverTarget(
       : null;
 
   if (rowHit) {
-    const edgeRatio = groupOnGroupEdgeRatio(activeId, rowHit.droppableId);
     return {
       overId: rowHit.droppableId,
-      placement:
-        rowHit.placement ?? dropPlacementFromEvent(event, rowHit.rect, edgeRatio),
+      placement: rowHit.placement ?? dropPlacementFromEvent(event, rowHit.rect),
       rowRect: rowHit.rect,
     };
   }
 
   if (over && String(over.id) !== activeId) {
-    const overId = String(over.id);
-    const edgeRatio = groupOnGroupEdgeRatio(activeId, overId);
     return {
-      overId,
-      placement: dropPlacementFromEvent(event, undefined, edgeRatio),
+      overId: String(over.id),
+      placement: dropPlacementFromEvent(event),
     };
   }
 
   if (fallback?.overId && fallback.overId !== activeId) {
     return {
       overId: fallback.overId,
-      placement: fallback.placement ?? 'after',
+      placement: fallback.placement === 'before' ? 'before' : 'after',
     };
   }
 
@@ -343,8 +352,10 @@ function groupDropHintPlacement(
   action: GroupDropAction,
   pointerPlacement: DropPlacement
 ): DropPlacement {
-  if (action.hintPlacement) return action.hintPlacement;
-  if (action.mode === 'nest') return 'inside';
+  if (action.hintPlacement === 'before' || action.hintPlacement === 'after') {
+    return action.hintPlacement;
+  }
+  if (action.mode === 'nest') return 'after';
   return pointerPlacement === 'before' ? 'before' : 'after';
 }
 
@@ -1085,12 +1096,12 @@ function SortableGroupRow({
 
   const isDropTarget = dropHint?.targetKind === 'group' && dropHint.targetId === group.id;
   const dropClass =
-    isDropTarget && dropHint.intent === 'regroup'
-      ? styles.dropTargetRegroup
-      : isDropTarget && dropHint.intent === 'reorder' && dropHint.placement === 'before'
-        ? styles.dropTargetBefore
-        : isDropTarget && dropHint.intent === 'reorder'
-          ? styles.dropTargetAfter
+    isDropTarget && dropHint.placement === 'before'
+      ? styles.dropTargetBefore
+      : isDropTarget && dropHint.placement === 'after'
+        ? styles.dropTargetAfter
+        : isDropTarget && dropHint.intent === 'regroup'
+          ? styles.dropTargetRegroup
           : '';
 
   const handleRowMouseDown = (e: React.MouseEvent<HTMLTableRowElement>) => {
@@ -1121,7 +1132,7 @@ function SortableGroupRow({
       className={`${styles.groupRow} ${tierClass} ${isGhost ? styles.ghostRow : ''} ${isDragging ? styles.groupRowDragging : ''} ${isSelected ? styles.groupRowSelected : ''} ${dropClass}`}
       title={
         draggable
-          ? 'Same-level groups: blue line reorders · center of a container row moves inside'
+          ? 'Drag between rows — blue line inserts before or after'
           : canRemoveSheetGroup(group)
             ? 'Right-click for options'
             : undefined
@@ -1416,6 +1427,9 @@ interface SortableTaskRowProps {
   commentReadState: TaskCommentReadState;
   employees: { id: string; name: string }[];
   taskStatuses: TaskStatusDefinition[];
+  statusBoardType: ProjectBoardType;
+  viewBoardType: ProjectBoardType;
+  parentPackage: Task | null;
   boardTaskStatuses: import('../utils/taskStatuses').BoardTaskStatusesMap;
   projectBoardTaskStatuses: import('../utils/taskStatuses').ProjectBoardTaskStatusesMap;
   branchBoards: { id: import('../types').ProjectBoardType; label: string }[];
@@ -1423,6 +1437,9 @@ interface SortableTaskRowProps {
   getCustomColWidth: (column: SheetColumnDefinition) => number;
   isColumnVisible?: (columnId: string) => boolean;
   taskGroups: TaskGroup[];
+  hasSubtasks: boolean;
+  isCollapsed: boolean;
+  onToggleCollapse: (taskId: string) => void;
   onSelect: (taskId: string, e: React.MouseEvent) => void;
   onContextMenu: (taskId: string, x: number, y: number) => void;
   onOpenAttachments: (task: Task) => void;
@@ -1444,6 +1461,9 @@ function renderFixedColumnCell(
   isOverview: boolean,
   employees: { id: string; name: string }[],
   taskStatuses: TaskStatusDefinition[],
+  statusBoardType: ProjectBoardType,
+  viewBoardType: ProjectBoardType,
+  parentPackage: Task | null,
   boardTaskStatuses: import('../utils/taskStatuses').BoardTaskStatusesMap,
   projectBoardTaskStatuses: import('../utils/taskStatuses').ProjectBoardTaskStatusesMap,
   taskGroups: TaskGroup[],
@@ -1503,24 +1523,76 @@ function renderFixedColumnCell(
         />
       );
     case 'status': {
-      const statusColor = getStatusColor(task.status, taskStatuses);
+      const isShippingView = statusBoardType === 'shipping';
+      const isFieldInboundView =
+        viewBoardType === 'field' &&
+        task.boardType !== 'field' &&
+        parentPackage?.boardType !== 'field';
+      const assemblyStillInFab =
+        Boolean(task.parentTaskId) &&
+        !isAssemblyReleasedForShipView(task, parentPackage);
+      const packageStillInFab = !task.parentTaskId && task.boardType === 'fab';
+      const displayStatus =
+        isFieldInboundView || isShippingView
+          ? shippingStatusValueForSpreadsheet(task, parentPackage)
+          : task.status;
+      const statusColor =
+        displayStatus === PARTIAL_STILL_IN_FAB_STATUS_ID
+          ? PARTIAL_STILL_IN_FAB_COLOR
+          : getStatusColor(displayStatus, taskStatuses);
       const statusTextColor = getContrastingTextColor(statusColor);
+      const showPartialOption =
+        (isShippingView || isFieldInboundView) &&
+        (assemblyStillInFab || packageStillInFab);
+      // Field inbound is Shipping-owned. Shipping board locks still-in-Fab assemblies only.
+      const locked =
+        readOnly ||
+        isFieldInboundView ||
+        (isShippingView && assemblyStillInFab);
       return (
         <div className={styles.statusCellWrap}>
           <select
             className={`${styles.cellSelect} ${styles.statusSelect}`}
-            value={task.status}
-            disabled={readOnly}
+            value={displayStatus}
+            disabled={locked}
+            title={
+              isFieldInboundView
+                ? 'Inbound from Shipping — Field install stages unlock after Received by Field'
+                : assemblyStillInFab
+                  ? 'Still in Fab — mark Ready for Shipping on the Fabrication Dashboard first'
+                  : undefined
+            }
             style={{
               backgroundColor: statusColor,
               color: statusTextColor,
               borderColor: statusColor,
             }}
-            onChange={(e) => onUpdate(task.id, { status: e.target.value })}
+            onChange={(e) => {
+              if (locked) return;
+              const next = e.target.value;
+              if (next === PARTIAL_STILL_IN_FAB_STATUS_ID) return;
+              if (isShippingView) {
+                const updates = updatesForShippingSpreadsheetStatus(
+                  task,
+                  next,
+                  parentPackage
+                );
+                if (updates) onUpdate(task.id, updates);
+                return;
+              }
+              onUpdate(task.id, { status: next });
+            }}
           >
+            {showPartialOption ? (
+              <option value={PARTIAL_STILL_IN_FAB_STATUS_ID}>
+                {PARTIAL_STILL_IN_FAB_LABEL}
+              </option>
+            ) : null}
             {taskStatuses.map((s) => (
               <option key={s.id} value={s.id}>
-                {s.label}
+                {packageStillInFab && isShippingView && s.id === 'staging'
+                  ? 'Move package to Shipping (Staging)'
+                  : s.label}
               </option>
             ))}
           </select>
@@ -1605,6 +1677,9 @@ function SortableTaskRow({
   commentReadState,
   employees,
   taskStatuses,
+  statusBoardType,
+  viewBoardType,
+  parentPackage,
   boardTaskStatuses,
   projectBoardTaskStatuses,
   columnSlots,
@@ -1612,6 +1687,9 @@ function SortableTaskRow({
   isColumnVisible,
   taskGroups,
   branchBoards,
+  hasSubtasks,
+  isCollapsed,
+  onToggleCollapse,
   onSelect,
   onContextMenu,
   onOpenAttachments,
@@ -1623,10 +1701,11 @@ function SortableTaskRow({
   allowAssignTasks,
   projectLabelText,
 }: SortableTaskRowProps) {
-  const { task, depth } = row;
+  const { task, depth, dragBoardType } = row;
   const readOnly = !allowEditTasks;
+  const dragId = taskDragId(task.id, dragBoardType);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: taskDragId(task.id),
+    id: dragId,
   });
 
   const style = {
@@ -1698,32 +1777,56 @@ function SortableTaskRow({
 
   const titleDragHandle = (
     <SheetRowDragHandle
-      title="Drag onto another task to reorder, or onto a group header to move into that group"
+      title="Drag between rows — blue line inserts before or after"
       {...attributes}
       {...listeners}
     />
   );
 
-  const isDropTarget = dropHint?.targetKind === 'task' && dropHint.targetId === task.id;
+  const isDropTarget = dropHint?.targetKind === 'task' && dropHint.targetId === dragId;
   const dropClass =
     isDropTarget && dropHint.intent === 'reorder' && dropHint.placement === 'before'
       ? styles.dropLineBefore
-      : isDropTarget && dropHint.intent === 'reorder'
+      : isDropTarget && dropHint.intent === 'reorder' && dropHint.placement === 'after'
         ? styles.dropLineAfter
-        : '';
+        : isDropTarget && dropHint.intent === 'regroup' && dropHint.placement === 'before'
+          ? styles.dropLineBefore
+          : isDropTarget && dropHint.intent === 'regroup' && dropHint.placement === 'after'
+            ? styles.dropLineAfter
+            : '';
+
+  const stillInFabDimmed =
+    Boolean(task.parentTaskId) &&
+    (viewBoardType === 'shipping' || viewBoardType === 'field') &&
+    !isAssemblyReleasedForShipView(task, parentPackage);
 
   return (
     <tr
       ref={setNodeRef}
       style={style}
-      data-sheet-drop-id={taskDragId(task.id)}
-      className={`${styles.taskRow} ${task.parentTaskId ? styles.taskRowSubtask : ''} ${isDragging ? styles.taskRowDragging : ''} ${isSelected ? styles.taskRowSelected : ''} ${dropClass}`}
+      data-sheet-drop-id={dragId}
+      className={`${styles.taskRow} ${task.parentTaskId ? styles.taskRowSubtask : ''} ${isDragging ? styles.taskRowDragging : ''} ${isSelected ? styles.taskRowSelected : ''} ${stillInFabDimmed ? styles.taskRowStillInFab : ''} ${dropClass}`}
       onMouseDown={handleRowMouseDown}
       onClick={handleRowClick}
       onContextMenu={handleContextMenu}
     >
       <td className={styles.colRow}>{rowMetaCell}</td>
-      <td className={isFlatBoardView ? styles.colCollapseFlat : styles.colCollapse} />
+      <td className={isFlatBoardView ? styles.colCollapseFlat : styles.colCollapse}>
+        {hasSubtasks ? (
+          <button
+            type="button"
+            className={styles.collapseBtn}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleCollapse(task.id);
+            }}
+            title={isCollapsed ? 'Expand subtasks' : 'Collapse subtasks'}
+            aria-expanded={!isCollapsed}
+          >
+            {isCollapsed ? '▶' : '▼'}
+          </button>
+        ) : null}
+      </td>
       <td className={styles.colDrag} style={DRAG_COL_STYLE}>
         <div className={styles.colDragInner}>{titleDragHandle}</div>
       </td>
@@ -1758,6 +1861,9 @@ function SortableTaskRow({
               isOverview,
               employees,
               taskStatuses,
+              statusBoardType,
+              viewBoardType,
+              parentPackage,
               boardTaskStatuses,
               projectBoardTaskStatuses,
               taskGroups,
@@ -1951,26 +2057,39 @@ export function TaskSpreadsheet({
       })),
     [overviewSectionBoardTypes, customBoards]
   );
+  const resolveStatusBoard = useCallback(
+    (task: Task, dragBoardType?: ProjectBoardType | null) =>
+      statusBoardForSpreadsheetView(task, taskGroups, boardType, dragBoardType),
+    [boardType, taskGroups]
+  );
   const resolveTaskStatuses = useCallback(
-    (task: Task) =>
+    (task: Task, dragBoardType?: ProjectBoardType | null) =>
       getBoardTaskStatuses(
-        statusBoardForTask(task, taskGroups),
+        resolveStatusBoard(task, dragBoardType),
         boardTaskStatuses,
         projectId,
         projectBoardTaskStatuses
       ),
-    [boardTaskStatuses, projectBoardTaskStatuses, projectId, taskGroups]
+    [boardTaskStatuses, projectBoardTaskStatuses, projectId, resolveStatusBoard]
   );
+  const tasksById = useMemo(() => {
+    const map = new Map<string, Task>();
+    for (const task of tasks) map.set(task.id, task);
+    return map;
+  }, [tasks]);
   const statusBoardOptions = useMemo(() => {
     const builtIn = PROJECT_BOARD_TYPES.map((b) => ({ id: b.id, label: b.label }));
     const customs = customBoards
       .filter((b) => b.projectId === projectId)
       .sort((a, b) => a.sortOrder - b.sortOrder)
       .map((b) => ({ id: b.id, label: b.name }));
-    return [...builtIn, ...customs];
+    return [...builtIn, ...customs].filter(
+      (board) => !isDashboardDrivenStatusBoard(board.id)
+    );
   }, [customBoards, projectId]);
   const taskClipboard = useStore((s) => s.taskClipboard);
   const updateTask = useStore((s) => s.updateTask);
+  const updateTasks = useStore((s) => s.updateTasks);
   const updateTasksWith = useStore((s) => s.updateTasksWith);
   const refreshTasksAutoAssign = useStore((s) => s.refreshTasksAutoAssign);
   const removeTask = useStore((s) => s.removeTask);
@@ -1985,7 +2104,6 @@ export function TaskSpreadsheet({
   const createSubtask = useStore((s) => s.createSubtask);
   const applySheetTaskUpdates = useStore((s) => s.applySheetTaskUpdates);
   const applySheetGroupUpdates = useStore((s) => s.applySheetGroupUpdates);
-  const moveSheetItemsToBoard = useStore((s) => s.moveSheetItemsToBoard);
   const setSheetDragActive = useStore((s) => s.setSheetDragActive);
   const setSheetDragHoverBoard = useStore((s) => s.setSheetDragHoverBoard);
   const addGroup = useStore((s) => s.addGroup);
@@ -2017,6 +2135,8 @@ export function TaskSpreadsheet({
   const [activeDragTaskIds, setActiveDragTaskIds] = useState<string[]>([]);
   const [activeDragGroup, setActiveDragGroup] = useState<TaskGroup | null>(null);
   const [activeDragGroupIds, setActiveDragGroupIds] = useState<string[]>([]);
+  /** Main Overview section lock — prevent Detailers↔Spooling (and other) cross-board drags. */
+  const activeDragBoardScopeRef = useRef<ProjectBoardType | null>(null);
   const lastDragOverIdRef = useRef<string | null>(null);
   const lastValidGroupActionRef = useRef<GroupDropAction | null>(null);
   const lastValidTaskDropRef = useRef<TaskDropTarget | null>(null);
@@ -2051,6 +2171,8 @@ export function TaskSpreadsheet({
 
   const isFlatBoardView = isFlatBoard(boardType) && isSubBoard(boardType);
   const isGhostBoard = isSubBoard(boardType) && !isFlatBoardView;
+  /** Ghost shop boards share Main Overview section column layouts — Add Column must too. */
+  const columnSettingsUseOverviewSections = isOverview || isGhostBoard;
   const rowColWidth = Math.max(columnWidths.row ?? DEFAULT_WIDTHS.row, MIN_WIDTHS.row);
   const collapseColWidth = Math.max(
     isFlatBoardView
@@ -2607,7 +2729,7 @@ export function TaskSpreadsheet({
     () =>
       sheetRows
         .filter((row): row is Extract<SheetRow, { type: 'task' }> => row.type === 'task')
-        .map((row) => taskDragId(row.task.id)),
+        .map((row) => taskDragId(row.task.id, row.dragBoardType)),
     [sheetRows]
   );
 
@@ -2618,6 +2740,14 @@ export function TaskSpreadsheet({
         .map((row) => row.task.id),
     [sheetRows]
   );
+
+  const parentTaskIdsWithChildren = useMemo(() => {
+    const parents = new Set<string>();
+    for (const task of tasks) {
+      if (task.parentTaskId) parents.add(task.parentTaskId);
+    }
+    return parents;
+  }, [tasks]);
 
   const handleDuplicateSelected = useCallback(() => {
     if (selectedTaskIds.size === 0) return;
@@ -2721,12 +2851,12 @@ export function TaskSpreadsheet({
   const bulkStatusOptions = useMemo(() => {
     const byId = new Map<string, TaskStatusDefinition>();
     for (const task of selectedTasks) {
-      for (const status of resolveTaskStatuses(task)) {
+      for (const status of resolveTaskStatuses(task, boardType === 'main' ? null : boardType)) {
         byId.set(status.id, status);
       }
     }
     return [...byId.values()];
-  }, [selectedTasks, resolveTaskStatuses]);
+  }, [selectedTasks, resolveTaskStatuses, boardType]);
 
   const allBoardStatusLabels = useMemo(
     () =>
@@ -2854,25 +2984,84 @@ export function TaskSpreadsheet({
     [selectionAnchorId, visibleTaskIds]
   );
 
+  const pushSharedFieldsToAssembliesFromParents = useCallback(
+    (parentIds: Iterable<string>, updates: Partial<Task>) => {
+      if (!isAllProjectsScope || !parentHasAssemblyCascade(updates)) return;
+      const cascade = assemblyCascadeUpdatesFromParent(updates);
+      const childIds = new Set<string>();
+      for (const parentId of parentIds) {
+        const parent = tasks.find((task) => task.id === parentId);
+        if (!parent || parent.parentTaskId) continue;
+        for (const childId of assemblyIdsUnderParent(tasks, parentId)) {
+          childIds.add(childId);
+        }
+      }
+      if (childIds.size === 0) return;
+      updateTasks([...childIds], cascade);
+    },
+    [isAllProjectsScope, tasks, updateTasks]
+  );
+
   const handleBulkStatusChange = useCallback(
     (statusId: string) => {
       if (selectedTaskIds.size === 0) return;
-      updateTasksWith([...selectedTaskIds], (task) =>
-        mergeBulkTaskUpdates(task, { status: statusId }, boardTaskStatuses, projectBoardTaskStatuses)
-      );
+      const viewIsShipping = boardType === 'shipping';
+      // Field inbound packages are Shipping-owned — don't bulk-overwrite from Field board.
+      if (boardType === 'field') {
+        setContextMenu(null);
+        return;
+      }
+      updateTasksWith([...selectedTaskIds], (task) => {
+        if (viewIsShipping) {
+          const parent = task.parentTaskId ? tasksById.get(task.parentTaskId) ?? null : null;
+          const shippingUpdates = updatesForShippingSpreadsheetStatus(task, statusId, parent);
+          if (!shippingUpdates) return {};
+          return mergeBulkTaskUpdates(
+            task,
+            shippingUpdates,
+            boardTaskStatuses,
+            projectBoardTaskStatuses
+          );
+        }
+        return mergeBulkTaskUpdates(
+          task,
+          { status: statusId },
+          boardTaskStatuses,
+          projectBoardTaskStatuses
+        );
+      });
+      if (!viewIsShipping) {
+        pushSharedFieldsToAssembliesFromParents(selectedTaskIds, { status: statusId });
+      }
       setContextMenu(null);
     },
-    [selectedTaskIds, updateTasksWith, boardTaskStatuses, projectBoardTaskStatuses]
+    [
+      selectedTaskIds,
+      updateTasksWith,
+      boardTaskStatuses,
+      projectBoardTaskStatuses,
+      pushSharedFieldsToAssembliesFromParents,
+      boardType,
+      tasksById,
+    ]
   );
 
   const handleBulkAssigneeChange = useCallback(
     (assigneeIds: string[]) => {
       if (selectedTaskIds.size === 0) return;
+      const updates = { assigneeIds };
       updateTasksWith([...selectedTaskIds], (task) =>
-        mergeBulkTaskUpdates(task, { assigneeIds }, boardTaskStatuses, projectBoardTaskStatuses)
+        mergeBulkTaskUpdates(task, updates, boardTaskStatuses, projectBoardTaskStatuses)
       );
+      pushSharedFieldsToAssembliesFromParents(selectedTaskIds, updates);
     },
-    [selectedTaskIds, updateTasksWith, boardTaskStatuses, projectBoardTaskStatuses]
+    [
+      selectedTaskIds,
+      updateTasksWith,
+      boardTaskStatuses,
+      projectBoardTaskStatuses,
+      pushSharedFieldsToAssembliesFromParents,
+    ]
   );
 
   const findReplaceTextColumns = useMemo(
@@ -2939,12 +3128,14 @@ export function TaskSpreadsheet({
 
       if (!shouldBulk) {
         updateTask(id, updates);
+        pushSharedFieldsToAssembliesFromParents([id], updates);
         return;
       }
 
       updateTasksWith([...selectedTaskIds], (task) =>
         mergeBulkTaskUpdates(task, updates, boardTaskStatuses, projectBoardTaskStatuses)
       );
+      pushSharedFieldsToAssembliesFromParents(selectedTaskIds, updates);
     },
     [
       allowAssignTasks,
@@ -2954,6 +3145,7 @@ export function TaskSpreadsheet({
       updateTasksWith,
       boardTaskStatuses,
       projectBoardTaskStatuses,
+      pushSharedFieldsToAssembliesFromParents,
     ]
   );
 
@@ -3228,7 +3420,9 @@ export function TaskSpreadsheet({
         draggable
         labelAlign={DEFAULT_SHEET_COLUMN_ALIGNMENT}
         headerAction={
-          slot.id === 'status' && allowManageStatuses ? (
+          slot.id === 'status' &&
+          allowManageStatuses &&
+          !isDashboardDrivenStatusBoard(sectionBoardType ?? boardType) ? (
             <div className={styles.statusHeaderAction}>
               <button
                 type="button"
@@ -3322,13 +3516,14 @@ export function TaskSpreadsheet({
         }
         return (
           <SortableTaskRow
-            key={row.task.id}
+            key={taskDragId(row.task.id, row.dragBoardType)}
             row={row}
             isOverview={isOverview}
             isFlatBoardView={isFlatBoardView}
             isSelected={selectedTaskIds.has(row.task.id)}
             dropHint={
-              sheetDropHint?.targetKind === 'task' && sheetDropHint.targetId === row.task.id
+              sheetDropHint?.targetKind === 'task' &&
+              sheetDropHint.targetId === taskDragId(row.task.id, row.dragBoardType)
                 ? sheetDropHint
                 : null
             }
@@ -3336,13 +3531,21 @@ export function TaskSpreadsheet({
             commentCount={commentCountByTask.get(row.task.id) ?? 0}
             commentReadState={commentReadStateByTask.get(row.task.id) ?? 'none'}
             employees={assignableEmployees}
-            taskStatuses={resolveTaskStatuses(row.task)}
+            taskStatuses={resolveTaskStatuses(row.task, row.dragBoardType)}
+            statusBoardType={resolveStatusBoard(row.task, row.dragBoardType)}
+            viewBoardType={isOverview ? (row.dragBoardType ?? boardType) : boardType}
+            parentPackage={
+              row.task.parentTaskId ? tasksById.get(row.task.parentTaskId) ?? null : null
+            }
             boardTaskStatuses={boardTaskStatuses}
             projectBoardTaskStatuses={projectBoardTaskStatuses}
             columnSlots={slots}
             getCustomColWidth={getRowCustomColWidth}
             taskGroups={taskGroups}
             branchBoards={branchBoards}
+            hasSubtasks={parentTaskIdsWithChildren.has(row.task.id)}
+            isCollapsed={collapsedIds.has(row.task.id)}
+            onToggleCollapse={toggleCollapse}
             onSelect={handleTaskSelect}
             onContextMenu={handleTaskContextMenu}
             onOpenAttachments={setAttachmentTask}
@@ -3672,6 +3875,7 @@ export function TaskSpreadsheet({
     lastValidGroupActionRef.current = null;
     lastValidTaskDropRef.current = null;
     lastDropPlacementRef.current = 'before';
+    activeDragBoardScopeRef.current = null;
     setSheetDropHint(null);
     setSheetDragHoverBoard(null);
 
@@ -3679,6 +3883,13 @@ export function TaskSpreadsheet({
     if (groupId) {
       const group = taskGroups.find((g) => g.id === groupId);
       if (!group || !canDragSheetGroup(group)) return;
+      const groupRow = sheetRows.find(
+        (row): row is Extract<SheetRow, { type: 'group' }> =>
+          row.type === 'group' && row.group.id === groupId
+      );
+      activeDragBoardScopeRef.current =
+        groupRow?.dragBoardType ??
+        findSectionBoardType(taskGroups, groupId);
       const rowOrder = new Map(
         sheetRows
           .filter((row): row is Extract<SheetRow, { type: 'group' }> => row.type === 'group')
@@ -3706,15 +3917,22 @@ export function TaskSpreadsheet({
     const task = tasks.find((t) => t.id === taskId);
     if (!task) return;
 
+    activeDragBoardScopeRef.current =
+      parseTaskDragBoardScope(String(event.active.id)) ??
+      (isOverview ? null : (boardType as ProjectBoardType));
+
+    const activeDragId = String(event.active.id);
     const rowOrder = new Map(
       sheetRows
         .filter((row): row is Extract<SheetRow, { type: 'task' }> => row.type === 'task')
-        .map((row, index) => [row.task.id, index])
+        .map((row, index) => [taskDragId(row.task.id, row.dragBoardType), index])
     );
     const movingIds =
       selectedTaskIds.has(taskId) && selectedTaskIds.size > 1
         ? [...selectedTaskIds].sort(
-            (a, b) => (rowOrder.get(a) ?? 0) - (rowOrder.get(b) ?? 0)
+            (a, b) =>
+              (rowOrder.get(taskDragId(a, parseTaskDragBoardScope(activeDragId))) ?? 0) -
+              (rowOrder.get(taskDragId(b, parseTaskDragBoardScope(activeDragId))) ?? 0)
           )
         : [taskId];
 
@@ -3749,9 +3967,22 @@ export function TaskSpreadsheet({
     lastDragOverIdRef.current = overId;
     lastDropPlacementRef.current = placement;
 
+    const sourceScope = activeDragBoardScopeRef.current;
+    const overScope = sheetDropBoardScope(overId, taskGroups);
+
+    // Never allow dragging a task/group from one board section into another.
+    if (sourceScope && overScope && sourceScope !== overScope) {
+      setSheetDropHint(null);
+      setSheetDragHoverBoard(null);
+      lastValidTaskDropRef.current = null;
+      lastValidGroupActionRef.current = null;
+      return;
+    }
+
     const hoverBoard = parseBoardDropId(overId);
     if (hoverBoard) {
-      setSheetDragHoverBoard(hoverBoard);
+      // Board-tab drops move items across boards — disabled.
+      setSheetDragHoverBoard(null);
       setSheetDropHint(null);
       return;
     }
@@ -3812,20 +4043,22 @@ export function TaskSpreadsheet({
       lastValidTaskDropRef.current = dropTarget;
       const overGroupId = parseGroupDropId(overId);
       const overTaskId = parseTaskDragId(overId);
-      const linePlacement: DropPlacement = dropTarget.insertBeforeTaskId
-        ? 'before'
-        : dropTarget.insertAfterTaskId
-          ? 'after'
-          : overGroupId &&
-              isSheetGroupContainer(
-                taskGroups,
-                taskGroups.find((group) => group.id === overGroupId)
-              ) &&
-              placement !== 'after'
-            ? 'after'
-            : 'inside';
+      const hintTaskId =
+        dropTarget.insertBeforeTaskId ??
+        dropTarget.insertAfterTaskId ??
+        overTaskId ??
+        '';
+      const hintScope =
+        parseTaskDragBoardScope(overId) ??
+        activeDragBoardScopeRef.current ??
+        undefined;
+      const linePlacement: DropPlacement = overGroupId
+        ? 'after'
+        : dropTarget.insertBeforeTaskId
+          ? 'before'
+          : 'after';
       setSheetDropHint({
-        targetId: overGroupId ?? overTaskId ?? '',
+        targetId: overGroupId ?? taskDragId(hintTaskId, hintScope),
         targetKind: overGroupId ? 'group' : 'task',
         intent: dropTarget.intent,
         placement: linePlacement,
@@ -3854,6 +4087,7 @@ export function TaskSpreadsheet({
     setActiveDragTaskIds([]);
     setActiveDragGroup(null);
     setActiveDragGroupIds([]);
+    activeDragBoardScopeRef.current = null;
     setSheetDropHint(null);
     setSheetDragActive(false);
     setSheetDragHoverBoard(null);
@@ -3937,27 +4171,20 @@ export function TaskSpreadsheet({
     const targetBoard = overId ? parseBoardDropId(overId) : null;
     const activeGroupId = parseGroupDropId(activeId);
     const activeTaskId = parseTaskDragId(activeId);
+    const sourceScope = activeDragBoardScopeRef.current;
+    const overScope = overId ? sheetDropBoardScope(overId, taskGroups) : null;
 
+    // Drag-and-drop never moves tasks/groups across boards (tabs or overview sections).
     if (targetBoard && (activeGroupId || activeTaskId)) {
-      if (activeGroupId) {
-        const groupIds = movingGroupIds.length > 0 ? movingGroupIds : [activeGroupId];
-        moveSheetItemsToBoard({
-          clientId,
-          projectId,
-          groupIds,
-          taskIds: [],
-          targetBoardType: targetBoard,
-        });
-      } else if (activeTaskId) {
-        const taskIds = movingTaskIds.length > 0 ? movingTaskIds : [activeTaskId];
-        moveSheetItemsToBoard({
-          clientId,
-          projectId,
-          groupIds: [],
-          taskIds,
-          targetBoardType: targetBoard,
-        });
-      }
+      clearSheetDragState();
+      return;
+    }
+    if (
+      sourceScope &&
+      overScope &&
+      sourceScope !== overScope &&
+      (activeGroupId || activeTaskId)
+    ) {
       clearSheetDragState();
       return;
     }
@@ -3983,23 +4210,24 @@ export function TaskSpreadsheet({
 
       if (String(active.id) === overId) return;
 
-      let groupAction: GroupDropAction | null = savedValidGroupAction;
-      if (!groupAction) {
-        const resolved = resolveGroupDropAction(
-          overId,
-          activeGroupId,
-          placement,
-          taskGroups,
-          tasks,
-          sheetRows
-        );
-        if (resolved && 'blockedReason' in resolved) {
-          setGroupDropFeedback(resolved.blockedReason);
-          return;
-        }
-        if (resolved && 'mode' in resolved) {
-          groupAction = resolved;
-        }
+      // Always resolve from the final pointer — never prefer a stale dragOver target.
+      const resolved = resolveGroupDropAction(
+        overId,
+        activeGroupId,
+        placement,
+        taskGroups,
+        tasks,
+        sheetRows
+      );
+      let groupAction: GroupDropAction | null = null;
+      if (resolved && 'blockedReason' in resolved) {
+        setGroupDropFeedback(resolved.blockedReason);
+        return;
+      }
+      if (resolved && 'mode' in resolved) {
+        groupAction = resolved;
+      } else {
+        groupAction = savedValidGroupAction;
       }
       if (!groupAction) return;
 
@@ -4040,18 +4268,12 @@ export function TaskSpreadsheet({
       return;
     }
 
-    if (String(active.id) === overId) return;
-
-    let taskDropTarget = savedValidTaskDrop;
-    if (!taskDropTarget) {
-      taskDropTarget = resolveTaskDropTarget(
-        overId,
-        movingTaskIds.length > 0 ? movingTaskIds : [activeTaskId],
-        tasks,
-        sheetRows,
-        placement
-      );
-    }
+    // Always resolve from the final pointer so the blue line matches the drop.
+    // Over the dragged row still resolves to the nearest sibling (before/after).
+    const movingIds = movingTaskIds.length > 0 ? movingTaskIds : [activeTaskId];
+    let taskDropTarget =
+      resolveTaskDropTarget(overId, movingIds, tasks, sheetRows, placement) ??
+      savedValidTaskDrop;
     if (!taskDropTarget) return;
 
     const updates = computeSheetTasksDrop(
@@ -4059,7 +4281,7 @@ export function TaskSpreadsheet({
       taskGroups,
       projectId,
       boardType,
-      movingTaskIds.length > 0 ? movingTaskIds : [activeTaskId],
+      movingIds,
       taskDropTarget
     );
     if (updates) {
@@ -4278,11 +4500,11 @@ export function TaskSpreadsheet({
           {(activeDragTask || activeDragGroup) && sheetDropHint && (
             <div className={styles.dragIntentBar} role="status">
               {dropIntentLabel(sheetDropHint.intent)}
-              {sheetDropHint.intent === 'regroup'
-                ? ' — whole row highlights: group will move inside'
-                : sheetDropHint.placement === 'before'
-                  ? ' — blue line at top: insert before this row'
-                  : ' — blue line at bottom: insert after this row'}
+              {sheetDropHint.placement === 'before'
+                ? ' — blue line: insert before this row'
+                : sheetDropHint.placement === 'after'
+                  ? ' — blue line: insert after this row'
+                  : ''}
             </div>
           )}
           {isFlatBoardView && !isAllProjectsScope && (
@@ -4873,10 +5095,27 @@ export function TaskSpreadsheet({
       )}
       {showColumnSettings && (allowAddColumns || canDeleteColumns) && (
         <ColumnSettings
-          initialBoardType={boardType}
+          initialBoardType={columnSettingsUseOverviewSections && !isOverview ? 'main' : boardType}
           boards={statusBoardOptions}
-          overviewSectionBoards={isOverview ? overviewSectionOptions : undefined}
-          overviewSectionBoardType={overviewColumnSection ?? overviewSectionOptions[0]?.id}
+          overviewSectionBoards={
+            columnSettingsUseOverviewSections
+              ? isOverview
+                ? overviewSectionOptions
+                : [
+                    {
+                      id: boardType,
+                      label: getBoardLabel(boardType, customBoards),
+                    },
+                  ]
+              : undefined
+          }
+          overviewSectionBoardType={
+            isOverview
+              ? overviewColumnSection ?? overviewSectionOptions[0]?.id
+              : columnSettingsUseOverviewSections
+                ? boardType
+                : null
+          }
           onClose={() => setShowColumnSettings(false)}
         />
       )}
@@ -5047,6 +5286,9 @@ export function TaskSpreadsheet({
                       const sectionBoardType = columnHeaderMenu.sectionBoardType;
                       if (isOverview && sectionBoardType) {
                         handleRemoveOverviewSectionColumn(sectionBoardType, columnId);
+                      } else if (!isOverview) {
+                        // Board tabs share Main Overview section column layouts.
+                        handleRemoveOverviewSectionColumn(boardType, columnId);
                       } else {
                         removeBoardSheetColumn(boardType, columnId);
                       }
@@ -5060,9 +5302,13 @@ export function TaskSpreadsheet({
             })()}
         </ContextMenuPanel>
       )}
-      {showStatusSettings && allowManageStatuses && (
+      {showStatusSettings &&
+        allowManageStatuses &&
+        !isDashboardDrivenStatusBoard(boardType) && (
         <StatusSettings
-          initialBoardType={boardType}
+          initialBoardType={
+            isDashboardDrivenStatusBoard(boardType) ? 'detailers' : boardType
+          }
           boards={statusBoardOptions}
           projectId={projectId}
           onClose={() => setShowStatusSettings(false)}

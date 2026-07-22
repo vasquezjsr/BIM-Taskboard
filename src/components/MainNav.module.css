@@ -1,19 +1,78 @@
+.navShell {
+  --nav-shell-bg: var(--level1-bg);
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  max-width: 100%;
+  width: 100%;
+  height: 40px;
+  background: var(--nav-shell-bg);
+  border: 1px solid var(--level1-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.scrollBtn {
+  position: relative;
+  z-index: 2;
+  flex-shrink: 0;
+  width: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--level1-text);
+  font-size: 18px;
+  line-height: 1;
+  transition: background var(--transition), color var(--transition), opacity var(--transition);
+}
+
+.scrollBtn:hover:not(:disabled) {
+  background: var(--level1-bg-active);
+}
+
+.scrollBtn:disabled {
+  opacity: 0.28;
+  cursor: default;
+}
+
+.scroller {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.scroller::-webkit-scrollbar {
+  display: none;
+}
+
 .nav {
   display: flex;
-  gap: 4px;
-  background: var(--level1-bg);
-  padding: 4px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--level1-border);
+  align-items: center;
+  gap: 2px;
+  width: max-content;
+  height: 100%;
+  padding: 3px 2px;
+  background: transparent;
+  border: none;
 }
 
 .tab {
-  padding: 8px 20px;
+  flex-shrink: 0;
+  height: 100%;
+  padding: 0 14px;
   border-radius: var(--radius-sm);
   font-size: 13px;
   font-weight: 500;
   color: var(--level1-accent);
   transition: all var(--transition);
+  white-space: nowrap;
 }
 
 .tab:hover {
@@ -25,4 +84,26 @@
   background: var(--level1-bg-active);
   color: var(--level1-text);
   box-shadow: 0 0 0 1px var(--level1-border);
+}
+
+/* Soft edge fade so tabs scroll under rounded ends without a hard square cut */
+.navShell.fadeLeft::before,
+.navShell.fadeRight::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 1;
+  width: 18px;
+  pointer-events: none;
+}
+
+.navShell.fadeLeft::before {
+  left: 28px;
+  background: linear-gradient(to right, var(--nav-shell-bg), transparent);
+}
+
+.navShell.fadeRight::after {
+  right: 28px;
+  background: linear-gradient(to left, var(--nav-shell-bg), transparent);
 }

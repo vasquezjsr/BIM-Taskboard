@@ -99,14 +99,6 @@ export function ProjectMetaPanel({ project, employees, onUpdate }: ProjectMetaPa
     [project.detailerIds, employees]
   );
 
-  const assignedSupport = useMemo(
-    () =>
-      project.supportIds
-        .map((id) => employees.find((e) => e.id === id)?.name)
-        .filter((name): name is string => Boolean(name)),
-    [project.supportIds, employees]
-  );
-
   const modelLabel =
     project.modelType === 'cloud' ? 'Cloud' : project.modelType === 'local' ? 'Local' : null;
 
@@ -137,13 +129,6 @@ export function ProjectMetaPanel({ project, employees, onUpdate }: ProjectMetaPa
         label="Detailers"
         names={assignedDetailers}
         tagClass={styles.detailerTag}
-        emptyLabel="None assigned"
-      />
-
-      <ReadOnlyTags
-        label="Support"
-        names={assignedSupport}
-        tagClass={styles.supportTag}
         emptyLabel="None assigned"
       />
 

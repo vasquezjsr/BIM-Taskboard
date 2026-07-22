@@ -616,6 +616,39 @@ export function statusBoardForTask(
   return 'main';
 }
 
+/**
+ * Status vocabulary for a spreadsheet row. Ghost Shipping/Fab/… tabs use the
+ * *view* board so partial-release packages still show that board’s lanes
+ * (e.g. Staging on Shipping even while boardType is still Fab).
+ */
+export function statusBoardForSpreadsheetView(
+  task: { boardType: Task['boardType']; groupId?: string | null },
+  groups: TaskGroup[] | undefined,
+  viewBoardType: ProjectBoardType,
+  rowDragBoardType?: ProjectBoardType | null
+): ProjectBoardType {
+  const view =
+    viewBoardType === 'main'
+      ? (rowDragBoardType ?? statusBoardForTask(task, groups))
+      : viewBoardType;
+
+  if (
+    view === 'shipping' ||
+    view === 'fab' ||
+    view === 'spooling' ||
+    view === 'detailers' ||
+    view === 'field'
+  ) {
+    // Inbound packages (still Fab/Shipping) — Field Dashboard shows shipping lanes until handoff.
+    if (view === 'field' && task.boardType !== 'field') {
+      return 'shipping';
+    }
+    return view;
+  }
+
+  return statusBoardForTask(task, groups);
+}
+
 export function getBoardTaskStatuses(
   boardType: ProjectBoardType,
   boardTaskStatuses: BoardTaskStatusesMap,
@@ -629,11 +662,14 @@ export function getBoardTaskStatuses(
     return normalizeRfiBoardTaskStatuses(boardTaskStatuses.rfi);
   }
 
-  if (projectId && projectBoardTaskStatuses?.[projectId]?.[boardType]?.length) {
+  // Dashboard-driven boards ignore per-project status overrides.
+  if (
+    !isDashboardDrivenStatusBoard(boardType) &&
+    projectId &&
+    projectBoardTaskStatuses?.[projectId]?.[boardType]?.length
+  ) {
     const list = normalizeTaskStatuses(projectBoardTaskStatuses[projectId]![boardType]);
-    if (boardType === 'fab') return ensureFabWorkstationStatuses(list);
     if (boardType === 'detailers') return ensureDetailersBoardStatuses(list);
-    if (boardType === 'spooling') return ensureSpoolingReturnToDetailingStatus(list);
     return list;
   }
   const list = boardTaskStatuses[boardType];
@@ -674,6 +710,30 @@ const RFI_TASK_STATUS_IDS = new Set(DEFAULT_RFI_TASK_STATUSES.map((status) => st
 /** RFI board always uses exactly Waiting for Response + Complete. */
 export function isRfiBoardStatusListLocked(boardType: ProjectBoardType): boolean {
   return boardType === 'rfi';
+}
+
+/**
+ * Spooling / Fab / Shipping / Field workflows are owned by their dashboards —
+ * not editable from project board Status options.
+ */
+export const DASHBOARD_DRIVEN_STATUS_BOARDS = [
+  'spooling',
+  'fab',
+  'shipping',
+  'field',
+] as const;
+
+export function isDashboardDrivenStatusBoard(boardType: ProjectBoardType): boolean {
+  return (DASHBOARD_DRIVEN_STATUS_BOARDS as readonly string[]).includes(boardType);
+}
+
+/** Status lists that cannot be added/removed/reordered in Status options. */
+export function isBoardStatusListLocked(boardType: ProjectBoardType): boolean {
+  return isRfiBoardStatusListLocked(boardType) || isDashboardDrivenStatusBoard(boardType);
+}
+
+export function filterEditableStatusBoards<T extends { id: ProjectBoardType }>(boards: T[]): T[] {
+  return boards.filter((board) => !isDashboardDrivenStatusBoard(board.id));
 }
 
 export function normalizeRfiBoardTaskStatuses(

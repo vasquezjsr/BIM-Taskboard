@@ -113,12 +113,14 @@ import {
   demoteSsv3ShippingTaskToSpooling,
   attachSsv3HierarchyFromManifest,
   clearSsv3ExportFromSpoolingTask,
+  syncAssemblyTradeMaterialFromPackageRoots,
 } from '../utils/promoteSsv3ToFab';
 import {
   applyDetailersReadyForSpoolingHandoff,
   applyDetailersSpoolingMirrorCleanup,
   applySpoolingReturnToDetailingHandoff,
   collectDescendantTaskIds,
+  repairDetailersSpoolingMirror,
 } from '../utils/detailersSpoolingHandoff';
 import { normalizeTimeEntry, prepareTimeEntryPayload } from '../utils/timeEntry';
 import {
@@ -267,6 +269,7 @@ import {
   ensurePremadeInMainOverviewSectionOrders,
   ensurePremadeSheetColumns,
   normalizeColumnSettingsDropdownIds,
+  repairWorkflowTradeMaterialColumnVisibility,
 } from '../data/premadeSheetColumns';
 import {
   applyCustomColumnToTargets,
@@ -319,6 +322,8 @@ import {
   normalizeProjectBoardTaskStatuses,
   normalizeRfiBoardTaskStatuses,
   isRfiBoardStatusListLocked,
+  isBoardStatusListLocked,
+  isDashboardDrivenStatusBoard,
   normalizeBoardTaskStatuses,
   normalizeTaskStatuses,
   pickNewStatusColor,
@@ -1141,13 +1146,24 @@ function mergePersistedState(p: Partial<AppState>, current: AppState): AppState 
   const mainOverviewSectionSheetColumns = normalizeBoardSheetColumns(
     p.mainOverviewSectionSheetColumns ?? current.mainOverviewSectionSheetColumns
   );
-  const mainOverviewSectionColumnOrder = ensurePremadeInMainOverviewSectionOrders(
+  let mainOverviewSectionColumnOrder = ensurePremadeInMainOverviewSectionOrders(
     normalizeMainOverviewSectionColumnOrder(
       p.mainOverviewSectionColumnOrder ?? current.mainOverviewSectionColumnOrder ?? {},
       mainOverviewSectionSheetColumns,
       boardSheetColumns
     )
   );
+  {
+    const repaired = repairWorkflowTradeMaterialColumnVisibility(
+      boardSheetColumns,
+      boardSheetColumnOrder,
+      mainOverviewSectionColumnOrder,
+      mainOverviewSectionSheetColumns
+    );
+    boardSheetColumns = repaired.boardSheetColumns;
+    boardSheetColumnOrder = repaired.boardSheetColumnOrder;
+    mainOverviewSectionColumnOrder = repaired.mainOverviewSectionColumnOrder;
+  }
 
   return {
     ...current,
@@ -1505,7 +1521,9 @@ function enrichTaskUpdates(
   projects: Project[],
   taskGroups: TaskGroup[],
   boardTaskStatuses: BoardTaskStatusesMap,
-  projectBoardTaskStatuses: ProjectBoardTaskStatusesMap
+  projectBoardTaskStatuses: ProjectBoardTaskStatusesMap,
+  employees: Employee[] = [],
+  employeeJobTitles: import('../utils/employeeJobs').EmployeeJobTitleDef[] = []
 ): Partial<Task> {
   // Treat customFields / durationFields as patches so one-column edits never wipe siblings.
   let patched: Partial<Task> = { ...updates };
@@ -1542,7 +1560,9 @@ function enrichTaskUpdates(
     projects,
     taskGroups,
     boardTaskStatuses,
-    projectBoardTaskStatuses
+    projectBoardTaskStatuses,
+    employees,
+    employeeJobTitles
   );
 }
 
@@ -1556,7 +1576,9 @@ function cascadeReadyForSpoolingToAssemblies(
   projects: Project[],
   taskGroups: TaskGroup[],
   boardTaskStatuses: BoardTaskStatusesMap,
-  projectBoardTaskStatuses: ProjectBoardTaskStatusesMap
+  projectBoardTaskStatuses: ProjectBoardTaskStatusesMap,
+  employees: Employee[] = [],
+  employeeJobTitles: import('../utils/employeeJobs').EmployeeJobTitleDef[] = []
 ): Task[] {
   const rootIds = new Set<string>();
   for (const id of parentIds) {
@@ -1575,14 +1597,15 @@ function cascadeReadyForSpoolingToAssemblies(
 
   return tasks.map((task) => {
     if (!childIds.has(task.id)) return task;
-    if (task.status === 'ready-for-spooling' && task.boardType === 'spooling') return task;
     const enriched = enrichTaskUpdates(
       task,
       { status: 'ready-for-spooling' },
       projects,
       taskGroups,
       boardTaskStatuses,
-      projectBoardTaskStatuses
+      projectBoardTaskStatuses,
+      employees,
+      employeeJobTitles
     );
     return { ...task, ...enriched };
   });
@@ -2172,6 +2195,7 @@ function runStoreMigration(persisted: unknown, version: number) {
         projects = ensureDefaultProjectTeams(projects.map(normalizeProject));
         tasks = assignUngroupedSectionTasks(taskGroups, tasks);
         tasks = syncTaskBoardFromGroupPlacement(taskGroups, tasks);
+        tasks = repairDetailersSpoolingMirror(tasks, taskGroups);
         if (version < 56) {
           tasks = migrateDeliverablesBoardStatuses(tasks, taskGroups);
           tasks = migrateBoardDefaultStatuses(tasks);
@@ -3188,6 +3212,35 @@ function runStoreMigration(persisted: unknown, version: number) {
           });
         }
 
+        if (version < 128) {
+          tasks = tasks.map((task) => {
+            if (task.status !== 'ready-for-spooling') return task;
+            return applyAutoAssigneesToTask(
+              task,
+              projects,
+              taskGroups,
+              boardTaskStatuses,
+              projectBoardTaskStatuses,
+              { force: true, employees, employeeJobTitles }
+            );
+          });
+        }
+
+        if (version < 129) {
+          // Fab demote / export loops used to wipe bbMirrorDetailers — restore dual visibility.
+          tasks = repairDetailersSpoolingMirror(tasks, taskGroups);
+        }
+
+        if (version < 130) {
+          // Detailers boardType yanked by group sync while status stayed Ready for Spooling.
+          tasks = repairDetailersSpoolingMirror(tasks, taskGroups);
+        }
+
+        if (version < 131) {
+          // SSv3 assemblies should inherit Trade / Material from the main package task.
+          tasks = syncAssemblyTradeMaterialFromPackageRoots(tasks);
+        }
+
         if (version < 110) {
           const nextPermissions: EmployeePermissionsMap = { ...employeePermissions };
           for (const employee of employees) {
@@ -3506,18 +3559,30 @@ function runStoreMigration(persisted: unknown, version: number) {
           resolvedNavigation.activeProjectId = portfolioResetNavigation.activeProjectId;
         }
 
-        const migratedMainOverviewSectionColumnOrder =
-          version < 124
-            ? ensurePremadeInMainOverviewSectionOrders(
-                normalizeMainOverviewSectionColumnOrder(
-                  (state.mainOverviewSectionColumnOrder as BoardSheetColumnOrderMap | undefined) ??
-                    {},
-                  (state.mainOverviewSectionSheetColumns as BoardSheetColumnsMap | undefined) ??
-                    {},
-                  boardSheetColumns
-                )
-              )
-            : null;
+        const sectionSheetColumns = normalizeBoardSheetColumns(
+          (state.mainOverviewSectionSheetColumns as BoardSheetColumnsMap | undefined) ?? {}
+        );
+        let sectionColumnOrder = ensurePremadeInMainOverviewSectionOrders(
+          normalizeMainOverviewSectionColumnOrder(
+            (state.mainOverviewSectionColumnOrder as BoardSheetColumnOrderMap | undefined) ?? {},
+            sectionSheetColumns,
+            boardSheetColumns
+          )
+        );
+
+        // Ghost boards (Field/Shipping/Fab/Spooling/…) display section column order. Repair
+        // Trade/Material if they were only stuck on boardSheetColumnOrder (Column Settings bug).
+        {
+          const repaired = repairWorkflowTradeMaterialColumnVisibility(
+            boardSheetColumns,
+            boardSheetColumnOrder,
+            sectionColumnOrder,
+            sectionSheetColumns
+          );
+          boardSheetColumns = repaired.boardSheetColumns;
+          boardSheetColumnOrder = repaired.boardSheetColumnOrder;
+          sectionColumnOrder = repaired.mainOverviewSectionColumnOrder;
+        }
 
         return {
           ...state,
@@ -3532,6 +3597,8 @@ function runStoreMigration(persisted: unknown, version: number) {
           projectBoardTaskStatuses,
           boardSheetColumns,
           boardSheetColumnOrder,
+          mainOverviewSectionSheetColumns: sectionSheetColumns,
+          mainOverviewSectionColumnOrder: sectionColumnOrder,
           taskAttachments,
           taskComments,
           taskCommentReadAt,
@@ -3554,9 +3621,6 @@ function runStoreMigration(persisted: unknown, version: number) {
           deletedColumnArchive:
             (state.deletedColumnArchive as DeletedColumnArchive[] | undefined) ?? [],
           deletedEmployeeArchive,
-          ...(migratedMainOverviewSectionColumnOrder
-            ? { mainOverviewSectionColumnOrder: migratedMainOverviewSectionColumnOrder }
-            : {}),
           ...resolvedNavigation,
         };
 }
@@ -5207,7 +5271,8 @@ export const useStore = create<AppState>()(
               projects,
               s.taskGroups,
               s.boardTaskStatuses,
-              s.projectBoardTaskStatuses
+              s.projectBoardTaskStatuses,
+              { employees: s.employees, employeeJobTitles: s.employeeJobTitles }
             );
             const activityLog = logActivity(
               s.activityLog,
@@ -5553,7 +5618,9 @@ export const useStore = create<AppState>()(
                 s.projects,
                 s.taskGroups,
                 s.boardTaskStatuses,
-                s.projectBoardTaskStatuses
+                s.projectBoardTaskStatuses,
+                s.employees,
+                s.employeeJobTitles
               );
               const next = { ...t, ...enriched };
               if (updates.status && updates.status !== t.status) {
@@ -5597,7 +5664,9 @@ export const useStore = create<AppState>()(
                 s.projects,
                 s.taskGroups,
                 s.boardTaskStatuses,
-                s.projectBoardTaskStatuses
+                s.projectBoardTaskStatuses,
+                s.employees,
+                s.employeeJobTitles
               );
             }
 
@@ -5792,7 +5861,9 @@ export const useStore = create<AppState>()(
                 s.projects,
                 s.taskGroups,
                 s.boardTaskStatuses,
-                s.projectBoardTaskStatuses
+                s.projectBoardTaskStatuses,
+                s.employees,
+                s.employeeJobTitles
               );
               return { ...t, ...enriched };
             });
@@ -5804,7 +5875,9 @@ export const useStore = create<AppState>()(
                 s.projects,
                 s.taskGroups,
                 s.boardTaskStatuses,
-                s.projectBoardTaskStatuses
+                s.projectBoardTaskStatuses,
+                s.employees,
+                s.employeeJobTitles
               );
             }
 
@@ -5943,7 +6016,9 @@ export const useStore = create<AppState>()(
                 s.projects,
                 s.taskGroups,
                 s.boardTaskStatuses,
-                s.projectBoardTaskStatuses
+                s.projectBoardTaskStatuses,
+                s.employees,
+                s.employeeJobTitles
               );
               return { ...t, ...enriched };
             });
@@ -5958,7 +6033,9 @@ export const useStore = create<AppState>()(
                 s.projects,
                 s.taskGroups,
                 s.boardTaskStatuses,
-                s.projectBoardTaskStatuses
+                s.projectBoardTaskStatuses,
+                s.employees,
+                s.employeeJobTitles
               );
             }
 
@@ -6091,7 +6168,7 @@ export const useStore = create<AppState>()(
                 s.taskGroups,
                 s.boardTaskStatuses,
                 s.projectBoardTaskStatuses,
-                { force: true }
+                { force: true, employees: s.employees, employeeJobTitles: s.employeeJobTitles }
               );
             }),
           }));
@@ -6109,7 +6186,9 @@ export const useStore = create<AppState>()(
                   s.projects,
                   s.taskGroups,
                   s.boardTaskStatuses,
-                  s.projectBoardTaskStatuses
+                  s.projectBoardTaskStatuses,
+                  s.employees,
+                  s.employeeJobTitles
                 );
                 if (reconciled.assigneesLocked) return reconciled;
                 return applyAutoAssigneesToTask(
@@ -6117,7 +6196,8 @@ export const useStore = create<AppState>()(
                   s.projects,
                   s.taskGroups,
                   s.boardTaskStatuses,
-                  s.projectBoardTaskStatuses
+                  s.projectBoardTaskStatuses,
+                  { employees: s.employees, employeeJobTitles: s.employeeJobTitles }
                 );
               }),
             };
@@ -6193,7 +6273,9 @@ export const useStore = create<AppState>()(
                   s.projects,
                   s.taskGroups,
                   s.boardTaskStatuses,
-                  s.projectBoardTaskStatuses
+                  s.projectBoardTaskStatuses,
+                  s.employees,
+                  s.employeeJobTitles
                 );
                 return { ...t, ...enriched };
               }),
@@ -6313,7 +6395,7 @@ export const useStore = create<AppState>()(
           applyToAllDeliverables,
           autoAssignEmployeeId
         ) => {
-          if (isRfiBoardStatusListLocked(boardType)) return null;
+          if (isBoardStatusListLocked(boardType)) return null;
           const trimmed = label.trim();
           if (!trimmed) return null;
           const id = `status-${uuid()}`;
@@ -6349,7 +6431,7 @@ export const useStore = create<AppState>()(
         },
 
         removeBoardTaskStatus: (boardType, id, projectId, applyToAllDeliverables) => {
-          if (isRfiBoardStatusListLocked(boardType)) return;
+          if (isBoardStatusListLocked(boardType)) return;
           set((s) => {
             const current = getBoardTaskStatuses(
               boardType,
@@ -6383,6 +6465,7 @@ export const useStore = create<AppState>()(
         },
 
         updateBoardTaskStatus: (boardType, id, updates, projectId, applyToAllDeliverables) => {
+          if (isDashboardDrivenStatusBoard(boardType)) return;
           set((s) => {
             const current = getBoardTaskStatuses(
               boardType,
@@ -6414,6 +6497,7 @@ export const useStore = create<AppState>()(
         },
 
         reorderBoardTaskStatuses: (boardType, statusIds, projectId, applyToAllDeliverables) => {
+          if (isBoardStatusListLocked(boardType)) return;
           set((s) => {
             const current = getBoardTaskStatuses(
               boardType,
@@ -7204,7 +7288,8 @@ export const useStore = create<AppState>()(
               s.projects,
               s.taskGroups,
               s.boardTaskStatuses,
-              s.projectBoardTaskStatuses
+              s.projectBoardTaskStatuses,
+              { employees: s.employees, employeeJobTitles: s.employeeJobTitles }
             );
             return { ...history, tasks: [...s.tasks, newTask] };
           });
@@ -7239,7 +7324,8 @@ export const useStore = create<AppState>()(
               s.projects,
               s.taskGroups,
               s.boardTaskStatuses,
-              s.projectBoardTaskStatuses
+              s.projectBoardTaskStatuses,
+              { employees: s.employees, employeeJobTitles: s.employeeJobTitles }
             );
             return { ...history, tasks: [...s.tasks, newTask] };
           });
@@ -7659,6 +7745,7 @@ export const useStore = create<AppState>()(
               s.subBoardTabOrder
             );
             let tasks = repairTasksOnWrongBoardSection(s.tasks, taskGroups);
+            tasks = repairDetailersSpoolingMirror(tasks, taskGroups);
             const project = s.projects.find((p) => p.id === projectId);
             if (!project || project.isTemplate) {
               return { taskGroups, tasks };
@@ -7708,7 +7795,7 @@ export const useStore = create<AppState>()(
 
       name: 'bim-task-board-storage',
 
-      version: 127,
+      version: 132,
 
       migrate: (persisted, version) => {
         try {
