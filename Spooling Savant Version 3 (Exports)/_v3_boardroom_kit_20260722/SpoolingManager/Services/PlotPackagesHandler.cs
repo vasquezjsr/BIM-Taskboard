@@ -97,7 +97,6 @@ public class PlotPackagesHandler : IExternalEventHandler
 			ShowAlphaPlotPackagesDialog(app, "Plot Packages", "No active Revit document was found.");
 			return;
 		}
-		SpoolingManagerSettings.SetActiveProject(val);
 		SpoolingManagerKind productKind = pendingRequest.ProductKind;
 		bool regularBranch = CreateSpoolSheetsHandler.UsesRegularSheetBranch(SpoolingManagerSettings.Load(productKind), productKind);
 		string toolWindowTitle = pendingRequest.ExportToBoardroom
@@ -131,13 +130,6 @@ public class PlotPackagesHandler : IExternalEventHandler
 					text2 = "Package";
 				}
 				string text3 = batch.PackageLabel ?? text2;
-				bool archivePrevious = pendingRequest.ExportToBoardroom;
-				string batchFolder = text;
-				if (pendingRequest.ExportToBoardroom)
-				{
-					batchFolder = Path.Combine(text, SanitizeFileStem(text2));
-					Directory.CreateDirectory(batchFolder);
-				}
 				List<FabricationPart> list2 = ((plotPackagesReportOptions.IncludeBillOfMaterials || plotPackagesReportOptions.IncludeCutList || plotPackagesReportOptions.IncludeTigerStop || plotPackagesReportOptions.IncludePcfFiles) ? CollectFabricationPartsForAssemblies(val, batch.AssemblyIds) : new List<FabricationPart>());
 				List<(FabricationPart Part, string AssemblyName)> cutlistParts = (plotPackagesReportOptions.IncludeCutList || plotPackagesReportOptions.IncludeTigerStop || plotPackagesReportOptions.IncludePcfFiles)
 					? CollectFabricationPartsWithAssemblyNames(val, batch.AssemblyIds)
@@ -146,7 +138,7 @@ public class PlotPackagesHandler : IExternalEventHandler
 				{
 					List<ViewSheet> list3 = CollectDistinctSpoolSheets(val, batch.AssemblyIds, regularBranch);
 					string text4 = SanitizeFileStem(text2 + " - Spools Combined");
-					string text5 = Path.Combine(batchFolder, text4 + ".pdf");
+					string text5 = Path.Combine(text, text4 + ".pdf");
 					if (list3.Count == 0)
 					{
 						stringBuilder.AppendLine("[" + text3 + "] No spool sheets found — skipped «" + text2 + " - Spools Combined».");
@@ -156,7 +148,7 @@ public class PlotPackagesHandler : IExternalEventHandler
 						try
 						{
 							EnsureTrackingQrBeforePlot(val, batch.AssemblyIds, regularBranch, pendingRequest.ProductKind);
-							PrepareOutputFile(text5, archivePrevious);
+							TryDeleteExistingOutput(text5);
 							PlotSheetsToPdf(val, list3, text5);
 							list.Add(text2 + " - Spools Combined (Plotted)");
 						}
@@ -171,7 +163,7 @@ public class PlotPackagesHandler : IExternalEventHandler
 					string packageValue = ResolvePackageValueForBatch(val, batch);
 					ViewSheet spoolMapSheet = CreateSpoolMapHandler.FindSpoolMapSheet(val, text2, packageValue);
 					string spoolMapStem = SanitizeFileStem(text2 + " - Spool Map");
-					string spoolMapPdf = Path.Combine(batchFolder, spoolMapStem + ".pdf");
+					string spoolMapPdf = Path.Combine(text, spoolMapStem + ".pdf");
 					if (spoolMapSheet == null)
 					{
 						stringBuilder.AppendLine("[" + text3 + "] No Spool Map sheet found — skipped «" + text2 + " - Spool Map». Create Spool Map for this package first.");
@@ -184,7 +176,7 @@ public class PlotPackagesHandler : IExternalEventHandler
 							{
 								FabricationSavantParameterSync.TrySetPackageParameter(spoolMapSheet, packageValue);
 							}
-							PrepareOutputFile(spoolMapPdf, archivePrevious);
+							TryDeleteExistingOutput(spoolMapPdf);
 							PlotSheetsToPdf(val, new List<ViewSheet> { spoolMapSheet }, spoolMapPdf);
 							list.Add(text2 + " - Spool Map (Plotted)");
 						}
@@ -198,9 +190,9 @@ public class PlotPackagesHandler : IExternalEventHandler
 				{
 					List<PipeFittingsBomPdfCommand.PackageAssemblyListRow> assemblyRows = BuildOrderedAssemblyListRowsForPackage(val, batch.AssemblyIds, regularBranch);
 					string text6 = SanitizeFileStem(text2 + " - Assembly List");
-					string text7 = Path.Combine(batchFolder, text6 + ".pdf");
+					string text7 = Path.Combine(text, text6 + ".pdf");
 					string message = string.Empty;
-					PrepareOutputFile(text7, archivePrevious);
+					TryDeleteExistingOutput(text7);
 					Result val2;
 					try
 					{
@@ -227,9 +219,9 @@ public class PlotPackagesHandler : IExternalEventHandler
 				if (plotPackagesReportOptions.IncludeBillOfMaterials)
 				{
 					string text8 = SanitizeFileStem(text2 + " - Bill of Materials");
-					string text9 = Path.Combine(batchFolder, text8 + ".pdf");
+					string text9 = Path.Combine(text, text8 + ".pdf");
 					string message2 = string.Empty;
-					PrepareOutputFile(text9, archivePrevious);
+					TryDeleteExistingOutput(text9);
 					Result val3;
 					try
 					{
@@ -256,7 +248,7 @@ public class PlotPackagesHandler : IExternalEventHandler
 				if (plotPackagesReportOptions.IncludeCutList && cutlistParts.Count > 0)
 				{
 					string text10 = SanitizeFileStem(text2 + " - Cut List");
-					string text11 = Path.Combine(batchFolder, text10 + ".pdf");
+					string text11 = Path.Combine(text, text10 + ".pdf");
 					string message3 = string.Empty;
 					List<string> cutlistWritten = new List<string>();
 					Result val4;
@@ -264,7 +256,7 @@ public class PlotPackagesHandler : IExternalEventHandler
 					{
 						foreach (string path in PipeFittingsBomPdfCommand.PreviewCutlistOutputPaths(text11, cutlistParts, val))
 						{
-							PrepareOutputFile(path, archivePrevious);
+							TryDeleteExistingOutput(path);
 						}
 
 						val4 = PipeFittingsBomPdfCommand.ExportPackagePipeCutlistPdf(app, val, cutlistParts, text11, ref message3, plotHeader, cutlistWritten);
@@ -301,7 +293,7 @@ public class PlotPackagesHandler : IExternalEventHandler
 				{
 					List<WeldLogExportRow> weldLogRows = CreateSpoolSheetsHandler.CollectWeldLogRowsForAssemblies(val, batch.AssemblyIds);
 					string text12 = SanitizeFileStem(text2 + " - Weld Log");
-					string text13 = Path.Combine(batchFolder, text12 + ".xlsx");
+					string text13 = Path.Combine(text, text12 + ".xlsx");
 					if (weldLogRows.Count == 0)
 					{
 						stringBuilder.AppendLine("[" + text3 + "] No weld log entries (no S-Weld values) — skipped «" + text2 + " - Weld Log».");
@@ -310,7 +302,7 @@ public class PlotPackagesHandler : IExternalEventHandler
 					{
 						try
 						{
-							PrepareOutputFile(text13, archivePrevious);
+							TryDeleteExistingOutput(text13);
 							WeldLogExcelExportService.Export(text13, weldLogRows);
 							list.Add(text2 + " - Weld Log (Exported)");
 						}
@@ -327,7 +319,7 @@ public class PlotPackagesHandler : IExternalEventHandler
 					{
 						try
 						{
-							List<string> tigerFiles = TigerStopExportService.Export(val, cutlistParts, text2, batchFolder, exportSettings);
+							List<string> tigerFiles = TigerStopExportService.Export(val, cutlistParts, text2, text, exportSettings);
 							if (tigerFiles.Count == 0)
 							{
 								stringBuilder.AppendLine("[" + text3 + "] TigerStop skipped — no Copper/PVC straight pipe in this package.");
@@ -349,7 +341,7 @@ public class PlotPackagesHandler : IExternalEventHandler
 					{
 						try
 						{
-							PcfExportService.ExportResult pcfResult = PcfExportService.Export(val, cutlistParts, text2, batchFolder, exportSettings);
+							PcfExportService.ExportResult pcfResult = PcfExportService.Export(val, cutlistParts, text2, text, exportSettings);
 							if (pcfResult.WrittenFiles.Count == 0)
 							{
 								stringBuilder.AppendLine("[" + text3 + "] PCF skipped — no exportable pipework in this package.");
@@ -488,55 +480,16 @@ public class PlotPackagesHandler : IExternalEventHandler
 
 	private static void TryDeleteExistingOutput(string path)
 	{
-		PrepareOutputFile(path, archivePreviousVersions: false);
-	}
-
-	/// <summary>
-	/// Ensures the parent folder exists. When <paramref name="archivePreviousVersions"/> is true
-	/// (Export to Boardroom), moves an existing file into Previous Versions\{timestamp}\ before overwrite.
-	/// </summary>
-	private static void PrepareOutputFile(string path, bool archivePreviousVersions)
-	{
 		try
 		{
-			if (string.IsNullOrWhiteSpace(path))
+			if (!string.IsNullOrWhiteSpace(path))
 			{
-				return;
+				path = Path.GetFullPath(path);
+				if (File.Exists(path))
+				{
+					File.Delete(path);
+				}
 			}
-
-			path = Path.GetFullPath(path);
-			string directory = Path.GetDirectoryName(path);
-			if (!string.IsNullOrWhiteSpace(directory) && !Directory.Exists(directory))
-			{
-				Directory.CreateDirectory(directory);
-			}
-
-			if (!File.Exists(path))
-			{
-				return;
-			}
-
-			if (!archivePreviousVersions)
-			{
-				File.Delete(path);
-				return;
-			}
-
-			string stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
-			string archiveDir = Path.Combine(directory ?? string.Empty, "Previous Versions", stamp);
-			Directory.CreateDirectory(archiveDir);
-			string dest = Path.Combine(archiveDir, Path.GetFileName(path));
-			if (File.Exists(dest))
-			{
-				dest = Path.Combine(
-					archiveDir,
-					Path.GetFileNameWithoutExtension(path)
-						+ "_"
-						+ Guid.NewGuid().ToString("N").Substring(0, 6)
-						+ Path.GetExtension(path));
-			}
-
-			File.Move(path, dest);
 		}
 		catch
 		{
@@ -833,7 +786,7 @@ public class PlotPackagesHandler : IExternalEventHandler
 			return;
 		}
 
-		using (Transaction tx = new Transaction(doc, "Spooling Savant: Ensure tracking QR"))
+		using (Transaction tx = new Transaction(doc, "Spooling Savant 3.0: Ensure tracking QR"))
 		{
 			tx.Start();
 			try
@@ -968,7 +921,25 @@ public class PlotPackagesHandler : IExternalEventHandler
 
 		sb.AppendLine("  ],");
 		sb.AppendLine("  \"files\": [");
-		List<string> fileNames = CollectBoardroomRelativeExportFiles(outputFolder, batches);
+		HashSet<string> packageLabels = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		foreach (PlotPackageBatch batch in batches)
+		{
+			string label = string.IsNullOrWhiteSpace(batch?.PackageLabel) ? string.Empty : batch.PackageLabel.Trim();
+			if (label.Length > 0)
+			{
+				packageLabels.Add(label);
+			}
+		}
+		List<string> fileNames = Directory.Exists(outputFolder)
+			? Directory.GetFiles(outputFolder)
+				.Select(Path.GetFileName)
+				.Where(name =>
+					!string.IsNullOrWhiteSpace(name)
+					&& !string.Equals(name, "boardroom-package.json", StringComparison.OrdinalIgnoreCase)
+					&& packageLabels.Any(pkg => FileBelongsToSPackage(name, pkg)))
+				.OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+				.ToList()
+			: new List<string>();
 		for (int f = 0; f < fileNames.Count; f++)
 		{
 			string fileName = fileNames[f];
@@ -983,62 +954,6 @@ public class PlotPackagesHandler : IExternalEventHandler
 		return path;
 	}
 
-	/// <summary>
-	/// Lists report files under each package subfolder as root-relative paths (Package/file.ext).
-	/// Skips Previous Versions archives and the root manifest.
-	/// </summary>
-	private static List<string> CollectBoardroomRelativeExportFiles(
-		string outputFolder,
-		List<PlotPackageBatch> batches)
-	{
-		List<string> fileNames = new List<string>();
-		if (string.IsNullOrWhiteSpace(outputFolder) || !Directory.Exists(outputFolder) || batches == null)
-		{
-			return fileNames;
-		}
-
-		HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-		foreach (PlotPackageBatch batch in batches)
-		{
-			string label = string.IsNullOrWhiteSpace(batch?.PackageLabel) ? "Package" : batch.PackageLabel.Trim();
-			if (label.Length == 0)
-			{
-				label = "Package";
-			}
-
-			string folderName = SanitizeFileStem(label);
-			string packageDir = Path.Combine(outputFolder, folderName);
-			if (!Directory.Exists(packageDir))
-			{
-				continue;
-			}
-
-			foreach (string fullPath in Directory.GetFiles(packageDir))
-			{
-				string name = Path.GetFileName(fullPath);
-				if (string.IsNullOrWhiteSpace(name)
-					|| string.Equals(name, "boardroom-package.json", StringComparison.OrdinalIgnoreCase))
-				{
-					continue;
-				}
-
-				if (!FileBelongsToSPackage(name, label))
-				{
-					continue;
-				}
-
-				string relative = folderName.Replace('\\', '/') + "/" + name;
-				if (seen.Add(relative))
-				{
-					fileNames.Add(relative);
-				}
-			}
-		}
-
-		fileNames.Sort(StringComparer.OrdinalIgnoreCase);
-		return fileNames;
-	}
-
 	private static bool FileBelongsToSPackage(string fileName, string sPackage)
 	{
 		string pkg = (sPackage ?? string.Empty).Trim();
@@ -1046,12 +961,6 @@ public class PlotPackagesHandler : IExternalEventHandler
 		if (pkg.Length == 0 || name.Length == 0)
 		{
 			return false;
-		}
-
-		int slash = Math.Max(name.LastIndexOf('/'), name.LastIndexOf('\\'));
-		if (slash >= 0 && slash < name.Length - 1)
-		{
-			name = name.Substring(slash + 1);
 		}
 
 		if (string.Equals(name, pkg, StringComparison.OrdinalIgnoreCase))

@@ -6,6 +6,7 @@ import {
   isSsv3AssemblyTask,
   isSsv3PackageTask,
   parseSsv3Files,
+  displayBoardroomExportFileName,
   SSV3_FIELD,
   type BoardroomPackageFileRef,
 } from '../utils/boardroomPackageImport';
@@ -77,7 +78,8 @@ type ViewerSelection =
 function joinPath(folder: string, fileName: string): string {
   const base = folder.replace(/[/\\]+$/, '');
   const sep = folder.includes('\\') ? '\\' : '/';
-  return `${base}${sep}${fileName}`;
+  const relative = (fileName ?? '').replace(/[\\/]+/g, sep);
+  return `${base}${sep}${relative}`;
 }
 
 function formatScanTime(iso: string | null): string {
@@ -434,8 +436,8 @@ export function FabWorkstationView() {
 
   const exportFiles = useMemo(() => {
     if (!selectedPackage) return [];
-    return parseSsv3Files(selectedPackage);
-  }, [selectedPackage]);
+    return parseSsv3Files(selectedPackage, tasks);
+  }, [selectedPackage, tasks]);
 
   const bomFileName = useMemo(
     () => findBomFileName(exportFiles.map((file) => file.fileName)),
@@ -930,7 +932,9 @@ export function FabWorkstationView() {
   }, [showWeldLog, selectedAssembly, weldRows]);
 
   const canTapFillWeldLog =
-    Boolean(currentUser) && canEditWeldLog(currentUserId, employees, employeePermissions);
+    fabMode !== 'queue' &&
+    Boolean(currentUser) &&
+    canEditWeldLog(currentUserId, employees, employeePermissions);
   const allowFabStatusEdit = canEditFabStatus(currentUserId, employees, employeePermissions);
   const allowFabCollab = canEditFabCollab(currentUserId, employees, employeePermissions);
 
@@ -1300,8 +1304,9 @@ export function FabWorkstationView() {
                             })
                           }
                         >
-                          <span className={styles.fileName}>{bomFileName}</span>
-                          <span className={styles.fileType}>pdf</span>
+                          <span className={styles.fileName}>
+                            {displayBoardroomExportFileName(bomFileName)}
+                          </span>
                         </button>
                       </li>
                     </ul>
@@ -1327,13 +1332,6 @@ export function FabWorkstationView() {
                         !released &&
                         viewer?.kind === 'assembly' &&
                         viewer.taskId === task.id;
-                      const sheetLabel = [
-                        task.customFields?.[SSV3_FIELD.sheetName],
-                        task.customFields?.[SSV3_FIELD.sheetNumber],
-                      ]
-                        .map((v) => (v ?? '').trim())
-                        .filter(Boolean)
-                        .join(' · ');
                       const assemblyWorkerId = task.assigneeIds?.[0] ?? '';
                       const rowClass = released
                         ? styles.assemblyRowReleased
@@ -1366,9 +1364,6 @@ export function FabWorkstationView() {
                               }}
                             >
                               <span className={styles.assemblyTitle}>{task.title}</span>
-                              {sheetLabel ? (
-                                <span className={styles.rowHint}>{sheetLabel}</span>
-                              ) : null}
                             </button>
                             {allowWorkerAssign ? (
                               <select
@@ -1460,14 +1455,13 @@ export function FabWorkstationView() {
                                 setViewer({
                                   kind: 'file',
                                   fileName: file.fileName,
-                                  label: file.fileName,
+                                  label: displayBoardroomExportFileName(file.fileName),
                                 })
                               }
                             >
-                              <span className={styles.fileName}>{file.fileName}</span>
-                              {file.type ? (
-                                <span className={styles.fileType}>{file.type}</span>
-                              ) : null}
+                              <span className={styles.fileName}>
+                                {displayBoardroomExportFileName(file.fileName)}
+                              </span>
                             </button>
                           </div>
                         </li>
@@ -1559,7 +1553,11 @@ export function FabWorkstationView() {
               ) : null}
 
               {previewMode === 'native-pdf' && previewUrl ? (
-                <CleanPdfViewer src={previewUrl} title={viewer.label} />
+                <CleanPdfViewer
+                  src={previewUrl}
+                  title={viewer.label}
+                  viewOnly={fabMode === 'queue'}
+                />
               ) : null}
 
               {previewMode === 'image-pan' && previewUrl ? (
@@ -1665,7 +1663,11 @@ export function FabWorkstationView() {
                   signedInLabel={currentUser?.name ?? null}
                   busy={weldBusy}
                   error={weldError}
-                  saveMessage={weldSaveMessage}
+                  saveMessage={
+                    fabMode === 'queue'
+                      ? 'View only on Queued Dashboard — weld log fill is available after the package moves In Fab.'
+                      : weldSaveMessage
+                  }
                   onTapFill={handleWeldTapFill}
                 />
               ) : null}

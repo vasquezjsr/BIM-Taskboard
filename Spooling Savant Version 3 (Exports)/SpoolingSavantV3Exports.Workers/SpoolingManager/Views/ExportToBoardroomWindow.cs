@@ -48,7 +48,7 @@ internal sealed class ExportToBoardroomWindow : Window
 		};
 		var hint = new TextBlock
 		{
-			Text = "Choose a live Boardroom project and Spooling-board task. Reports are written to the export folder with a boardroom-package.json that attaches to that task. Fab receives the package only after the task is marked Ready for Fab in Boardroom.",
+			Text = "Choose a live Boardroom project and Spooling-board task. Each S-Package is written to its own subfolder under the export folder (re-exports archive prior files into Previous Versions). A boardroom-package.json at the export root attaches to that task. Fab receives the package only after the task is marked Ready for Fab in Boardroom.",
 			Style = TryFindResource("SsSavantDialogHintText") as Style,
 			TextWrapping = TextWrapping.Wrap,
 			Margin = new Thickness(0, 0, 0, 12)

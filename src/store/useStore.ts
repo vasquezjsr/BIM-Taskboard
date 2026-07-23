@@ -81,25 +81,37 @@ import {
   type JobLevelNavVisibilityMap,
   type VisibilityNavColumn,
 } from '../utils/visibilityMatrix';
-import type { ActivityLogEntry, DeletedColumnArchive, DeletedEmployeeArchive } from '../utils/activityLog';
+import type {
+  ActivityLogEntry,
+  DeletedColumnArchive,
+  DeletedEmployeeArchive,
+  DeletedTaskArchive,
+  TaskRevisionArchive,
+} from '../utils/activityLog';
 import {
   applyColumnArchiveRestore,
+  applyRestoredTaskArchive,
   buildColumnDeleteArchive,
+  buildTaskRevisionArchive,
   columnActivitySummary,
   findColumnDefinition,
   logActivity,
+  prependTaskRevisionArchive,
   resolveActivityActorId,
+  softDeleteTaskTrees,
   stripColumnFromState,
 } from './activityLogHelpers';
 import { backfillTaskNumbers, nextTaskNumberForProject } from '../utils/taskNumbers';
 import {
   buildSpoolingExportCustomFields,
-  filterBoardroomPackageAttachmentFiles,
+  filterFilesForSPackages,
   findProjectForManifest,
   findSpoolingTaskForManifest,
   isSsv3ExportLocked,
   parseBoardroomPackageManifest,
+  parseSsv3Files,
   spoolingTaskHasSsv3Export,
+  upsertBoardroomAbsAttachments,
   SSV3_FIELD,
   SSV3_KIND_ASSEMBLY,
   type BoardroomPackageImportResult,
@@ -431,6 +443,8 @@ interface AppState {
   activityLog: ActivityLogEntry[];
   deletedColumnArchive: DeletedColumnArchive[];
   deletedEmployeeArchive: DeletedEmployeeArchive[];
+  deletedTaskArchive: DeletedTaskArchive[];
+  taskRevisionArchive: TaskRevisionArchive[];
 
   /** User-saved column layouts for reuse when adding columns */
   savedSheetColumnTemplates: import('../types').SavedSheetColumnTemplate[];
@@ -576,6 +590,11 @@ interface AppState {
 
   restoreDeletedEmployee: (archiveId: string) => boolean;
 
+  restoreDeletedTask: (archiveId: string) => boolean;
+
+  /** Restore a task from any Activity Log row (delete, status change, or update). */
+  restoreTaskActivity: (activityLogId: string) => boolean;
+
   addOrgTeam: (name: string) => void;
 
   renameOrgTeam: (teamId: string, name: string) => void;
@@ -621,6 +640,12 @@ interface AppState {
     manifest: unknown,
     exportFolder: string
   ) => BoardroomPackageImportResult;
+
+  /**
+   * Ensure package Main Task paperclip attachments match ssv3Files / export folder
+   * (repairs older imports that only populated Export files metadata).
+   */
+  ensureBoardroomAttachmentsForTask: (taskId: string) => number;
 
   /** Remove nested SSv3 assemblies and export report attachments from a Spooling task. */
   clearSsv3ExportFromTask: (taskId: string) => void;
@@ -960,6 +985,8 @@ function mergePersistedState(p: Partial<AppState>, current: AppState): AppState 
         group.projectId === templateProject.id &&
         /^Level [3-8]$/.test(group.name)
     );
+    // Never delete template tasks on rehydrate — only normalize level names / clear
+    // buildingLevels. Task rows stay put (orphan groupId if a level group is removed).
     if (templateHasExpandedLevels || templateProject.buildingLevels.length > 0) {
       const reverted = revertTemplateExpandedLevels(
         templateProject.id,
@@ -1215,6 +1242,12 @@ function mergePersistedState(p: Partial<AppState>, current: AppState): AppState 
     deletedEmployeeArchive: Array.isArray(p.deletedEmployeeArchive)
       ? p.deletedEmployeeArchive
       : (current.deletedEmployeeArchive ?? []),
+    deletedTaskArchive: Array.isArray(p.deletedTaskArchive)
+      ? p.deletedTaskArchive
+      : (current.deletedTaskArchive ?? []),
+    taskRevisionArchive: Array.isArray(p.taskRevisionArchive)
+      ? p.taskRevisionArchive
+      : (current.taskRevisionArchive ?? []),
     savedSheetColumnTemplates: Array.isArray(p.savedSheetColumnTemplates)
       ? p.savedSheetColumnTemplates
       : (current.savedSheetColumnTemplates ?? []),
@@ -2005,6 +2038,8 @@ function createRecoveryPersistedState(persisted: unknown, employees: Employee[])
     activityLog: [],
     deletedColumnArchive: [],
     deletedEmployeeArchive: [],
+    deletedTaskArchive: [],
+    taskRevisionArchive: [],
     savedSheetColumnTemplates: [],
     columnSettingsDropdownIds: normalizeColumnSettingsDropdownIds(),
     timeEntries: [],
@@ -3621,6 +3656,10 @@ function runStoreMigration(persisted: unknown, version: number) {
           deletedColumnArchive:
             (state.deletedColumnArchive as DeletedColumnArchive[] | undefined) ?? [],
           deletedEmployeeArchive,
+          deletedTaskArchive:
+            (state.deletedTaskArchive as DeletedTaskArchive[] | undefined) ?? [],
+          taskRevisionArchive:
+            (state.taskRevisionArchive as TaskRevisionArchive[] | undefined) ?? [],
           ...resolvedNavigation,
         };
 }
@@ -3712,6 +3751,8 @@ export const useStore = create<AppState>()(
         activityLog: [],
         deletedColumnArchive: [],
         deletedEmployeeArchive: [],
+        deletedTaskArchive: [],
+        taskRevisionArchive: [],
 
         savedSheetColumnTemplates: [],
 
@@ -4093,7 +4134,24 @@ export const useStore = create<AppState>()(
 
             const projects = s.projects.filter((p) => p.clientId !== id);
 
-            const tasks = s.tasks.filter((t) => t.clientId !== id);
+            const rootTaskIds = s.tasks
+              .filter((t) => t.clientId === id && !t.parentTaskId)
+              .map((t) => t.id);
+            const soft = softDeleteTaskTrees({
+              tasks: s.tasks,
+              taskAttachments: s.taskAttachments,
+              taskComments: s.taskComments,
+              deletedTaskArchive: s.deletedTaskArchive ?? [],
+              activityLog: s.activityLog,
+              rootTaskIds,
+              actorId: resolveActivityActorId(s.currentUserId, s.viewAsOriginalUserId),
+              reason: 'client-removed',
+              createId: uuid,
+              summaryForRoot: (task, descendantCount) =>
+                descendantCount > 0
+                  ? `Deleted task "${task.title}" with client (+${descendantCount} subtasks)`
+                  : `Deleted task "${task.title}" with client`,
+            });
 
             const taskGroups = s.taskGroups.filter((g) => g.clientId !== id);
 
@@ -4105,11 +4163,19 @@ export const useStore = create<AppState>()(
 
               projects,
 
-              tasks,
+              tasks: soft.tasks,
 
               taskGroups,
 
               customBoards,
+
+              taskAttachments: soft.taskAttachments,
+
+              taskComments: soft.taskComments,
+
+              deletedTaskArchive: soft.deletedTaskArchive,
+
+              activityLog: soft.activityLog,
 
               activeClientId: clients[0]?.id ?? null,
 
@@ -4280,15 +4346,42 @@ export const useStore = create<AppState>()(
 
             const clientProjects = projects.filter((p) => p.clientId === s.activeClientId);
 
+            const rootTaskIds = s.tasks
+              .filter((t) => t.projectId === id && !t.parentTaskId)
+              .map((t) => t.id);
+            const soft = softDeleteTaskTrees({
+              tasks: s.tasks,
+              taskAttachments: s.taskAttachments,
+              taskComments: s.taskComments,
+              deletedTaskArchive: s.deletedTaskArchive ?? [],
+              activityLog: s.activityLog,
+              rootTaskIds,
+              actorId: resolveActivityActorId(s.currentUserId, s.viewAsOriginalUserId),
+              reason: 'project-removed',
+              createId: uuid,
+              summaryForRoot: (task, descendantCount) =>
+                descendantCount > 0
+                  ? `Deleted task "${task.title}" with project (+${descendantCount} subtasks)`
+                  : `Deleted task "${task.title}" with project`,
+            });
+
             return {
 
               projects,
 
-              tasks: s.tasks.filter((t) => t.projectId !== id),
+              tasks: soft.tasks,
 
               taskGroups: s.taskGroups.filter((g) => g.projectId !== id),
 
               customBoards: s.customBoards.filter((b) => b.projectId !== id),
+
+              taskAttachments: soft.taskAttachments,
+
+              taskComments: soft.taskComments,
+
+              deletedTaskArchive: soft.deletedTaskArchive,
+
+              activityLog: soft.activityLog,
 
               activeProjectId: clientProjects[0]?.id ?? null,
 
@@ -5328,6 +5421,28 @@ export const useStore = create<AppState>()(
             existingFolder === folder
           ) {
             // Same export already attached — do not wipe shop progress on watcher/startup.
+            // Still repair Main Task paperclip attachments if they were never written.
+            const exportFiles = filterFilesForSPackages(
+              manifest.files,
+              manifest.packages.map((batch) => batch.sPackage)
+            );
+            set((s) => {
+              const actorId = resolveActivityActorId(s.currentUserId, s.viewAsOriginalUserId);
+              const nextAttachments = upsertBoardroomAbsAttachments({
+                taskId: spoolingTask.id,
+                exportFolder: folder,
+                files: exportFiles,
+                taskAttachments: s.taskAttachments,
+                actorId,
+                createId: uuid,
+                sPackage:
+                  spoolingTask.customFields?.[SSV3_FIELD.package] ??
+                  manifest.packages[0]?.sPackage ??
+                  null,
+              });
+              if (nextAttachments === s.taskAttachments) return s;
+              return { ...s, taskAttachments: nextAttachments };
+            });
             return {
               projectId: project.id,
               spoolingTaskId: spoolingTask.id,
@@ -5376,10 +5491,52 @@ export const useStore = create<AppState>()(
               });
             }
 
-            const wiped = clearSsv3ExportFromSpoolingTask(
+            const wipedPreview = clearSsv3ExportFromSpoolingTask(
               spoolingTask,
               s.tasks,
               s.taskAttachments
+            );
+            const importRemovedIds = new Set(
+              s.tasks
+                .filter((task) => !wipedPreview.tasks.some((kept) => kept.id === task.id))
+                .map((task) => task.id)
+            );
+            const importArchiveRoots = [...importRemovedIds].filter((id) => {
+              const entry = s.tasks.find((task) => task.id === id);
+              if (!entry?.parentTaskId) return true;
+              return !importRemovedIds.has(entry.parentTaskId);
+            });
+
+            let deletedTaskArchive = s.deletedTaskArchive ?? [];
+            let tasksForImport = s.tasks;
+            let attachmentsForImport = s.taskAttachments;
+            let commentsForImport = s.taskComments;
+
+            if (importArchiveRoots.length > 0) {
+              const soft = softDeleteTaskTrees({
+                tasks: tasksForImport,
+                taskAttachments: attachmentsForImport,
+                taskComments: commentsForImport,
+                deletedTaskArchive,
+                activityLog,
+                rootTaskIds: importArchiveRoots,
+                actorId,
+                reason: 'ssv3-reimport',
+                createId: uuid,
+                summaryForRoot: (task) =>
+                  `Replaced SSv3 child "${task.title}" on re-import to "${spoolingTask.title}"`,
+              });
+              tasksForImport = soft.tasks;
+              attachmentsForImport = soft.taskAttachments;
+              commentsForImport = soft.taskComments;
+              deletedTaskArchive = soft.deletedTaskArchive;
+              activityLog = soft.activityLog;
+            }
+
+            const wiped = clearSsv3ExportFromSpoolingTask(
+              tasksForImport.find((task) => task.id === spoolingTask.id) ?? spoolingTask,
+              tasksForImport,
+              attachmentsForImport
             );
             let tasks = wiped.tasks;
             let taskAttachments = wiped.taskAttachments;
@@ -5471,76 +5628,23 @@ export const useStore = create<AppState>()(
               uuid
             );
 
-            const exportFiles = filterBoardroomPackageAttachmentFiles(manifest.files);
+            const exportFiles = filterFilesForSPackages(
+              manifest.files,
+              manifest.packages.map((batch) => batch.sPackage)
+            );
 
-            const sep = folder.includes('\\') ? '\\' : '/';
-            const base = folder.replace(/[/\\]+$/, '');
-            const now = new Date().toISOString();
-            for (const file of exportFiles) {
-              const fullPath = `${base}${sep}${file.fileName}`;
-              const storageId = `boardroom-abs:${fullPath}`;
-              const mimeType =
-                file.type === 'pdf'
-                  ? 'application/pdf'
-                  : file.type === 'xlsx'
-                    ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-                    : file.type === 'pcf'
-                      ? 'text/plain'
-                      : 'application/octet-stream';
-              const existing = taskAttachments.find(
-                (attachment) =>
-                  attachment.taskId === spoolingTask.id &&
-                  attachment.fileName.toLowerCase() === file.fileName.toLowerCase()
-              );
-              if (existing) {
-                const versionId = uuid();
-                const prior =
-                  existing.versions.find((v) => v.id === existing.currentVersionId)?.version ??
-                  existing.versions.length;
-                taskAttachments = taskAttachments.map((attachment) =>
-                  attachment.id === existing.id
-                    ? {
-                        ...attachment,
-                        currentVersionId: versionId,
-                        versions: existing.versions.map((v) =>
-                          v.id === existing.currentVersionId
-                            ? {
-                                id: versionId,
-                                version: prior,
-                                fileName: file.fileName,
-                                mimeType,
-                                sizeBytes: 0,
-                                storageId,
-                                uploadedAt: now,
-                                uploadedById: actorId,
-                              }
-                            : v
-                        ),
-                      }
-                    : attachment
-                );
-              } else {
-                const versionId = uuid();
-                taskAttachments.push({
-                  id: uuid(),
-                  taskId: spoolingTask.id,
-                  fileName: file.fileName,
-                  currentVersionId: versionId,
-                  versions: [
-                    {
-                      id: versionId,
-                      version: 1,
-                      fileName: file.fileName,
-                      mimeType,
-                      sizeBytes: 0,
-                      storageId,
-                      uploadedAt: now,
-                      uploadedById: actorId,
-                    },
-                  ],
-                });
-              }
-            }
+            taskAttachments = upsertBoardroomAbsAttachments({
+              taskId: spoolingTask.id,
+              exportFolder: folder,
+              files: exportFiles,
+              taskAttachments,
+              actorId,
+              createId: uuid,
+              sPackage:
+                attached.customFields?.[SSV3_FIELD.package] ??
+                manifest.packages[0]?.sPackage ??
+                null,
+            });
 
             result = {
               projectId: project.id,
@@ -5551,10 +5655,53 @@ export const useStore = create<AppState>()(
               assembliesUpserted,
             };
 
-            return { ...history, projects, tasks, activityLog, taskAttachments };
+            return {
+              ...history,
+              projects,
+              tasks,
+              activityLog,
+              taskAttachments,
+              taskComments: commentsForImport,
+              deletedTaskArchive,
+            };
           });
 
           return result;
+        },
+
+        ensureBoardroomAttachmentsForTask: (taskId) => {
+          const state = get();
+          const task = state.tasks.find((entry) => entry.id === taskId);
+          if (!task || !spoolingTaskHasSsv3Export(task)) return 0;
+
+          const folder = (task.customFields?.[SSV3_FIELD.exportFolder] ?? '').trim();
+          const sPackage = (task.customFields?.[SSV3_FIELD.package] ?? '').trim();
+          if (!folder && !sPackage) return 0;
+
+          const beforeCount = state.taskAttachments.filter((a) => a.taskId === taskId).length;
+          set((s) => {
+            const live = s.tasks.find((entry) => entry.id === taskId);
+            if (!live) return s;
+            const liveFolder = (live.customFields?.[SSV3_FIELD.exportFolder] ?? '').trim();
+            const livePackage = (live.customFields?.[SSV3_FIELD.package] ?? '').trim();
+            const liveFiles = parseSsv3Files(live, s.tasks);
+            if (!liveFolder && !livePackage) return s;
+
+            const actorId = resolveActivityActorId(s.currentUserId, s.viewAsOriginalUserId);
+            const nextAttachments = upsertBoardroomAbsAttachments({
+              taskId: live.id,
+              exportFolder: liveFolder,
+              files: liveFiles,
+              taskAttachments: s.taskAttachments,
+              actorId,
+              createId: uuid,
+              sPackage: livePackage || null,
+            });
+            if (nextAttachments === s.taskAttachments) return s;
+            return { ...s, taskAttachments: nextAttachments };
+          });
+
+          return get().taskAttachments.filter((a) => a.taskId === taskId).length - beforeCount;
         },
 
         clearSsv3ExportFromTask: (taskId) => {
@@ -5579,10 +5726,53 @@ export const useStore = create<AppState>()(
             const history = pushHistory(s);
             const root = s.tasks.find((entry) => entry.id === taskId);
             if (!root) return s;
-            const wiped = clearSsv3ExportFromSpoolingTask(root, s.tasks, s.taskAttachments);
-            if (!wiped.cleared) return s;
-            const activityLog = logActivity(
-              s.activityLog,
+
+            const preview = clearSsv3ExportFromSpoolingTask(root, s.tasks, s.taskAttachments);
+            const removedIds = new Set(
+              s.tasks
+                .filter((entry) => !preview.tasks.some((kept) => kept.id === entry.id))
+                .map((entry) => entry.id)
+            );
+            const archiveRoots = [...removedIds].filter((id) => {
+              const entry = s.tasks.find((task) => task.id === id);
+              if (!entry?.parentTaskId) return true;
+              // Archive only top-most removed nodes so trees aren't double-archived.
+              return !removedIds.has(entry.parentTaskId);
+            });
+
+            let tasks = s.tasks;
+            let taskAttachments = s.taskAttachments;
+            let taskComments = s.taskComments;
+            let deletedTaskArchive = s.deletedTaskArchive ?? [];
+            let activityLog = s.activityLog;
+
+            if (archiveRoots.length > 0) {
+              const soft = softDeleteTaskTrees({
+                tasks,
+                taskAttachments,
+                taskComments,
+                deletedTaskArchive,
+                activityLog,
+                rootTaskIds: archiveRoots,
+                actorId: resolveActivityActorId(s.currentUserId, s.viewAsOriginalUserId),
+                reason: 'ssv3-clear',
+                createId: uuid,
+                summaryForRoot: (task) =>
+                  `Cleared SSv3 child "${task.title}" from Spooling task "${root.title}"`,
+              });
+              tasks = soft.tasks;
+              taskAttachments = soft.taskAttachments;
+              taskComments = soft.taskComments;
+              deletedTaskArchive = soft.deletedTaskArchive;
+              activityLog = soft.activityLog;
+            }
+
+            const liveRoot = tasks.find((entry) => entry.id === taskId) ?? root;
+            const wiped = clearSsv3ExportFromSpoolingTask(liveRoot, tasks, taskAttachments);
+            if (!wiped.cleared && archiveRoots.length === 0) return s;
+
+            activityLog = logActivity(
+              activityLog,
               {
                 actorId: resolveActivityActorId(s.currentUserId, s.viewAsOriginalUserId),
                 action: 'updated',
@@ -5590,7 +5780,7 @@ export const useStore = create<AppState>()(
                 entityId: taskId,
                 summary: `Cleared SSv3 export from Spooling task "${root.title}"`,
                 details: {
-                  removedAssemblies: wiped.removedTaskCount,
+                  removedAssemblies: wiped.removedTaskCount || removedIds.size,
                   removedAttachments: wiped.removedAttachmentCount,
                 },
               },
@@ -5600,6 +5790,8 @@ export const useStore = create<AppState>()(
               ...history,
               tasks: wiped.tasks,
               taskAttachments: wiped.taskAttachments,
+              taskComments,
+              deletedTaskArchive,
               activityLog,
             };
           });
@@ -5609,6 +5801,7 @@ export const useStore = create<AppState>()(
           set((s) => {
             const actorId = resolveActivityActorId(s.currentUserId, s.viewAsOriginalUserId);
             let activityLog = s.activityLog;
+            let taskRevisionArchive = s.taskRevisionArchive ?? [];
             let projects = s.projects;
             let tasks = s.tasks.map((t) => {
               if (t.id !== id) return t;
@@ -5624,6 +5817,15 @@ export const useStore = create<AppState>()(
               );
               const next = { ...t, ...enriched };
               if (updates.status && updates.status !== t.status) {
+                const revision = buildTaskRevisionArchive({
+                  task: t,
+                  actorId,
+                  createId: uuid,
+                });
+                taskRevisionArchive = prependTaskRevisionArchive(
+                  taskRevisionArchive,
+                  revision.archive
+                );
                 activityLog = logActivity(
                   activityLog,
                   {
@@ -5633,15 +5835,29 @@ export const useStore = create<AppState>()(
                     entityId: id,
                     summary: `Changed status on "${next.title}"`,
                     details: { from: t.status, to: updates.status },
+                    archiveId: revision.archiveId,
                   },
-                  uuid
+                  () => revision.activityLogId
                 );
               } else if (
                 updates.title !== undefined ||
                 updates.groupId !== undefined ||
                 updates.boardType !== undefined ||
-                updates.assigneeIds !== undefined
+                updates.assigneeIds !== undefined ||
+                updates.description !== undefined ||
+                updates.dueDate !== undefined ||
+                updates.customFields !== undefined ||
+                updates.durationFields !== undefined
               ) {
+                const revision = buildTaskRevisionArchive({
+                  task: t,
+                  actorId,
+                  createId: uuid,
+                });
+                taskRevisionArchive = prependTaskRevisionArchive(
+                  taskRevisionArchive,
+                  revision.archive
+                );
                 activityLog = logActivity(
                   activityLog,
                   {
@@ -5650,8 +5866,9 @@ export const useStore = create<AppState>()(
                     entityType: 'task',
                     entityId: id,
                     summary: `Updated task "${next.title}"`,
+                    archiveId: revision.archiveId,
                   },
-                  uuid
+                  () => revision.activityLogId
                 );
               }
               return next;
@@ -5839,12 +6056,21 @@ export const useStore = create<AppState>()(
             }
 
             const projectsChanged = projects !== s.projects;
-            if (activityLog === s.activityLog && !projectsChanged) {
+            const revisionsChanged =
+              taskRevisionArchive !== (s.taskRevisionArchive ?? []);
+            if (
+              activityLog === s.activityLog &&
+              !projectsChanged &&
+              !revisionsChanged
+            ) {
               return { tasks };
             }
-            return projectsChanged
-              ? { tasks, projects, activityLog }
-              : { tasks, activityLog };
+            return {
+              tasks,
+              ...(projectsChanged ? { projects } : {}),
+              ...(activityLog !== s.activityLog ? { activityLog } : {}),
+              ...(revisionsChanged ? { taskRevisionArchive } : {}),
+            };
           });
         },
 
@@ -6207,34 +6433,25 @@ export const useStore = create<AppState>()(
         removeTask: (id) => {
           set((s) => {
             const history = pushHistory(s);
-            const removedTask = s.tasks.find((task) => task.id === id);
-            const toRemove = new Set<string>();
-            const collect = (taskId: string) => {
-              toRemove.add(taskId);
-              s.tasks
-                .filter((t) => t.parentTaskId === taskId)
-                .forEach((t) => collect(t.id));
-            };
-            collect(id);
-            const activityLog = removedTask
-              ? logActivity(
-                  s.activityLog,
-                  {
-                    actorId: resolveActivityActorId(s.currentUserId, s.viewAsOriginalUserId),
-                    action: 'deleted',
-                    entityType: 'task',
-                    entityId: id,
-                    summary: `Deleted task "${removedTask.title}"`,
-                  },
-                  uuid
-                )
-              : s.activityLog;
+            const soft = softDeleteTaskTrees({
+              tasks: s.tasks,
+              taskAttachments: s.taskAttachments,
+              taskComments: s.taskComments,
+              deletedTaskArchive: s.deletedTaskArchive ?? [],
+              activityLog: s.activityLog,
+              rootTaskIds: [id],
+              actorId: resolveActivityActorId(s.currentUserId, s.viewAsOriginalUserId),
+              reason: 'user',
+              createId: uuid,
+            });
+            if (soft.removedIds.size === 0) return s;
             return {
               ...history,
-              tasks: s.tasks.filter((t) => !toRemove.has(t.id)),
-              taskAttachments: s.taskAttachments.filter((a) => !toRemove.has(a.taskId)),
-              taskComments: s.taskComments.filter((c) => !toRemove.has(c.taskId)),
-              activityLog,
+              tasks: soft.tasks,
+              taskAttachments: soft.taskAttachments,
+              taskComments: soft.taskComments,
+              deletedTaskArchive: soft.deletedTaskArchive,
+              activityLog: soft.activityLog,
             };
           });
         },
@@ -6243,21 +6460,188 @@ export const useStore = create<AppState>()(
           if (ids.length === 0) return;
           set((s) => {
             const history = pushHistory(s);
-            const toRemove = new Set<string>();
-            const collect = (taskId: string) => {
-              toRemove.add(taskId);
-              s.tasks
-                .filter((t) => t.parentTaskId === taskId)
-                .forEach((t) => collect(t.id));
-            };
-            for (const id of ids) collect(id);
+            const soft = softDeleteTaskTrees({
+              tasks: s.tasks,
+              taskAttachments: s.taskAttachments,
+              taskComments: s.taskComments,
+              deletedTaskArchive: s.deletedTaskArchive ?? [],
+              activityLog: s.activityLog,
+              rootTaskIds: ids,
+              actorId: resolveActivityActorId(s.currentUserId, s.viewAsOriginalUserId),
+              reason: 'user',
+              createId: uuid,
+            });
+            if (soft.removedIds.size === 0) return s;
             return {
               ...history,
-              tasks: s.tasks.filter((t) => !toRemove.has(t.id)),
-              taskAttachments: s.taskAttachments.filter((a) => !toRemove.has(a.taskId)),
-              taskComments: s.taskComments.filter((c) => !toRemove.has(c.taskId)),
+              tasks: soft.tasks,
+              taskAttachments: soft.taskAttachments,
+              taskComments: soft.taskComments,
+              deletedTaskArchive: soft.deletedTaskArchive,
+              activityLog: soft.activityLog,
             };
           });
+        },
+
+        restoreDeletedTask: (archiveId) => {
+          const state = get();
+          const archive = (state.deletedTaskArchive ?? []).find((entry) => entry.id === archiveId);
+          if (!archive || archive.restoredAt) return false;
+          const restored = applyRestoredTaskArchive(archive, state);
+          if (!restored) return false;
+
+          const actorId = resolveActivityActorId(state.currentUserId, state.viewAsOriginalUserId);
+          const rootTitle = archive.tasks.find((task) => task.id === archive.rootTaskId)?.title
+            ?? archive.tasks[0]?.title
+            ?? 'task';
+
+          set((s) => {
+            const activityLog = logActivity(
+              s.activityLog,
+              {
+                actorId,
+                action: 'restored',
+                entityType: 'task',
+                entityId: archive.rootTaskId,
+                summary: `Restored task "${rootTitle}"`,
+                details: {
+                  title: rootTitle,
+                  taskCount: archive.tasks.length,
+                  archiveId: archive.id,
+                },
+                archiveId: archive.id,
+              },
+              uuid
+            );
+            return {
+              ...pushHistory(s),
+              tasks: restored.tasks,
+              taskAttachments: restored.taskAttachments,
+              taskComments: restored.taskComments,
+              deletedTaskArchive: (s.deletedTaskArchive ?? []).map((entry) =>
+                entry.id === archiveId
+                  ? { ...entry, restoredAt: new Date().toISOString(), restoredById: actorId }
+                  : entry
+              ),
+              activityLog: activityLog.map((entry) =>
+                entry.id === archive.activityLogId
+                  ? { ...entry, restoredAt: new Date().toISOString(), restoredById: actorId }
+                  : entry
+              ),
+            };
+          });
+          return true;
+        },
+
+        restoreTaskActivity: (activityLogId) => {
+          const state = get();
+          const entry = (state.activityLog ?? []).find((item) => item.id === activityLogId);
+          if (!entry || entry.entityType !== 'task' || entry.restoredAt) return false;
+          if (entry.action === 'restored' || entry.action === 'created') return false;
+
+          const actorId = resolveActivityActorId(state.currentUserId, state.viewAsOriginalUserId);
+          const now = new Date().toISOString();
+
+          // Soft-deleted task tree
+          if (entry.action === 'deleted' && entry.archiveId) {
+            return get().restoreDeletedTask(entry.archiveId);
+          }
+
+          const revision =
+            (entry.archiveId
+              ? (state.taskRevisionArchive ?? []).find((item) => item.id === entry.archiveId)
+              : undefined) ??
+            (state.taskRevisionArchive ?? []).find((item) => item.activityLogId === entry.id);
+
+          if (revision && !revision.restoredAt) {
+            const live = state.tasks.find((task) => task.id === revision.taskId);
+            const before = revision.before;
+            set((s) => {
+              const groupIds = new Set(s.taskGroups.map((group) => group.id));
+              const restoredTask = {
+                ...before,
+                groupId: before.groupId && groupIds.has(before.groupId) ? before.groupId : null,
+              };
+              const tasks = live
+                ? s.tasks.map((task) => (task.id === revision.taskId ? restoredTask : task))
+                : [...s.tasks, restoredTask];
+              const activityLog = logActivity(
+                s.activityLog.map((item) =>
+                  item.id === entry.id
+                    ? { ...item, restoredAt: now, restoredById: actorId }
+                    : item
+                ),
+                {
+                  actorId,
+                  action: 'restored',
+                  entityType: 'task',
+                  entityId: revision.taskId,
+                  summary: `Restored task "${restoredTask.title}" to earlier state`,
+                  details: {
+                    title: restoredTask.title,
+                    fromActivity: entry.action,
+                    archiveId: revision.id,
+                  },
+                  archiveId: revision.id,
+                },
+                uuid
+              );
+              return {
+                ...pushHistory(s),
+                tasks,
+                taskRevisionArchive: (s.taskRevisionArchive ?? []).map((item) =>
+                  item.id === revision.id
+                    ? { ...item, restoredAt: now, restoredById: actorId }
+                    : item
+                ),
+                activityLog,
+              };
+            });
+            return true;
+          }
+
+          // Legacy status_changed rows (no revision archive) — revert using details.from
+          if (
+            entry.action === 'status_changed' &&
+            typeof entry.details?.from === 'string' &&
+            entry.details.from
+          ) {
+            const live = state.tasks.find((task) => task.id === entry.entityId);
+            if (!live) return false;
+            const fromStatus = entry.details.from;
+            set((s) => {
+              const tasks = s.tasks.map((task) =>
+                task.id === entry.entityId ? { ...task, status: fromStatus } : task
+              );
+              const activityLog = logActivity(
+                s.activityLog.map((item) =>
+                  item.id === entry.id
+                    ? { ...item, restoredAt: now, restoredById: actorId }
+                    : item
+                ),
+                {
+                  actorId,
+                  action: 'restored',
+                  entityType: 'task',
+                  entityId: entry.entityId,
+                  summary: `Restored status on "${live.title}" to "${fromStatus}"`,
+                  details: {
+                    title: live.title,
+                    status: fromStatus,
+                  },
+                },
+                uuid
+              );
+              return {
+                ...pushHistory(s),
+                tasks,
+                activityLog,
+              };
+            });
+            return true;
+          }
+
+          return false;
         },
 
         moveTask: (taskId, updates) => {
@@ -7890,6 +8274,10 @@ export const useStore = create<AppState>()(
         deletedColumnArchive: state.deletedColumnArchive,
 
         deletedEmployeeArchive: state.deletedEmployeeArchive,
+
+        deletedTaskArchive: state.deletedTaskArchive,
+
+        taskRevisionArchive: state.taskRevisionArchive,
 
         savedSheetColumnTemplates: state.savedSheetColumnTemplates,
 

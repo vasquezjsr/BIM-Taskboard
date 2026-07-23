@@ -30,6 +30,7 @@ export function AttachmentDialog({ task, onClose, allowMutate = true }: Attachme
   const upsertTaskAttachment = useStore((s) => s.upsertTaskAttachment);
   const removeTaskAttachment = useStore((s) => s.removeTaskAttachment);
   const clearSsv3ExportFromTask = useStore((s) => s.clearSsv3ExportFromTask);
+  const ensureBoardroomAttachmentsForTask = useStore((s) => s.ensureBoardroomAttachmentsForTask);
   const currentUserId = useStore((s) => s.currentUserId);
   const employeePermissions = useStore((s) => s.employeePermissions);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -43,6 +44,13 @@ export function AttachmentDialog({ task, onClose, allowMutate = true }: Attachme
     () => taskAttachments.filter((a) => a.taskId === liveTask.id),
     [taskAttachments, liveTask.id]
   );
+
+  // Package Main Task: keep paperclip in sync with SSv3 export files.
+  useEffect(() => {
+    if (!liveTask.parentTaskId && spoolingTaskHasSsv3Export(liveTask)) {
+      ensureBoardroomAttachmentsForTask(liveTask.id);
+    }
+  }, [liveTask.id, liveTask.parentTaskId, ensureBoardroomAttachmentsForTask]);
 
   const canClearSsv3Export =
     allowMutate &&
@@ -153,7 +161,7 @@ export function AttachmentDialog({ task, onClose, allowMutate = true }: Attachme
   const formatMeta = (attachment: TaskAttachment) => {
     const current = attachment.versions.find((v) => v.id === attachment.currentVersionId);
     if (!current) return '';
-    if (isBoardroomFile(current.storageId)) return 'SSv3 export · click Open to view';
+    if (isBoardroomFile(current.storageId)) return '';
     const versionCount = attachment.versions.length;
     const size =
       current.sizeBytes < 1024
@@ -308,7 +316,9 @@ export function AttachmentDialog({ task, onClose, allowMutate = true }: Attachme
                       >
                         {attachment.fileName}
                       </button>
-                      <span className={styles.meta}>{formatMeta(attachment)}</span>
+                      {formatMeta(attachment) ? (
+                        <span className={styles.meta}>{formatMeta(attachment)}</span>
+                      ) : null}
                     </div>
                     <div className={styles.itemActions}>
                       <button

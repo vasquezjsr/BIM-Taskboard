@@ -1,4 +1,4 @@
-import type { Project, Task } from '../types';
+import type { Project, Task, TaskAttachment } from '../types';
 
 export const SSV3_KIND_PACKAGE = 'package';
 export const SSV3_KIND_ASSEMBLY = 'assembly';
@@ -246,19 +246,6 @@ export function getSsv3PackageKey(task: Task): string | null {
   return `${task.projectId}::${task.customFields?.[SSV3_FIELD.package] ?? ''}`;
 }
 
-export function parseSsv3Files(task: Task): BoardroomPackageFileRef[] {
-  const raw = task.customFields?.[SSV3_FIELD.files];
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw) as BoardroomPackageFileRef[];
-    return Array.isArray(parsed)
-      ? parsed.filter((f) => f?.fileName && isBoardroomPackageAttachmentFile(f.fileName))
-      : [];
-  } catch {
-    return [];
-  }
-}
-
 export function parseSsv3Packages(task: Task): BoardroomPackageBatch[] {
   const raw = task.customFields?.[SSV3_FIELD.packages];
   if (!raw) {
@@ -294,12 +281,45 @@ export function formatAssemblySheetDescription(
 
 /** Report files that belong on the task; excludes catalog / manifest / backup junk. */
 export function isBoardroomPackageAttachmentFile(fileName: string): boolean {
-  const name = fileName.trim().toLowerCase();
+  const raw = (fileName ?? '').trim();
+  if (!raw) return false;
+  const normalized = raw.replace(/\\/g, '/').toLowerCase();
+  if (normalized.includes('/previous versions/')) return false;
+  const name = normalized.split('/').pop() ?? normalized;
   if (!name) return false;
   if (name === 'boardroom-package.json') return false;
   if (name.endsWith('.bak') || name.includes('.bak-')) return false;
   if (name.startsWith('piping specification catalog')) return false;
   return true;
+}
+
+/** Basename for display (strips package subfolder prefix). */
+export function displayBoardroomExportFileName(fileName: string): string {
+  const normalized = (fileName ?? '').trim().replace(/\\/g, '/');
+  const slash = normalized.lastIndexOf('/');
+  return slash >= 0 ? normalized.slice(slash + 1) : normalized;
+}
+
+/**
+ * True when a file name belongs to an S-Package label.
+ * Plot Packages names reports like "{package} - Assembly List.pdf" and
+ * assembly sheets like "{package}-S-03.pdf". Relative paths
+ * ("Package/file.pdf") use the basename.
+ */
+export function fileBelongsToSPackage(fileName: string, sPackage: string): boolean {
+  const pkg = (sPackage ?? '').trim();
+  const raw = (fileName ?? '').trim();
+  if (!pkg || !raw) return false;
+
+  const pkgLower = pkg.toLowerCase();
+  const normalized = raw.replace(/\\/g, '/');
+  const nameLower = (normalized.split('/').pop() ?? normalized).toLowerCase();
+  if (nameLower === pkgLower) return true;
+  if (nameLower.startsWith(`${pkgLower} - `)) return true;
+  if (nameLower.startsWith(`${pkgLower}-`)) return true;
+  // Package subfolder itself (folder name matches label)
+  if (normalized.toLowerCase().startsWith(`${pkgLower}/`)) return true;
+  return false;
 }
 
 export function filterBoardroomPackageAttachmentFiles(
@@ -308,12 +328,46 @@ export function filterBoardroomPackageAttachmentFiles(
   return (files ?? []).filter((file) => isBoardroomPackageAttachmentFile(file.fileName));
 }
 
+/** Keep only report files for the given S-Package label(s). */
+export function filterFilesForSPackages(
+  files: BoardroomPackageFileRef[] | undefined,
+  sPackages: string[] | undefined
+): BoardroomPackageFileRef[] {
+  const pkgs = (sPackages ?? []).map((p) => (p ?? '').trim()).filter(Boolean);
+  const cleaned = filterBoardroomPackageAttachmentFiles(files);
+  if (pkgs.length === 0) return cleaned;
+  return cleaned.filter((file) => pkgs.some((pkg) => fileBelongsToSPackage(file.fileName, pkg)));
+}
+
+export function parseSsv3Files(task: Task, allTasks?: Task[]): BoardroomPackageFileRef[] {
+  let raw = task.customFields?.[SSV3_FIELD.files];
+  if (!raw && allTasks && task.parentTaskId) {
+    const parent = allTasks.find((candidate) => candidate.id === task.parentTaskId);
+    raw = parent?.customFields?.[SSV3_FIELD.files];
+  }
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as BoardroomPackageFileRef[];
+    if (!Array.isArray(parsed)) return [];
+
+    const cleaned = parsed.filter(
+      (f) => f?.fileName && isBoardroomPackageAttachmentFile(f.fileName)
+    );
+    const sPackage = (task.customFields?.[SSV3_FIELD.package] ?? '').trim();
+    if (!sPackage) return cleaned;
+    return cleaned.filter((f) => fileBelongsToSPackage(f.fileName, sPackage));
+  } catch {
+    return [];
+  }
+}
+
 export function buildSpoolingExportCustomFields(
   existing: Record<string, string | null> | undefined,
   manifest: BoardroomPackageManifest,
   exportFolder: string
 ): Record<string, string | null> {
   const primary = manifest.packages[0]?.sPackage ?? '';
+  const packageLabels = manifest.packages.map((batch) => batch.sPackage);
   return {
     ...existing,
     [SSV3_FIELD.kind]: SSV3_KIND_PACKAGE,
@@ -321,6 +375,179 @@ export function buildSpoolingExportCustomFields(
     [SSV3_FIELD.packages]: JSON.stringify(manifest.packages),
     [SSV3_FIELD.exportFolder]: exportFolder,
     [SSV3_FIELD.exportedAt]: manifest.exportedAt ?? new Date().toISOString(),
-    [SSV3_FIELD.files]: JSON.stringify(filterBoardroomPackageAttachmentFiles(manifest.files)),
+    [SSV3_FIELD.files]: JSON.stringify(filterFilesForSPackages(manifest.files, packageLabels)),
   };
+}
+
+export function mimeTypeForBoardroomFile(file: BoardroomPackageFileRef): string {
+  const type = (file.type ?? '').toLowerCase();
+  const name = displayBoardroomExportFileName(file.fileName).toLowerCase();
+  if (type === 'pdf' || name.endsWith('.pdf')) return 'application/pdf';
+  if (type === 'xlsx' || name.endsWith('.xlsx')) {
+    return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  }
+  if (type === 'pcf' || name.endsWith('.pcf')) return 'text/plain';
+  return 'application/octet-stream';
+}
+
+export function resolveBoardroomExportAbsolutePath(
+  exportFolder: string,
+  fileName: string
+): string {
+  const sep = exportFolder.includes('\\') ? '\\' : '/';
+  const base = exportFolder.replace(/[/\\]+$/, '');
+  const relative = (fileName ?? '').replace(/[\\/]+/g, sep);
+  return `${base}${sep}${relative}`;
+}
+
+function boardroomAttachmentNameKey(fileName: string): string {
+  return displayBoardroomExportFileName(fileName).toLowerCase();
+}
+
+/**
+ * Upserts boardroom-abs attachments on the package Main Task so the spreadsheet
+ * paperclip lists the same export reports as the Shop Export files pane.
+ * Attachment fileName is the basename (no package subfolder prefix).
+ * Also removes stale boardroom-abs attachments that do not belong to this package.
+ */
+export function upsertBoardroomAbsAttachments(params: {
+  taskId: string;
+  exportFolder: string;
+  files: BoardroomPackageFileRef[];
+  taskAttachments: TaskAttachment[];
+  actorId: string | null;
+  createId: () => string;
+  now?: string;
+  /** When set, drop boardroom-abs attachments on this task that are not for this S-Package. */
+  sPackage?: string | null;
+}): TaskAttachment[] {
+  const {
+    taskId,
+    exportFolder,
+    files,
+    actorId,
+    createId,
+  } = params;
+  const sPackage = (params.sPackage ?? '').trim();
+  const original = params.taskAttachments;
+  let taskAttachments = original;
+  let mutated = false;
+  const ensureCopy = () => {
+    if (!mutated) {
+      taskAttachments = [...taskAttachments];
+      mutated = true;
+    }
+  };
+  const now = params.now ?? new Date().toISOString();
+  const folder = (exportFolder ?? '').trim();
+  if (!taskId) return original;
+
+  const allowedKeys = new Set(
+    (files ?? [])
+      .filter((file) => file?.fileName && isBoardroomPackageAttachmentFile(file.fileName))
+      .filter((file) => !sPackage || fileBelongsToSPackage(file.fileName, sPackage))
+      .map((file) => boardroomAttachmentNameKey(displayBoardroomExportFileName(file.fileName)))
+      .filter(Boolean)
+  );
+
+  const pruned = taskAttachments.filter((attachment) => {
+    if (attachment.taskId !== taskId) return true;
+    const current = attachment.versions.find((v) => v.id === attachment.currentVersionId);
+    if (!current?.storageId?.startsWith('boardroom-abs:')) return true;
+    // Prefer allowed set from current export file list.
+    if (allowedKeys.size > 0) {
+      return allowedKeys.has(boardroomAttachmentNameKey(attachment.fileName));
+    }
+    // No file list yet — still strip names that clearly belong to another package.
+    if (sPackage) return fileBelongsToSPackage(attachment.fileName, sPackage);
+    return true;
+  });
+  if (pruned.length !== taskAttachments.length) {
+    taskAttachments = pruned;
+    mutated = true;
+  }
+
+  if (!folder) return mutated ? taskAttachments : original;
+
+  for (const file of files ?? []) {
+    if (!file?.fileName || !isBoardroomPackageAttachmentFile(file.fileName)) continue;
+    if (sPackage && !fileBelongsToSPackage(file.fileName, sPackage)) continue;
+
+    const displayName = displayBoardroomExportFileName(file.fileName);
+    if (!displayName) continue;
+
+    const fullPath = resolveBoardroomExportAbsolutePath(folder, file.fileName);
+    const storageId = `boardroom-abs:${fullPath}`;
+    const mimeType = mimeTypeForBoardroomFile(file);
+    const nameKey = boardroomAttachmentNameKey(displayName);
+
+    const existing = taskAttachments.find(
+      (attachment) =>
+        attachment.taskId === taskId &&
+        boardroomAttachmentNameKey(attachment.fileName) === nameKey
+    );
+
+    if (existing) {
+      const current = existing.versions.find((v) => v.id === existing.currentVersionId);
+      if (current?.storageId === storageId) {
+        if (existing.fileName !== displayName) {
+          ensureCopy();
+          taskAttachments = taskAttachments.map((attachment) =>
+            attachment.id === existing.id ? { ...attachment, fileName: displayName } : attachment
+          );
+        }
+        continue;
+      }
+
+      ensureCopy();
+      const versionId = createId();
+      const nextVersion =
+        existing.versions.reduce((max, v) => Math.max(max, v.version), 0) + 1;
+      taskAttachments = taskAttachments.map((attachment) =>
+        attachment.id === existing.id
+          ? {
+              ...attachment,
+              fileName: displayName,
+              currentVersionId: versionId,
+              versions: [
+                ...attachment.versions,
+                {
+                  id: versionId,
+                  version: nextVersion,
+                  fileName: displayName,
+                  mimeType,
+                  sizeBytes: 0,
+                  storageId,
+                  uploadedAt: now,
+                  uploadedById: actorId,
+                },
+              ],
+            }
+          : attachment
+      );
+    } else {
+      ensureCopy();
+      const versionId = createId();
+      taskAttachments.push({
+        id: createId(),
+        taskId,
+        fileName: displayName,
+        currentVersionId: versionId,
+        versions: [
+          {
+            id: versionId,
+            version: 1,
+            fileName: displayName,
+            mimeType,
+            sizeBytes: 0,
+            storageId,
+            uploadedAt: now,
+            uploadedById: actorId,
+          },
+        ],
+      });
+    }
+  }
+
+  return mutated ? taskAttachments : original;
 }

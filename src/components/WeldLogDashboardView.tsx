@@ -33,7 +33,8 @@ import { TEMPLATE_CLIENT_NAME } from '../data/vdcSeedData';
 function joinPath(folder: string, fileName: string): string {
   const base = folder.replace(/[/\\]+$/, '');
   const sep = folder.includes('\\') ? '\\' : '/';
-  return `${base}${sep}${fileName}`;
+  const relative = (fileName ?? '').replace(/[\\/]+/g, sep);
+  return `${base}${sep}${relative}`;
 }
 
 type PackageWeldCache = {
@@ -122,7 +123,7 @@ export function WeldLogDashboardView() {
 
   const loadPackageWeldLog = useCallback(async (pkg: Task) => {
     const folder = pkg.customFields?.[SSV3_FIELD.exportFolder];
-    const files = parseSsv3Files(pkg);
+    const files = parseSsv3Files(pkg, tasks);
     const fileName = findWeldLogFileName(files.map((f) => f.fileName));
     if (!folder || folder.startsWith('(browser') || !fileName) {
       filePathRef.current = null;
@@ -174,7 +175,7 @@ export function WeldLogDashboardView() {
     } finally {
       setBusy(false);
     }
-  }, []);
+  }, [tasks]);
 
   useEffect(() => {
     if (!selectedPackage) {

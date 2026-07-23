@@ -83,7 +83,8 @@ function getAssemblyFieldStatus(task: Task): FieldLaneId | 'not-started' {
 function joinPath(folder: string, fileName: string): string {
   const base = folder.replace(/[/\\]+$/, '');
   const sep = folder.includes('\\') ? '\\' : '/';
-  return `${base}${sep}${fileName}`;
+  const relative = (fileName ?? '').replace(/[\\/]+/g, sep);
+  return `${base}${sep}${relative}`;
 }
 
 function formatScanTime(iso: string | null): string {
@@ -353,8 +354,8 @@ export function FieldWorkstationView() {
 
   const exportFiles = useMemo(() => {
     if (!selectedPackage) return [];
-    return parseSsv3Files(selectedPackage);
-  }, [selectedPackage]);
+    return parseSsv3Files(selectedPackage, tasks);
+  }, [selectedPackage, tasks]);
 
   const spoolPdfFiles = useMemo(
     () =>

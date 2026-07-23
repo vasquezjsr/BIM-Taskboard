@@ -19,6 +19,7 @@ import { useStore } from '../store/useStore';
 import { AssigneeCell } from './AssigneeCell';
 import { ContextMenuPanel } from './ContextMenuPanel';
 import { employeeInitials } from '../data/employees';
+import { spoolingTaskHasSsv3Export } from '../utils/boardroomPackageImport';
 import {
   getBoardLabel,
   type ProjectBoardType,
@@ -2115,6 +2116,7 @@ export function TaskSpreadsheet({
   const taskComments = useStore((s) => s.taskComments);
   const taskCommentReadAt = useStore((s) => s.taskCommentReadAt);
   const ensureProjectGroups = useStore((s) => s.ensureProjectGroups);
+  const ensureBoardroomAttachmentsForTask = useStore((s) => s.ensureBoardroomAttachmentsForTask);
 
   const wrapperRef = useRef<HTMLDivElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
@@ -2168,6 +2170,15 @@ export function TaskSpreadsheet({
   const [commentTask, setCommentTask] = useState<Task | null>(null);
   const [groupDropFeedback, setGroupDropFeedback] = useState<string | null>(null);
   const [sheetDropHint, setSheetDropHint] = useState<SheetDropHint | null>(null);
+
+  // Package Main Task paperclip: sync SSv3 export files onto attachments.
+  useEffect(() => {
+    for (const task of tasks) {
+      if (!task.parentTaskId && spoolingTaskHasSsv3Export(task)) {
+        ensureBoardroomAttachmentsForTask(task.id);
+      }
+    }
+  }, [tasks, ensureBoardroomAttachmentsForTask]);
 
   const isFlatBoardView = isFlatBoard(boardType) && isSubBoard(boardType);
   const isGhostBoard = isSubBoard(boardType) && !isFlatBoardView;
