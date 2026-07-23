@@ -42,6 +42,7 @@ namespace SpoolingSavantV3Exports.Workers
             SyncSizeParameters(doc, parts);
             SyncConnectorParameters(doc, parts);
             FabricationHangerParameterSync.SyncAssemblyHangers(app, doc, assembly);
+            NativePipeParameterSync.SyncSLengthForElements(members);
         }
 
         public static string TryGetAssemblyPackageValue(Document doc, AssemblyInstance assembly)

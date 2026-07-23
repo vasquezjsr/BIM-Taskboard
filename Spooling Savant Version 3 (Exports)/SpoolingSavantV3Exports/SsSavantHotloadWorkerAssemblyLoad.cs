@@ -149,7 +149,7 @@ namespace SpoolingSavantV3Exports
             throw new FileLoadException(
                 "Could not load a matching SpoolingSavantV3Exports.Workers.dll (disk version "
                 + (diskVersion != null ? diskVersion.ToString() : "?")
-                + "). Close Revit and reopen, or click SS Manager V3 after a rebuild.",
+                + "). Close Revit and reopen, or click Spooling Savant 3.0 after a rebuild.",
                 fullPath);
         }
 

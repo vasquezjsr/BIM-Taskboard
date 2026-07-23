@@ -1,4 +1,4 @@
-# Spooling Savant V3 (Exports)
+# Spooling Savant 3.0
 
 > **Order of operations (Boardroom + SSv3 + Fab):** see [`../ORDER_OF_OPERATIONS.md`](../ORDER_OF_OPERATIONS.md).
 

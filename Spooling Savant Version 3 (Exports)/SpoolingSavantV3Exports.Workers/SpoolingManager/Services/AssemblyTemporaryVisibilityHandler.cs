@@ -61,18 +61,18 @@ public class AssemblyTemporaryVisibilityHandler : IExternalEventHandler
 		Document val2 = ((val != null) ? val.Document : null);
 		if (val2 == null)
 		{
-			TaskDialog.Show(GetToolTitle(), "No active document.");
+			Views.SsSavantMessageBox.Show("No active document.", GetToolTitle());
 			return;
 		}
 		View activeView = val2.ActiveView;
 		if (activeView == null)
 		{
-			TaskDialog.Show(GetToolTitle(), "No active view.");
+			Views.SsSavantMessageBox.Show("No active view.", GetToolTitle());
 			return;
 		}
 		if (!activeView.CanUseTemporaryVisibilityModes())
 		{
-			TaskDialog.Show(GetToolTitle(), "The active view does not support temporary hide/isolate.");
+			Views.SsSavantMessageBox.Show("The active view does not support temporary hide/isolate.", GetToolTitle());
 			return;
 		}
 		List<ElementId> list = pendingRequest.MemberElementIds.Where((ElementId id) => id != (ElementId)null && id != ElementId.InvalidElementId).Distinct(new ElementIdValueComparer()).ToList();
@@ -80,7 +80,7 @@ public class AssemblyTemporaryVisibilityHandler : IExternalEventHandler
 		{
 			return;
 		}
-		string text = ((pendingRequest.Action == AssemblyTemporaryVisibilityAction.IsolateMembers) ? "Spooling Savant V3 (Exports): Temporary isolate" : "Spooling Savant V3 (Exports): Temporary hide");
+		string text = ((pendingRequest.Action == AssemblyTemporaryVisibilityAction.IsolateMembers) ? "Spooling Savant: Temporary isolate" : "Spooling Savant: Temporary hide");
 		try
 		{
 			Transaction val3 = new Transaction(val2, text);
@@ -109,13 +109,13 @@ public class AssemblyTemporaryVisibilityHandler : IExternalEventHandler
 		}
 		catch (Exception ex)
 		{
-			TaskDialog.Show(GetToolTitle(), "Visibility change failed.\n\n" + ex.Message);
+			Views.SsSavantMessageBox.Show("Visibility change failed.\n\n" + ex.Message, GetToolTitle());
 		}
 	}
 
 	private static string GetToolTitle()
 	{
-		return "SS Manager V3";
+		return "Spooling Savant";
 	}
 
 	public string GetName()

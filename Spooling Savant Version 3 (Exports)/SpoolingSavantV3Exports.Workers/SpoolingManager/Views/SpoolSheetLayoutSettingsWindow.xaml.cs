@@ -9,6 +9,7 @@ using TextBox = System.Windows.Controls.TextBox;
 using MediaColor = System.Windows.Media.Color;
 using Autodesk.Revit.UI;
 using SpoolingSavantV3Exports.Workers.SpoolingManager.Models;
+using SpoolingSavantV3Exports.Workers.UI;
 
 namespace SpoolingSavantV3Exports.Workers.SpoolingManager.Views;
 
@@ -57,6 +58,8 @@ public class SpoolSheetLayoutSettingsWindow : Window
 
 	internal ComboBox cmbProjectBrowserLocation;
 
+	internal CheckBox chkSounds;
+
 	public SpoolSheetLayoutSettingsWindow(UIApplication uiapp, SpoolingManagerSettings settings, SpoolingManagerKind productKind)
 	{
 		_ = uiapp;
@@ -66,12 +69,13 @@ public class SpoolSheetLayoutSettingsWindow : Window
 		if (_productKind.IsMmcStyle())
 		{
 			base.Title = "Spool sheet layout (MMC)";
-			txtLayoutTitle.Text = "Schedule on sheet (MMC)";
+			txtLayoutTitle.Text = "Schedule On Sheet (MMC)";
 		}
 		else if (_productKind != SpoolingManagerKind.AutoDimensionLab)
 		{
-			txtLayoutTitle.Text = "Schedule on sheet";
+			txtLayoutTitle.Text = "Schedule On Sheet";
 		}
+		SsSavantNeonChrome.ApplyNeonDialogTitle(txtLayoutTitle, useScriptFont: true);
 		InitializeProjectBrowserLocationOptions();
 		InitializeScheduleInsetOptions();
 		PopulateFromSettings();
@@ -129,6 +133,10 @@ public class SpoolSheetLayoutSettingsWindow : Window
 		txtWeldLogProjectStripInches.Text = (_settings.WeldLogProjectStripHeightInches.HasValue ? _settings.WeldLogProjectStripHeightInches.Value.ToString(CultureInfo.CurrentCulture) : string.Empty);
 		txtWeldLogRowSpacingInches.Text = (_settings.WeldLogRowSpacingInches.HasValue ? _settings.WeldLogRowSpacingInches.Value.ToString(CultureInfo.CurrentCulture) : string.Empty);
 		txtWeldLogMaxRows.Text = (_settings.WeldLogMaxRows.HasValue ? _settings.WeldLogMaxRows.Value.ToString(CultureInfo.CurrentCulture) : string.Empty);
+		if (chkSounds != null)
+		{
+			chkSounds.IsChecked = _settings.ButtonClickSoundsEnabled;
+		}
 	}
 
 	private static void SelectScheduleInset(ComboBox combo, double? inches)
@@ -186,6 +194,7 @@ public class SpoolSheetLayoutSettingsWindow : Window
 			_settings.WeldLogInsetFromTitleBlockBottomInches = weldLogBottom;
 			_settings.WeldLogRowSpacingInches = weldLogRowSpacing;
 			_settings.WeldLogMaxRows = weldLogMaxRows;
+			_settings.ButtonClickSoundsEnabled = chkSounds?.IsChecked != false;
 			base.DialogResult = true;
 			Close();
 		}
@@ -228,7 +237,7 @@ public class SpoolSheetLayoutSettingsWindow : Window
 			box.BorderBrush = ErrorBorderBrush;
 			box.BorderThickness = new Thickness(2.0);
 		}
-		MessageBox.Show(this, fieldLabel + " must be a whole number greater than zero, or leave blank for the built-in default.", "Spooling Savant V3 (Exports)", MessageBoxButton.OK, MessageBoxImage.Exclamation);
+		SsSavantMessageBox.Show(this, fieldLabel + " must be a whole number greater than zero, or leave blank for the built-in default.", "Spooling Savant", MessageBoxButton.OK, MessageBoxImage.Exclamation);
 		return false;
 	}
 
@@ -255,7 +264,7 @@ public class SpoolSheetLayoutSettingsWindow : Window
 			box.BorderBrush = ErrorBorderBrush;
 			box.BorderThickness = new Thickness(2.0);
 		}
-		MessageBox.Show(this, fieldLabel + " must be a number in inches (e.g. 0.25 or 1/8 or 1/8\"), or leave blank for the built-in default.", "Spooling Savant V3 (Exports)", MessageBoxButton.OK, MessageBoxImage.Exclamation);
+		SsSavantMessageBox.Show(this, fieldLabel + " must be a number in inches (e.g. 0.25 or 1/8 or 1/8\"), or leave blank for the built-in default.", "Spooling Savant", MessageBoxButton.OK, MessageBoxImage.Exclamation);
 		return false;
 	}
 
@@ -323,7 +332,13 @@ public class SpoolSheetLayoutSettingsWindow : Window
 	{
 		Window source = SpoolingManagerXamlLoader.LoadWindow("SpoolingManager.Views.SpoolSheetLayoutSettingsWindow.xaml");
 		SpoolingManagerXamlLoader.ApplyWindow(this, source, _productKind);
+		SsSavantNeonChrome.ApplyChromelessDialog(this, allowResize: false);
 		txtLayoutTitle = SpoolingManagerXamlLoader.Find<TextBlock>(this, "txtLayoutTitle");
+		if (txtLayoutTitle != null)
+		{
+			txtLayoutTitle.Text = "Schedule On Sheet";
+		}
+		SsSavantNeonChrome.ApplyNeonDialogTitle(txtLayoutTitle, useScriptFont: true);
 		cmbScheduleInsetLeftInches = SpoolingManagerXamlLoader.Find<ComboBox>(this, "cmbScheduleInsetLeftInches");
 		cmbScheduleInsetTopInches = SpoolingManagerXamlLoader.Find<ComboBox>(this, "cmbScheduleInsetTopInches");
 		txtWeldLogInsetLeftInches = SpoolingManagerXamlLoader.Find<TextBox>(this, "txtWeldLogInsetLeftInches");
@@ -332,6 +347,7 @@ public class SpoolSheetLayoutSettingsWindow : Window
 		txtWeldLogRowSpacingInches = SpoolingManagerXamlLoader.Find<TextBox>(this, "txtWeldLogRowSpacingInches");
 		txtWeldLogMaxRows = SpoolingManagerXamlLoader.Find<TextBox>(this, "txtWeldLogMaxRows");
 		cmbProjectBrowserLocation = SpoolingManagerXamlLoader.Find<ComboBox>(this, "cmbProjectBrowserLocation");
+		chkSounds = SpoolingManagerXamlLoader.Find<CheckBox>(this, "chkSounds");
 	}
 
 	private sealed class ScheduleInsetChoice

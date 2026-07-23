@@ -34,7 +34,7 @@ public sealed class CaptureDimensionExampleHandler : IExternalEventHandler
 		UIDocument uidoc = app?.ActiveUIDocument;
 		if (uidoc?.Document == null)
 		{
-			MessageBox.Show("No active Revit document.", CreateSpoolSheetsHandler.GetToolWindowTitle(request.ProductKind), MessageBoxButton.OK, MessageBoxImage.Exclamation);
+			Views.SsSavantMessageBox.Show("No active Revit document.", CreateSpoolSheetsHandler.GetToolWindowTitle(request.ProductKind), MessageBoxButton.OK, MessageBoxImage.Exclamation);
 			return;
 		}
 		string title = CreateSpoolSheetsHandler.GetToolWindowTitle(request.ProductKind);
@@ -56,13 +56,13 @@ public sealed class CaptureDimensionExampleHandler : IExternalEventHandler
 		}
 		if (LastResult.Success)
 		{
-			MessageBox.Show(
+			Views.SsSavantMessageBox.Show(
 				LastResult.Message + "\n\nSaved to:\n" + LastResult.OutputPath,
 				title,
 				MessageBoxButton.OK,
 				MessageBoxImage.Information);
 			return;
 		}
-		MessageBox.Show(LastResult.Message, title, MessageBoxButton.OK, MessageBoxImage.Exclamation);
+		Views.SsSavantMessageBox.Show(LastResult.Message, title, MessageBoxButton.OK, MessageBoxImage.Exclamation);
 	}
 }

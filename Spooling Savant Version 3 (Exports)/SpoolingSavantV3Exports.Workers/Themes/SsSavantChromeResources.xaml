@@ -223,8 +223,12 @@
                             <Border Background="{DynamicResource SsSavantInputBackground}"
                                     BorderBrush="{DynamicResource SsSavantListBorder}"
                                     BorderThickness="1"
+                                    CornerRadius="10"
+                                    Margin="0,4,0,0"
+                                    Padding="4"
                                     MaxHeight="{TemplateBinding MaxDropDownHeight}"
-                                    HorizontalAlignment="Stretch">
+                                    HorizontalAlignment="Stretch"
+                                    SnapsToDevicePixels="True">
                                 <ScrollViewer Margin="0"
                                               SnapsToDevicePixels="True"
                                               HorizontalScrollBarVisibility="Disabled">
@@ -247,22 +251,39 @@
             </Setter.Value>
         </Setter>
     </Style>
-    <!-- Dropdown layer uses its own chrome; without this, items pick up light popup backgrounds with inherited pale foreground. -->
+    <!-- Dropdown layer uses its own chrome; without this, items pick up light popup backgrounds with inherited pale foreground.
+         Retemplated so hover/selection draws as a rounded pill matching the rounded popup. -->
     <Style TargetType="ComboBoxItem">
         <Setter Property="Foreground" Value="{DynamicResource SsSavantForegroundPrimary}"/>
-        <Setter Property="Background" Value="{DynamicResource SsSavantInputBackground}"/>
+        <Setter Property="Background" Value="Transparent"/>
         <Setter Property="Padding" Value="8,6"/>
         <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-        <Style.Triggers>
-            <Trigger Property="IsHighlighted" Value="True">
-                <Setter Property="Background" Value="{DynamicResource SsSavantHighlightBrush}"/>
-                <Setter Property="Foreground" Value="{DynamicResource SsSavantForegroundPrimary}"/>
-            </Trigger>
-            <Trigger Property="IsSelected" Value="True">
-                <Setter Property="Background" Value="{DynamicResource SsSavantPressedBrush}"/>
-                <Setter Property="Foreground" Value="{DynamicResource SsSavantForegroundPrimary}"/>
-            </Trigger>
-        </Style.Triggers>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ComboBoxItem">
+                    <Border x:Name="Bd"
+                            Background="{TemplateBinding Background}"
+                            Padding="{TemplateBinding Padding}"
+                            CornerRadius="7"
+                            Margin="0,1"
+                            SnapsToDevicePixels="True">
+                        <ContentPresenter VerticalAlignment="Center"
+                                          TextElement.Foreground="{TemplateBinding Foreground}"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsHighlighted" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SsSavantHighlightBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SsSavantPressedBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.55"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 
     <Style TargetType="ListBox">
@@ -544,14 +565,23 @@
         <Setter Property="UseLayoutRounding" Value="True"/>
         <Setter Property="TextOptions.TextFormattingMode" Value="Display"/>
         <Setter Property="TextOptions.TextRenderingMode" Value="ClearType"/>
+        <Setter Property="Margin" Value="0,0,0,3"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
-                    <Border x:Name="ShadowBorder"
-                            CornerRadius="8"
-                            Margin="0,1,0,0"
-                            Background="#44000000"
-                            SnapsToDevicePixels="True">
+                    <Grid>
+                        <!-- Shadow lives on its own layer so text above keeps ClearType -->
+                        <Border x:Name="ShadowLayer"
+                                CornerRadius="8"
+                                Background="{TemplateBinding Background}">
+                            <Border.Effect>
+                                <DropShadowEffect Color="#FF000000"
+                                                  BlurRadius="9"
+                                                  ShadowDepth="3"
+                                                  Direction="270"
+                                                  Opacity="0.40"/>
+                            </Border.Effect>
+                        </Border>
                         <Border x:Name="ChromeBorder"
                                 CornerRadius="8"
                                 Background="{TemplateBinding Background}"
@@ -559,7 +589,8 @@
                                 BorderThickness="{TemplateBinding BorderThickness}"
                                 Padding="{TemplateBinding Padding}"
                                 SnapsToDevicePixels="True">
-                            <ContentPresenter HorizontalAlignment="Center"
+                            <ContentPresenter x:Name="ContentHost"
+                                              HorizontalAlignment="Center"
                                               VerticalAlignment="Center"
                                               RecognizesAccessKey="True"
                                               Content="{TemplateBinding Content}"
@@ -568,17 +599,36 @@
                                               TextOptions.TextFormattingMode="Display"
                                               TextOptions.TextRenderingMode="ClearType"/>
                         </Border>
-                    </Border>
+                    </Grid>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter TargetName="ChromeBorder" Property="Background" Value="{DynamicResource SsSavantHighlightBrush}"/>
+                            <Setter TargetName="ShadowLayer" Property="Effect">
+                                <Setter.Value>
+                                    <DropShadowEffect Color="#FF000000"
+                                                      BlurRadius="12"
+                                                      ShadowDepth="4"
+                                                      Direction="270"
+                                                      Opacity="0.45"/>
+                                </Setter.Value>
+                            </Setter>
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
                             <Setter TargetName="ChromeBorder" Property="Background" Value="{DynamicResource SsSavantPressedBrush}"/>
-                            <Setter TargetName="ShadowBorder" Property="Margin" Value="0,2,0,0"/>
+                            <Setter TargetName="ChromeBorder" Property="BorderBrush" Value="#FF4DA3FF"/>
+                            <!-- Keep thickness 1 and no margin shift — thickness 2 + nudge clips tops in tight toolbar rows. -->
+                            <Setter TargetName="ShadowLayer" Property="Effect">
+                                <Setter.Value>
+                                    <DropShadowEffect Color="#FF4DA3FF"
+                                                      BlurRadius="10"
+                                                      ShadowDepth="0"
+                                                      Opacity="0.70"/>
+                                </Setter.Value>
+                            </Setter>
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Opacity" Value="0.45"/>
+                            <Setter TargetName="ShadowLayer" Property="Effect" Value="{x:Null}"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -599,11 +649,18 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
-                    <Border x:Name="ShadowBorder"
-                            CornerRadius="5"
-                            Margin="0,1,0,0"
-                            Background="#44000000"
-                            SnapsToDevicePixels="True">
+                    <Grid>
+                        <Border x:Name="ShadowLayer"
+                                CornerRadius="5"
+                                Background="{TemplateBinding Background}">
+                            <Border.Effect>
+                                <DropShadowEffect Color="#FF000000"
+                                                  BlurRadius="8"
+                                                  ShadowDepth="2"
+                                                  Direction="270"
+                                                  Opacity="0.40"/>
+                            </Border.Effect>
+                        </Border>
                         <Border x:Name="ChromeBorder"
                                 CornerRadius="5"
                                 Background="{TemplateBinding Background}"
@@ -620,17 +677,26 @@
                                               TextOptions.TextFormattingMode="Display"
                                               TextOptions.TextRenderingMode="ClearType"/>
                         </Border>
-                    </Border>
+                    </Grid>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter TargetName="ChromeBorder" Property="Background" Value="{DynamicResource SsSavantHighlightBrush}"/>
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
                             <Setter TargetName="ChromeBorder" Property="Background" Value="{DynamicResource SsSavantPressedBrush}"/>
-                            <Setter TargetName="ShadowBorder" Property="Margin" Value="0,2,0,0"/>
+                            <Setter TargetName="ChromeBorder" Property="BorderBrush" Value="#FF4DA3FF"/>
+                            <Setter TargetName="ShadowLayer" Property="Effect">
+                                <Setter.Value>
+                                    <DropShadowEffect Color="#FF4DA3FF"
+                                                      BlurRadius="10"
+                                                      ShadowDepth="0"
+                                                      Opacity="0.70"/>
+                                </Setter.Value>
+                            </Setter>
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Opacity" Value="0.45"/>
+                            <Setter TargetName="ShadowLayer" Property="Effect" Value="{x:Null}"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>

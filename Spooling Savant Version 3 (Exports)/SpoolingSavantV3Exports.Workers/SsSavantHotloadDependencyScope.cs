@@ -6,7 +6,7 @@ namespace SpoolingSavantV3Exports.Workers
 {
     /// <summary>
     /// Resolves PDF/Excel satellites for <see cref="Autodesk.Revit.UI.ExternalEvent"/> handlers that run outside
-    /// the ribbon <see cref="SpoolingSavantV3Exports.SsSavantHotloadAssemblyResolver"/> scope.
+    /// the ribbon <see cref="SpoolingSavantV2.SsSavantHotloadAssemblyResolver"/> scope.
     /// </summary>
     internal sealed class SsSavantHotloadDependencyScope : IDisposable
     {

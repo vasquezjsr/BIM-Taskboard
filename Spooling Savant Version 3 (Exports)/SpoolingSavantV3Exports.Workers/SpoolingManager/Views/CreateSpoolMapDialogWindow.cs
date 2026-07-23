@@ -98,7 +98,7 @@ internal sealed class CreateSpoolMapDialogWindow : Window
 		{
 			if (!TryBuildRequest(productKind, out CreateSpoolMapRequest request, out string error))
 			{
-				MessageBox.Show(this, error, Title, MessageBoxButton.OK, MessageBoxImage.Asterisk);
+				SsSavantMessageBox.Show(this, error, Title, MessageBoxButton.OK, MessageBoxImage.Asterisk);
 				return;
 			}
 			SelectedRequest = request;

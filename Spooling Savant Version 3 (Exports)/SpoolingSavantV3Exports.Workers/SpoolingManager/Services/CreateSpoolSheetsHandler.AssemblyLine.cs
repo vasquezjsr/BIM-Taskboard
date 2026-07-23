@@ -157,6 +157,8 @@ public partial class CreateSpoolSheetsHandler
 		AssemblyLineScaleAndAnnotateViews(ctx, viewWorks);
 		ReportSheetProgress(82.0, "Place Views", "Positioning views on sheets");
 		AssemblyLinePlaceViews(ctx, viewWorks);
+		ReportSheetProgress(88.0, "Tag Views", "Creating fabrication tags");
+		AssemblyLineEnsureViewTags(ctx, viewWorks);
 		ReportSheetProgress(90.0, "Place Schedule", DescribePlaceScheduleStep(ctx));
 		AssemblyLinePlaceSchedule(ctx, sheetWorks);
 	}
@@ -352,6 +354,14 @@ public partial class CreateSpoolSheetsHandler
 				viewWork.SheetWork.OrthoPickView = view3D;
 			}
 			RestrictViewToAssemblyElements(ctx.Doc, viewWork.SheetWork.Assembly, viewWork.View);
+			if (viewWork.View is View3D)
+			{
+				FitSpoolAssemblyViewCropToContent(
+					ctx.Doc,
+					viewWork.SheetWork.Assembly,
+					viewWork.View,
+					includeTagExtents: false);
+			}
 			if (!(viewWork.View is View3D) && HasViewCropRotation(viewWork.Option.SheetRotation))
 			{
 				ApplyViewCropRegionRotation(ctx.Doc, viewWork.View, viewWork.Option.SheetRotation);
@@ -370,6 +380,12 @@ public partial class CreateSpoolSheetsHandler
 			{
 				continue;
 			}
+			// Tight crop with 3/8" tag clearance — place on sheet BEFORE tagging.
+			FitSpoolAssemblyViewCropToContent(
+				ctx.Doc,
+				viewWork.SheetWork.Assembly,
+				viewWork.View,
+				includeTagExtents: false);
 			viewWork.OrthoViewport = PlaceViewOnSheet(ctx.Doc, viewWork.SheetWork.Sheet, viewWork.View, viewWork.Option.Placement);
 			if (viewWork.OrthoViewport == null)
 			{
@@ -407,6 +423,8 @@ public partial class CreateSpoolSheetsHandler
 			TryPositionViewportTitleBelow(viewWork.OrthoViewport);
 		}
 		FlushPendingRegen(ctx.Doc);
+		// Tag AFTER views are on the sheet (3D Ortho already placed above). Same order as
+		// placing a viewport, opening it, and tagging — do not rebuild the viewport after.
 		if (ctx.TagType != null || ctx.HangerTagType != null || ctx.DuctTagType != null)
 		{
 			foreach (SpoolViewWorkItem viewWork in viewWorks)
@@ -417,6 +435,18 @@ public partial class CreateSpoolSheetsHandler
 				}
 				try
 				{
+					TrySetFabricationTagCategoriesHidden(viewWork.View, hidden: false, affectedCategoryIds: null);
+					if (viewWork.View is View3D && ctx.Uidoc != null)
+					{
+						try
+						{
+							ctx.Uidoc.ActiveView = viewWork.View;
+						}
+						catch
+						{
+						}
+					}
+
 					TagCreationResult tagCreationResult = CreateTags(
 						ctx.Doc,
 						viewWork.SheetWork.Assembly,
@@ -453,7 +483,42 @@ public partial class CreateSpoolSheetsHandler
 
 			FlushPendingRegen(ctx.Doc);
 
-			// Re-seat titles on every viewport on every sheet (3D, elevations, etc.).
+			// Short tags first, then re-crop parts-only and refresh the sheet viewport so
+			// the blue box hugs the spool (Outline no longer owns the size).
+			foreach (SpoolViewWorkItem viewWork in viewWorks)
+			{
+				if (!(viewWork.View is View3D view3D) || viewWork.SheetWork?.Assembly == null || viewWork.SheetWork.Sheet == null)
+				{
+					continue;
+				}
+
+				viewWork.OrthoViewport = TryTightenView3DOrthoViewportOnSheet(
+					ctx.Doc,
+					viewWork.SheetWork.Sheet,
+					viewWork.SheetWork.Assembly,
+					view3D,
+					viewWork.OrthoViewport,
+					viewWork.Option.Placement);
+				TryPositionViewportTitleBelow(viewWork.OrthoViewport);
+			}
+
+			FlushPendingRegen(ctx.Doc);
+
+			if (ctx.Uidoc != null)
+			{
+				try
+				{
+					ViewSheet sheet = viewWorks.Select(v => v.SheetWork?.Sheet).FirstOrDefault(s => s != null);
+					if (sheet != null)
+					{
+						ctx.Uidoc.ActiveView = (View)(object)sheet;
+					}
+				}
+				catch
+				{
+				}
+			}
+
 			HashSet<ElementId> titledSheets = new HashSet<ElementId>();
 			foreach (SpoolViewWorkItem viewWork in viewWorks)
 			{
@@ -609,6 +674,99 @@ public partial class CreateSpoolSheetsHandler
 		{
 			ViewSheet sheet = viewWork.SheetWork?.Sheet;
 			if (sheet == null || !finalSheets.Add(((Element)sheet).Id))
+			{
+				continue;
+			}
+
+			TryPositionAllViewportTitlesOnSheet(ctx.Doc, sheet);
+		}
+	}
+
+	/// <summary>
+	/// Ensure every TagEnabled view has IndependentTags after it is on the sheet.
+	/// Retags views that still have none (never deletes existing tags).
+	/// </summary>
+	private static void AssemblyLineEnsureViewTags(SpoolSheetGenerationContext ctx, List<SpoolViewWorkItem> viewWorks)
+	{
+		if (ctx == null || viewWorks == null)
+		{
+			return;
+		}
+
+		if (ctx.TagType == null && ctx.HangerTagType == null && ctx.DuctTagType == null)
+		{
+			return;
+		}
+
+		foreach (SpoolViewWorkItem viewWork in viewWorks)
+		{
+			if (viewWork.View == null || !viewWork.Option.TagEnabled || viewWork.SheetWork?.Assembly == null)
+			{
+				continue;
+			}
+
+			try
+			{
+				TrySetFabricationTagCategoriesHidden(viewWork.View, hidden: false, affectedCategoryIds: null);
+
+				int existing = 0;
+				try
+				{
+					existing = new FilteredElementCollector(ctx.Doc, ((Element)viewWork.View).Id)
+						.OfClass(typeof(IndependentTag))
+						.ToElementIds()
+						.Count;
+				}
+				catch
+				{
+				}
+
+				if (existing > 0)
+				{
+					continue;
+				}
+
+				TagCreationResult tagCreationResult = CreateTags(
+					ctx.Doc,
+					viewWork.SheetWork.Assembly,
+					viewWork.View,
+					ctx.TagType,
+					viewWork.Option.Placement,
+					ctx.ProductKind,
+					ctx.Settings,
+					null,
+					ctx.Settings.NumberWeldsEnabled ? string.Empty : null,
+					ctx.WeldTagType,
+					ctx.AssemblyTagType,
+					null,
+					ctx.HangerTagType,
+					ctx.DuctTagType);
+				ctx.CreatedTags += tagCreationResult.CreatedCount;
+				if (tagCreationResult.CreatedCount == 0)
+				{
+					ctx.Messages.Add(viewWork.SheetWork.DisplayName + ": " + viewWork.Option.Label + " tag debug - "
+						+ $"parts={tagCreationResult.PartsEvaluated}, "
+						+ $"elem={tagCreationResult.ElementReferenceSuccesses}/{tagCreationResult.ElementReferenceAttempts}, "
+						+ $"face={tagCreationResult.FaceReferenceSuccesses}/{tagCreationResult.FaceReferenceAttempts}, "
+						+ $"catLeader={tagCreationResult.ByCategoryLeaderSuccesses}, "
+						+ $"catNoLeader={tagCreationResult.ByCategoryNoLeaderSuccesses}, "
+						+ $"typed={tagCreationResult.TypedCreateSuccesses}, "
+						+ $"exceptions={tagCreationResult.Exceptions}");
+				}
+			}
+			catch (Exception ex)
+			{
+				ctx.Messages.Add(viewWork.SheetWork.DisplayName + ": failed to tag " + viewWork.Option.Label + ". " + ex.Message);
+			}
+		}
+
+		FlushPendingRegen(ctx.Doc);
+
+		HashSet<ElementId> titledSheets = new HashSet<ElementId>();
+		foreach (SpoolViewWorkItem viewWork in viewWorks)
+		{
+			ViewSheet sheet = viewWork.SheetWork?.Sheet;
+			if (sheet == null || !titledSheets.Add(((Element)sheet).Id))
 			{
 				continue;
 			}
@@ -849,6 +1007,7 @@ public partial class CreateSpoolSheetsHandler
 		AssemblyLineCreateViews(ctx, viewWorks);
 		AssemblyLineScaleAndAnnotateViews(ctx, viewWorks);
 		AssemblyLinePlaceViews(ctx, viewWorks);
+		AssemblyLineEnsureViewTags(ctx, viewWorks);
 		return viewWorks.Count((viewWork) => viewWork.View != null);
 	}
 }

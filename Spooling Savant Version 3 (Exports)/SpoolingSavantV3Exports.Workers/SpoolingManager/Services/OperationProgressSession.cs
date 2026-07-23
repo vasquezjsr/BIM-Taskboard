@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Threading;
 using SpoolingSavantV3Exports.Workers.SpoolingManager.Views;
+using SpoolingSavantV3Exports.Workers.UI;
 
 namespace SpoolingSavantV3Exports.Workers.SpoolingManager.Services;
 
@@ -14,18 +15,58 @@ internal static class OperationProgressSession
 {
 	private static OperationProgressWindow _window;
 	private static WeakReference _ownerWindow;
+	private static volatile bool _cancelRequested;
+	private static volatile bool _pauseRequested;
 
 	public static bool IsVisible => _window != null && _window.IsLoaded && _window.IsVisible;
 
-	public static void Show(string title, Window owner = null, IntPtr ownerHwnd = default)
+	/// <summary>
+	/// True once the user clicked Cancel on the progress window. Long operations poll this
+	/// between work items (the dispatcher pump in <see cref="Report"/> lets the click through).
+	/// </summary>
+	public static bool CancelRequested => _cancelRequested;
+
+	/// <summary>True while the user has the progress window paused.</summary>
+	public static bool PauseRequested => _pauseRequested;
+
+	/// <summary>
+	/// Blocks the calling (Revit UI) thread while paused, pumping the dispatcher so the
+	/// progress window stays responsive — that is what lets Resume and Cancel clicks
+	/// arrive while we wait. Returns when unpaused or when Cancel is clicked.
+	/// </summary>
+	public static void WaitWhilePaused()
+	{
+		while (_pauseRequested && !_cancelRequested)
+		{
+			DispatcherFramePump();
+			System.Threading.Thread.Sleep(60);
+		}
+	}
+
+	public static void Show(string title, Window owner = null, IntPtr ownerHwnd = default,
+		bool allowCancel = false, string neonProgressText = null)
 	{
 		InvokeUi(() =>
 		{
 			CloseCore();
+			_cancelRequested = false;
+			_pauseRequested = false;
 			_ownerWindow = owner != null ? new WeakReference(owner) : null;
 			_window = new OperationProgressWindow(title);
 			_window.Topmost = true;
 			_window.ShowInTaskbar = false;
+			SsSavantDialogForeground.Attach(_window);
+			if (!string.IsNullOrWhiteSpace(neonProgressText))
+			{
+				_window.EnableNeonLetterProgress(neonProgressText);
+			}
+			if (allowCancel)
+			{
+				_window.EnableCancelButton();
+				_window.EnablePauseButton();
+				_window.CancelRequested += () => _cancelRequested = true;
+				_window.PauseChanged += paused => _pauseRequested = paused;
+			}
 
 			if (owner != null)
 			{

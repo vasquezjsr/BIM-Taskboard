@@ -205,8 +205,7 @@ public sealed class CreateSpoolMapHandler : IExternalEventHandler
 
 			TryOpenSpoolMapSheet(uidoc, processResult.SheetId);
 
-			report.Insert(0, "Spool map created for package '" + request.PackageLabel + "' (" + DiagnosticBuildTag + ").\r\n\r\n");
-			RevitRequestBridge.ShowOperationSummary("Create Spool Map", report.ToString().TrimEnd());
+			RevitRequestBridge.ShowOperationSummary("Create Spool Map", "Spool map created.");
 		}
 		catch (Exception ex)
 		{

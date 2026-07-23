@@ -8,7 +8,7 @@ using Autodesk.Revit.DB.Fabrication;
 namespace SpoolingSavantV3Exports.Workers
 {
     /// <summary>
-    /// Binds SS Manager shared parameters when a project document opens (called from SpoolingSavantV3Exports.dll at load).
+    /// Binds SS Manager shared parameters when a project document opens (called from SpoolingSavantV2.dll at load).
     /// </summary>
     public static class SsSavantSharedParameterBootstrap
     {
@@ -23,6 +23,8 @@ namespace SpoolingSavantV3Exports.Workers
         internal const string SRodLengthAParameterName = "S-Rod Length A";
         internal const string SRodLengthBParameterName = "S-Rod Length B";
         internal const string SStrutLengthParameterName = "S-Strut Length";
+        internal const string SLengthParameterName = "S-Length";
+        internal const string SItemNumberParameterName = "S-Item Number";
 
         public static void ConfigureApplicationSharedParameterFile(Application app)
         {
@@ -39,63 +41,72 @@ namespace SpoolingSavantV3Exports.Workers
 
             ConfigureApplicationSharedParameterFile(app);
 
-            using (var transaction = new Transaction(doc, "Spooling Savant V3 (Exports) - Overwrite shared parameters"))
+            List<Category> fabricationPipeAndContainment = GetCategories(
+                doc,
+                BuiltInCategory.OST_FabricationPipework,
+                BuiltInCategory.OST_FabricationContainment);
+
+            List<Category> nativePipework = GetCategories(
+                doc,
+                BuiltInCategory.OST_PipeCurves,
+                BuiltInCategory.OST_PipeFitting,
+                BuiltInCategory.OST_PipeAccessory);
+
+            List<Category> pipeAndContainment = MergeCategories(fabricationPipeAndContainment, nativePipework);
+
+            List<Category> fabricationHangers = GetCategories(
+                doc,
+                BuiltInCategory.OST_FabricationHangers);
+
+            List<Category> materialCategories = MergeCategories(pipeAndContainment, fabricationHangers);
+
+            List<Category> packageCategories = MergeCategories(
+                GetCategories(doc, BuiltInCategory.OST_Assemblies),
+                pipeAndContainment,
+                fabricationHangers,
+                GetCategories(doc, BuiltInCategory.OST_Sheets, BuiltInCategory.OST_Views));
+
+            using (var transaction = new Transaction(doc, "Spooling Savant - Bind shared parameters"))
             {
                 transaction.Start();
                 try
                 {
-                    List<Category> fabricationPipeAndContainment = GetCategories(
-                        doc,
-                        BuiltInCategory.OST_FabricationPipework,
-                        BuiltInCategory.OST_FabricationContainment);
-
-                    List<Category> fabricationHangers = GetCategories(
-                        doc,
-                        BuiltInCategory.OST_FabricationHangers);
-
-                    List<Category> materialCategories = MergeCategories(fabricationPipeAndContainment, fabricationHangers);
-
-                    List<Category> packageCategories = MergeCategories(
-                        GetCategories(doc, BuiltInCategory.OST_Assemblies),
-                        fabricationPipeAndContainment,
-                        fabricationHangers,
-                        GetCategories(doc, BuiltInCategory.OST_Sheets, BuiltInCategory.OST_Views));
-
-                    List<Category> fabricationPipework = GetCategories(
-                        doc,
-                        BuiltInCategory.OST_FabricationPipework);
-
                     Ensure(app, doc, PackageParameterName, SpecTypeId.String.Text, packageCategories);
-                    Ensure(app, doc, SSizeParameterName, SpecTypeId.String.Text, fabricationPipeAndContainment);
+                    Ensure(app, doc, SSizeParameterName, SpecTypeId.String.Text, pipeAndContainment);
                     Ensure(app, doc, SMaterialParameterName, SpecTypeId.String.Text, materialCategories);
                     Ensure(app, doc, SWeldParameterName, SpecTypeId.String.Text, fabricationPipeAndContainment);
-                    Ensure(app, doc, SContinuationParameterName, SpecTypeId.String.Text, fabricationPipeAndContainment);
+                    Ensure(app, doc, SContinuationParameterName, SpecTypeId.String.Text, pipeAndContainment);
                     Ensure(app, doc, SConnector1ParameterName, SpecTypeId.String.Text, fabricationPipeAndContainment);
                     Ensure(app, doc, SConnector2ParameterName, SpecTypeId.String.Text, fabricationPipeAndContainment);
                     Ensure(app, doc, SHangerSizeParameterName, SpecTypeId.String.Text, fabricationHangers);
                     Ensure(app, doc, SRodLengthAParameterName, SpecTypeId.Length, fabricationHangers);
                     Ensure(app, doc, SRodLengthBParameterName, SpecTypeId.Length, fabricationHangers);
                     Ensure(app, doc, SStrutLengthParameterName, SpecTypeId.Length, fabricationHangers);
+                    Ensure(app, doc, SLengthParameterName, SpecTypeId.Length, nativePipework);
+                    // Native + fabrication (+ hangers) so Item Numbers always mirror onto S-Item Number.
+                    Ensure(app, doc, SItemNumberParameterName, SpecTypeId.String.Text, materialCategories);
 
-                    List<FabricationPart> allPipework = new FilteredElementCollector(doc)
-                        .OfClass(typeof(FabricationPart))
-                        .Cast<FabricationPart>()
-                        .Where(part =>
-                            part.Category != null &&
-                            part.Category.Id.Value == (long)BuiltInCategory.OST_FabricationPipework)
-                        .ToList();
-
-                    FabricationSavantParameterSync.SyncSizeParameters(doc, allPipework);
-                    FabricationSavantParameterSync.SyncConnectorParameters(doc, allPipework);
-
-                    doc.Regenerate();
                     transaction.Commit();
                 }
                 catch
                 {
-                    transaction.RollBack();
+                    if (transaction.HasStarted())
+                        transaction.RollBack();
                     throw;
                 }
+            }
+
+            try
+            {
+                using (var syncTx = new Transaction(doc, "Spooling Savant - Sync S-Length"))
+                {
+                    syncTx.Start();
+                    NativePipeParameterSync.SyncSLengthForDocument(doc);
+                    syncTx.Commit();
+                }
+            }
+            catch
+            {
             }
         }
 

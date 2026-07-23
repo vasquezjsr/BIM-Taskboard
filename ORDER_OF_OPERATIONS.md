@@ -1,21 +1,21 @@
-# Order of Operations — BIM Boardroom + SSv3 + Fab
+# Order of Operations — BIM Boardroom + Spooling Savant 3.0 + Fab
 
 End-to-end operator sequence from Boardroom setup through shop Fab. Use this when the system feels big; the process itself is linear.
 
-**Contents:** Part A (main nav dashboards) · Part B (project boards) · Part C (SSv3 → Fab) · **Part D (job levels & permissions — every detail)**
+**Contents:** Part A (main nav dashboards) · Part B (project boards) · Part C (Spooling Savant 3.0 → Fab) · **Part D (job levels & permissions — every detail)**
 
 ```mermaid
 flowchart LR
   setup[OrgAndProject]
   spool[SpoolingTask]
-  ssv3[SSv3AssembliesSheets]
+  Spooling Savant 3.0[SSv3AssembliesSheets]
   export[ExportToBoardroom]
   ready[ReadyForFab]
   queue[QueuedShopSuper]
   warehouse[Warehouse]
   fab[DeptLeadAndWorkers]
   ship[ShippingLater]
-  setup --> spool --> ssv3 --> export --> ready --> queue --> warehouse --> fab --> ship
+  setup --> spool --> Spooling Savant 3.0 --> export --> ready --> queue --> warehouse --> fab --> ship
 ```
 
 ## Prerequisites
@@ -98,7 +98,7 @@ Nav tabs come from `MainNav.tsx`. Who sees a gated tab is controlled by permissi
 
 ### A5. Fab Workstation (shop)
 
-- **Purpose:** Working station for SSv3 packages after **Ready for Fab** — packages, assemblies, export files, BOM, weld log, clock, photos/comments.
+- **Purpose:** Working station for Spooling Savant 3.0 packages after **Ready for Fab** — packages, assemblies, export files, BOM, weld log, clock, photos/comments.
 - **Who (tab):** `view-fab-dashboard` — Owner; BIM / Ops / Support Manager; seeded Fab staff.
 - **Dashboard roles:** Shop Super, Warehouse Lead, Warehouse Worker, Shop Dept Manager (Mech / Plmb / HVAC), Workers.
 - **Dashboards strip** (Queued / Warehouse / named people): Shop Super, Warehouse Lead, Owner, and org-chart managers **upstream** of Shop Super or Warehouse Lead.
@@ -320,7 +320,7 @@ Under a project, the board strip is: **Main Overview** first, then sub-boards (r
   11. Detailer Review → detailers  
   12. Fix Mark Ups → support  
   13. Complete → detailers  
-- **Special:** Status **auto-assign** to project detailer/support teams; assignees can be locked for overrides; trade-first groups; workflow due dates. **`Ready for Fab` on Deliverables does not promote to Fab** — promotion is **Spooling + SSv3** only.
+- **Special:** Status **auto-assign** to project detailer/support teams; assignees can be locked for overrides; trade-first groups; workflow due dates. **`Ready for Fab` on Deliverables does not promote to Fab** — promotion is **Spooling + Spooling Savant 3.0** only.
 - **Actions:** Pre-plan, support modeling, spool prep handoffs, mark-up loops.
 
 ---
@@ -339,12 +339,12 @@ Under a project, the board strip is: **Main Overview** first, then sub-boards (r
   7. On Hold → support  
   8. Complete → support  
 - **Special:**
-  - **SSv3 export attach** — `boardroom-package.json` + reports land on the Spooling task (folder watch / import).
-  - Setting status to **Ready for Fab** with an SSv3 export **promotes** the package tree to the **Fab** board as **Queued**.
+  - **Spooling Savant 3.0 export attach** — `boardroom-package.json` + reports land on the Spooling task (folder watch / import).
+  - Setting status to **Ready for Fab** with an Spooling Savant 3.0 export **promotes** the package tree to the **Fab** board as **Queued**.
   - After Ready for Fab / on Fab, wipe/replace of that export is **blocked**.
   - Main Overview section; trade-first; workflow due dates.
-- **Actions:** Run SSv3; attach export; QA sheets; flip **Ready for Fab** when shop should see it.
-- **Keep Boardroom open** while SSv3 loads projects/tasks from `http://127.0.0.1:17321`.
+- **Actions:** Run Spooling Savant 3.0; attach export; QA sheets; flip **Ready for Fab** when shop should see it.
+- **Keep Boardroom open** while Spooling Savant 3.0 loads projects/tasks from `http://127.0.0.1:17321`.
 
 ---
 
@@ -364,7 +364,7 @@ Under a project, the board strip is: **Main Overview** first, then sub-boards (r
   9. Rework  
   10. Ready to Ship  
   11. Complete  
-- **Special:** No default Main Overview section; receives SSv3 package/assembly trees on promote; warehouse filters Queued / Pulling Material; package custom fields (`ssv3*`); weld log / clock live in Fab Workstation. **Ready to Ship does not auto-create Shipping tasks.**
+- **Special:** No default Main Overview section; receives Spooling Savant 3.0 package/assembly trees on promote; warehouse filters Queued / Pulling Material; package custom fields (`Spooling Savant 3.0*`); weld log / clock live in Fab Workstation. **Ready to Ship does not auto-create Shipping tasks.**
 - **Actions:** Prefer Fab Workstation for assign, BOM, clock, sheets, weld log, photos/comments.
 
 ---
@@ -416,7 +416,7 @@ Under a project, the board strip is: **Main Overview** first, then sub-boards (r
 
 ---
 
-## Part C — Order of operations (SSv3 → Fab)
+## Part C — Order of operations (Spooling Savant 3.0 → Fab)
 
 ### 1. Org / roles (Boardroom)
 
@@ -441,13 +441,13 @@ Under a project, the board strip is: **Main Overview** first, then sub-boards (r
 - Assign support / spooler as needed; advance spooling statuses as work proceeds.
 - **Keep Boardroom open** for the API.
 
-### 4. SSv3 work (Revit)
+### 4. Spooling Savant 3.0 work (Revit)
 
 - Open **SS Manager V3**.
 - Generate Options that affect handoff: Number Welds, Fill Weld Log, Include Weld Log entry fields, title block / weld log layout.
 - Create / package assemblies and generate spool sheets.
 
-### 5. Plot / Export to Boardroom (SSv3)
+### 5. Plot / Export to Boardroom (Spooling Savant 3.0)
 
 - Plot Packages / Export to Boardroom: pick Boardroom project + Spooling task + export folder.
 - Writes `boardroom-package.json` + reports (Spools Combined, BOM, Cut List, Assembly List, Weld Log `.xlsx`, etc.).
@@ -461,7 +461,7 @@ Under a project, the board strip is: **Main Overview** first, then sub-boards (r
 
 - Spooling status → **Ready for Fab**.
 - Promotes package/assemblies to Fab as **Queued**.
-- **Lock:** further SSv3 overwrite blocked.
+- **Lock:** further Spooling Savant 3.0 overwrite blocked.
 
 ### 8–10. Shop (Queued → Warehouse → Dept Lead / Workers)
 
@@ -803,6 +803,6 @@ Not Started → Staging → Loading → In Transit → Delivered to Site → Rec
 | What | Where |
 |------|--------|
 | Boardroom API | `http://127.0.0.1:17321` |
-| Default SSv3 export folder | `Spooling Savant Version 3 (Exports)/Boardroom/Exports` |
+| Default Spooling Savant 3.0 export folder | `Spooling Savant Version 3 (Exports)/Boardroom/Exports` |
 | Package manifest | `boardroom-package.json` in that folder |
-| SSv3 add-in notes | [Spooling Savant Version 3 (Exports)/README.md](./Spooling%20Savant%20Version%203%20(Exports)/README.md) |
+| Spooling Savant 3.0 add-in notes | [Spooling Savant Version 3 (Exports)/README.md](./Spooling%20Savant%20Version%203%20(Exports)/README.md) |

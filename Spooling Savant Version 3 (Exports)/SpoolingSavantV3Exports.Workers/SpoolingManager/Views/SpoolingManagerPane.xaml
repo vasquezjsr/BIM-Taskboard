@@ -11,116 +11,154 @@
              TextOptions.TextRenderingMode="ClearType"
              Background="{DynamicResource SsSavantChromeBackground}">
 
-    <Border Background="{DynamicResource SsSavantChromeBackground}"
+    <Border x:Name="brdPaneShell"
+            Background="{DynamicResource SsSavantChromeBackground}"
             BorderBrush="{DynamicResource SsSavantBorderOuter}"
             BorderThickness="1"
             CornerRadius="14"
-            Padding="10">
+            Padding="12,8,12,12">
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
-                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*" MinHeight="160"/>
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-            <!-- Header -->
-            <Grid Grid.Row="0" Margin="0,0,0,10">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="80"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-
-                <Grid Grid.Column="0"
-                      Width="72"
-                      Height="72">
-                    <Border Background="{DynamicResource SsSavantInputBackground}"
-                            BorderBrush="{DynamicResource SsSavantListBorder}"
-                            BorderThickness="1"
-                            CornerRadius="8">
-                        <Grid>
-                            <Image x:Name="imgLogo"
-                                   Stretch="Uniform"
-                                   Margin="4"/>
-                            <TextBlock x:Name="txtLogoPlaceholder"
-                                       Text="LOGO"
-                                       Foreground="{DynamicResource SsSavantForegroundMuted}"
-                                       HorizontalAlignment="Center"
-                                       VerticalAlignment="Center"/>
-                        </Grid>
-                    </Border>
-                </Grid>
-
-                <TextBlock Grid.Column="1"
-                           Margin="12,0,0,0"
-                           VerticalAlignment="Center"
-                           Text="SS Manager V3"
-                           FontSize="20"
-                           FontWeight="SemiBold"
-                           Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
-
-                <Button x:Name="btnPaneSettings"
-                        Grid.Column="2"
-                        Width="34"
-                        Height="34"
-                        Padding="0"
-                        Margin="4,0,0,0"
-                        VerticalAlignment="Center"
-                        Cursor="Hand"
-                        ToolTip="Title blocks, tags, views, schedules"
-                        Click="BtnSettings_Click">
-                    <TextBlock FontFamily="Segoe MDL2 Assets"
-                               Text="&#xE713;"
-                               FontSize="16"
-                               Foreground="{DynamicResource SsSavantForegroundPrimary}"
-                               HorizontalAlignment="Center"
-                               VerticalAlignment="Center"/>
-                </Button>
+            <!-- Header titles — tight top so the list can grow -->
+            <Grid Grid.Row="0" Margin="0,0,0,4">
+                <Border x:Name="brdNeonSign"
+                        Margin="0"
+                        BorderThickness="0"
+                        Background="Transparent"
+                        Padding="4,0,4,2"
+                        HorizontalAlignment="Stretch"
+                        VerticalAlignment="Center">
+                    <StackPanel VerticalAlignment="Center"
+                                HorizontalAlignment="Center">
+                        <TextBlock x:Name="txtPaneTitleMain"
+                                   Text="Spooling Savant"
+                                   HorizontalAlignment="Center"
+                                   FontFamily="Segoe Script, Brush Script MT, Monotype Corsiva"
+                                   FontSize="24"
+                                   FontWeight="Bold"
+                                   Foreground="#FFFFF4C8">
+                            <TextBlock.Effect>
+                                <DropShadowEffect Color="#FFFFC24D"
+                                                  BlurRadius="18"
+                                                  ShadowDepth="0"
+                                                  Opacity="0.95"/>
+                            </TextBlock.Effect>
+                        </TextBlock>
+                        <TextBlock x:Name="txtPaneTitleBoardroom"
+                                   Text="Together w/ BIM Boardroom"
+                                   HorizontalAlignment="Center"
+                                   Margin="0,-4,0,0"
+                                   FontFamily="Segoe Script, Brush Script MT, Monotype Corsiva"
+                                   FontSize="12"
+                                   FontWeight="Bold"
+                                   Foreground="#FFA9F4FF">
+                            <TextBlock.Effect>
+                                <DropShadowEffect Color="#FF35D6F8"
+                                                  BlurRadius="12"
+                                                  ShadowDepth="0"
+                                                  Opacity="0.85"/>
+                            </TextBlock.Effect>
+                        </TextBlock>
+                        <TextBlock x:Name="txtPaneTitleMode"
+                                   Text="Fabrication"
+                                   HorizontalAlignment="Center"
+                                   Margin="0,2,0,0"
+                                   FontFamily="Segoe Script, Brush Script MT, Monotype Corsiva"
+                                   FontSize="15"
+                                   FontWeight="Bold"
+                                   Foreground="#FFA9F4FF">
+                            <TextBlock.Effect>
+                                <DropShadowEffect Color="#FF35D6F8"
+                                                  BlurRadius="14"
+                                                  ShadowDepth="0"
+                                                  Opacity="0.95"/>
+                            </TextBlock.Effect>
+                        </TextBlock>
+                    </StackPanel>
+                </Border>
             </Grid>
 
+            <!-- Spool content mode -->
+            <StackPanel Grid.Row="1" Margin="0,0,0,6">
+                <TextBlock Text="Spool Content"
+                           Foreground="{DynamicResource SsSavantForegroundMuted}"
+                           FontSize="11"
+                           Margin="0,0,0,2"/>
+                <ComboBox x:Name="cmbSpoolContentMode"
+                          Height="30"
+                          HorizontalAlignment="Stretch"
+                          ToolTip="Fabrication Pipework, Families, Fabrication Ductwork-only, or Fabrication Hangers-only">
+                    <ComboBoxItem Content="Fabrication" Tag="Fabrication"/>
+                    <ComboBoxItem Content="Families" Tag="NativePipe"/>
+                    <ComboBoxItem Content="Duct" Tag="Duct"/>
+                    <ComboBoxItem Content="Hangers" Tag="Hangers"/>
+                </ComboBox>
+            </StackPanel>
+
             <!-- Search -->
-            <StackPanel Grid.Row="1" Margin="0,0,0,10">
+            <StackPanel Grid.Row="2" Margin="0,0,0,6">
                 <TextBlock Text="Search assemblies"
                            Foreground="{DynamicResource SsSavantForegroundMuted}"
                            FontSize="11"
-                           Margin="0,0,0,4"/>
+                           Margin="0,0,0,2"/>
                 <TextBox x:Name="txtSearch"
-                         Height="32"
+                         Height="30"
                          ToolTip="Filters the spool list by name. This is not the package field."
                          TextChanged="TxtSearch_TextChanged"/>
             </StackPanel>
 
-            <!-- Top buttons: equal width -->
-            <UniformGrid Grid.Row="2"
-                         Rows="1"
-                         Columns="4"
-                         Margin="0,0,0,10">
-                <Button x:Name="btnRefreshList"
-                        Content="Refresh List"
-                        Height="28"
-                        Margin="0,0,3,0"
-                        ToolTip="Reload assemblies from the active model"/>
-                <Button x:Name="btnClear"
-                        Content="Clear"
-                        Height="28"
-                        Margin="3,0,3,0"
-                        ToolTip="Clear all checkboxes in the list"/>
-                <Button x:Name="btnIsolate"
-                        Content="Isolate"
-                        Height="28"
-                        Margin="3,0,3,0"
-                        ToolTip="Temporarily isolate: checked assemblies in the list (all members) plus fabrication pipework or assemblies selected in the active model"/>
-                <Button x:Name="btnHide"
-                        Content="Hide"
-                        Height="28"
-                        Margin="3,0,0,0"
-                        ToolTip="Temporarily hide: checked assemblies in the list (all members) plus fabrication pipework or assemblies selected in the active model"/>
-            </UniformGrid>
+            <!-- Top buttons: equal width, framed so press/hover chrome is not clipped -->
+            <Border Grid.Row="3"
+                    Background="{DynamicResource SsSavantListWellBackground}"
+                    BorderBrush="{DynamicResource SsSavantListBorder}"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Padding="4"
+                    Margin="0,0,0,6"
+                    ClipToBounds="False">
+                <UniformGrid Rows="1"
+                             Columns="4">
+                    <Button x:Name="btnRefreshList"
+                            Content="Refresh List"
+                            Height="28"
+                            Margin="0,0,2,0"
+                            Padding="6,4"
+                            FocusVisualStyle="{x:Null}"
+                            ToolTip="Reload assemblies from the active model"/>
+                    <Button x:Name="btnClear"
+                            Content="Clear"
+                            Height="28"
+                            Margin="2,0,2,0"
+                            Padding="6,4"
+                            FocusVisualStyle="{x:Null}"
+                            ToolTip="Clear all checkboxes in the list"/>
+                    <Button x:Name="btnIsolate"
+                            Content="Isolate"
+                            Height="28"
+                            Margin="2,0,2,0"
+                            Padding="6,4"
+                            FocusVisualStyle="{x:Null}"
+                            ToolTip="Temporarily isolate: checked assemblies in the list (all members) plus fabrication pipework or assemblies selected in the active model"/>
+                    <Button x:Name="btnHide"
+                            Content="Hide"
+                            Height="28"
+                            Margin="2,0,0,0"
+                            Padding="6,4"
+                            FocusVisualStyle="{x:Null}"
+                            ToolTip="Temporarily hide: checked assemblies in the list (all members) plus fabrication pipework or assemblies selected in the active model"/>
+                </UniformGrid>
+            </Border>
 
             <!-- Assembly list area -->
-            <Border Grid.Row="3"
+            <Border Grid.Row="4"
                     Background="{DynamicResource SsSavantListWellBackground}"
                     BorderBrush="{DynamicResource SsSavantListBorder}"
                     BorderThickness="1"
@@ -128,6 +166,7 @@
                     Padding="6">
                 <Grid>
                     <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
@@ -141,7 +180,6 @@
                                     Height="24"
                                     MinWidth="72"
                                     Padding="8,0"
-                                    FontSize="10"
                                     Margin="8,0,0,0"
                                     Cursor="Hand"
                                     ToolTip="Collapse every package group (S-Package) in the tree"
@@ -151,7 +189,6 @@
                                     Height="24"
                                     MinWidth="68"
                                     Padding="8,0"
-                                    FontSize="10"
                                     Margin="4,0,0,0"
                                     Cursor="Hand"
                                     ToolTip="Expand every package group (S-Package) in the tree"
@@ -169,8 +206,23 @@
                         </StackPanel>
                     </DockPanel>
 
+                    <!-- Divider between the header row and the assembly list -->
+                    <Border Grid.Row="1"
+                            Height="1"
+                            Margin="-6,0,-6,0"
+                            Background="{DynamicResource SsSavantListBorder}"/>
+
+                    <!-- Recessed well: the list looks pushed into the pane -->
+                    <Border Grid.Row="2"
+                            Margin="-2,6,-2,-2"
+                            CornerRadius="8"
+                            BorderThickness="1"
+                            BorderBrush="#33000000"
+                            Background="{DynamicResource SsSavantListWellBackground}"
+                            ClipToBounds="True">
+                    <Grid>
                     <ScrollViewer x:Name="scrollAssemblyTree"
-                                  Grid.Row="1"
+                                  Margin="6,4,6,4"
                                   VerticalScrollBarVisibility="Auto"
                                   HorizontalScrollBarVisibility="Disabled"
                                   Background="{DynamicResource SsSavantListWellBackground}">
@@ -276,110 +328,196 @@
                             </ItemsControl.Resources>
                         </ItemsControl>
                     </ScrollViewer>
+
+                    <!-- Inner-shadow overlay so the well reads as concave (opposite of the raised buttons) -->
+                    <Border IsHitTestVisible="False"
+                            VerticalAlignment="Top"
+                            Height="10"
+                            CornerRadius="8,8,0,0">
+                        <Border.Background>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                <GradientStop Color="#38000000" Offset="0"/>
+                                <GradientStop Color="#00000000" Offset="1"/>
+                            </LinearGradientBrush>
+                        </Border.Background>
+                    </Border>
+                    <Border IsHitTestVisible="False"
+                            HorizontalAlignment="Left"
+                            Width="8"
+                            CornerRadius="8,0,0,8">
+                        <Border.Background>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                <GradientStop Color="#20000000" Offset="0"/>
+                                <GradientStop Color="#00000000" Offset="1"/>
+                            </LinearGradientBrush>
+                        </Border.Background>
+                    </Border>
+                    <Border IsHitTestVisible="False"
+                            HorizontalAlignment="Right"
+                            Width="8"
+                            CornerRadius="0,8,8,0">
+                        <Border.Background>
+                            <LinearGradientBrush StartPoint="1,0" EndPoint="0,0">
+                                <GradientStop Color="#20000000" Offset="0"/>
+                                <GradientStop Color="#00000000" Offset="1"/>
+                            </LinearGradientBrush>
+                        </Border.Background>
+                    </Border>
+                    <Border IsHitTestVisible="False"
+                            VerticalAlignment="Bottom"
+                            Height="6"
+                            CornerRadius="0,0,8,8">
+                        <Border.Background>
+                            <LinearGradientBrush StartPoint="0,1" EndPoint="0,0">
+                                <GradientStop Color="#18000000" Offset="0"/>
+                                <GradientStop Color="#00000000" Offset="1"/>
+                            </LinearGradientBrush>
+                        </Border.Background>
+                    </Border>
+                    </Grid>
+                    </Border>
                 </Grid>
             </Border>
 
-            <!-- Package + sheet actions below the tree -->
-            <Grid Grid.Row="4" Margin="0,10,0,0">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                </Grid.RowDefinitions>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="8"/>
-                    <ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
-
-                <StackPanel Grid.Row="0"
-                            Grid.Column="0"
-                            Grid.ColumnSpan="3"
-                            Margin="0,0,0,10">
+            <!-- Package field + nine action buttons — StackPanel rows (no UniformGrid stretch) -->
+            <StackPanel Grid.Row="5" Margin="0,10,0,0">
+                <StackPanel Margin="0,0,0,6">
                     <TextBlock Text="Package name (parameter S-Package)"
                                Foreground="{DynamicResource SsSavantForegroundTitle}"
                                FontWeight="SemiBold"
-                               Margin="0,0,0,6"/>
-                    <TextBox x:Name="txtPackageNumber"
-                             Height="32"
-                             MinHeight="32"
-                             Margin="0,0,0,10"
-                             ToolTip="Type the package value here, select assemblies, then tap Add to Package."/>
+                               Margin="0,0,0,4"
+                               ToolTip="Package name (parameter S-Package)"/>
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="8"/>
-                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="6"/>
+                            <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
-                        <Button x:Name="btnAddToPackage"
-                                Grid.Column="0"
-                                Content="Add to Package"
-                                Height="32"
-                                HorizontalContentAlignment="Center"/>
-                        <Button x:Name="btnRemoveFromPackage"
+                        <TextBox x:Name="txtPackageNumber"
+                                 Grid.Column="0"
+                                 Height="30"
+                                 MinHeight="30"
+                                 ToolTip="Type the package value here, select assemblies, then tap Add to Package."/>
+                        <Button x:Name="btnPaneSettings"
                                 Grid.Column="2"
-                                Content="Remove from Package"
-                                Height="32"
-                                HorizontalContentAlignment="Center"
-                                ToolTip="Clears S-Package on checked assemblies so they are no longer grouped under a package."/>
+                                Width="34"
+                                Height="30"
+                                Padding="0"
+                                VerticalAlignment="Center"
+                                Cursor="Hand"
+                                ToolTip="Title blocks, tags, views, schedules, Boardroom"
+                                Click="BtnSettings_Click">
+                            <TextBlock FontFamily="Segoe MDL2 Assets"
+                                       Text="&#xE713;"
+                                       FontSize="16"
+                                       Foreground="{DynamicResource SsSavantForegroundPrimary}"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"/>
+                        </Button>
                     </Grid>
                 </StackPanel>
 
-                <Button Grid.Row="1"
-                        Grid.Column="0"
-                        Content="Create Spool Sheets"
-                        Height="32"
-                        Click="BtnCreateSpoolSheets_Click"/>
-                <Button Grid.Row="1"
-                        Grid.Column="2"
-                        Content="Open Sheets"
-                        Height="32"
-                        ToolTip="Opens every spool sheet for checked rows, in list order. Revit needs one view change per idle cycle — opens quickly in sequence."
-                        Click="BtnOpenSheets_Click"/>
-                <Button Grid.Row="2"
-                        Grid.Column="0"
-                        Content="Rename Sheets"
-                        Height="32"
-                        Margin="0,8,0,0"
-                        Click="BtnRenameSheets_Click"/>
-                <Button Grid.Row="2"
-                        Grid.Column="2"
-                        Content="Refresh Assembly"
-                        Height="32"
-                        Margin="0,8,0,0"
-                        Click="BtnRefreshSheets_Click"/>
-                <Button x:Name="btnCreateSpoolMap"
-                        Grid.Row="3"
-                        Grid.Column="0"
-                        Content="Create Spool Map"
-                        Height="32"
-                        Margin="0,10,0,0"
-                        HorizontalContentAlignment="Center"
-                        ToolTip="Creates a spool map sheet for one package: 3D and plan views filtered to the package, placed on a sheet, with assembly tags on the 3D view only."/>
-                <Button x:Name="btnPlotPackages"
-                        Grid.Row="3"
-                        Grid.Column="2"
-                        Content="Plot Packages"
-                        Height="32"
-                        Margin="0,10,0,0"
-                        HorizontalContentAlignment="Center"
-                        ToolTip="For each checked package: writes PDF reports into the folder you choose. Existing files with the same names are overwritten — no extra naming dialogs."/>
+                <!-- Every action row uses the same bottom margin (6) for even gaps -->
+                <Grid Margin="0,0,0,6">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="6"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Button x:Name="btnAddToPackage"
+                            Grid.Column="0"
+                            Content="Add to Package"
+                            Height="30"
+                            Margin="0"
+                            Padding="8,0"
+                            HorizontalContentAlignment="Center"/>
+                    <Button x:Name="btnRemoveFromPackage"
+                            Grid.Column="2"
+                            Content="Remove from Package"
+                            Height="30"
+                            Margin="0"
+                            Padding="8,0"
+                            HorizontalContentAlignment="Center"
+                            ToolTip="Clears S-Package on checked assemblies so they are no longer grouped under a package."/>
+                </Grid>
+
+                <Grid Margin="0,0,0,6">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="6"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Button x:Name="btnCreateSpoolSheets"
+                            Grid.Column="0"
+                            Content="Create Spool Sheets"
+                            Height="30"
+                            Margin="0"
+                            Padding="8,0"
+                            Click="BtnCreateSpoolSheets_Click"/>
+                    <Button x:Name="btnOpenSheets"
+                            Grid.Column="2"
+                            Content="Open Sheets"
+                            Height="30"
+                            Margin="0"
+                            Padding="8,0"
+                            ToolTip="Opens every spool sheet for checked rows, in list order. Revit needs one view change per idle cycle — opens quickly in sequence."
+                            Click="BtnOpenSheets_Click"/>
+                </Grid>
+
+                <Grid Margin="0,0,0,6">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="6"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Button x:Name="btnRenameSheets"
+                            Grid.Column="0"
+                            Content="Rename Sheets"
+                            Height="30"
+                            Margin="0"
+                            Padding="8,0"
+                            Click="BtnRenameSheets_Click"/>
+                    <Button x:Name="btnRefreshSheets"
+                            Grid.Column="2"
+                            Content="Refresh Assembly"
+                            Height="30"
+                            Margin="0"
+                            Padding="8,0"
+                            Click="BtnRefreshSheets_Click"/>
+                </Grid>
+
+                <Grid Margin="0,0,0,6">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="6"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Button x:Name="btnCreateSpoolMap"
+                            Grid.Column="0"
+                            Content="Create Spool Map"
+                            Height="30"
+                            Margin="0"
+                            Padding="8,0"
+                            HorizontalContentAlignment="Center"
+                            ToolTip="Creates a spool map sheet for one package: 3D and plan views filtered to the package, placed on a sheet, with assembly tags on the 3D view only."/>
+                    <Button x:Name="btnPlotPackages"
+                            Grid.Column="2"
+                            Content="Plot Packages"
+                            Height="30"
+                            Margin="0"
+                            Padding="8,0"
+                            HorizontalContentAlignment="Center"
+                            ToolTip="For each checked package: writes PDF reports into the folder you choose. Existing files with the same names are overwritten — no extra naming dialogs."/>
+                </Grid>
+
                 <Button x:Name="btnExportToBoardroom"
-                        Grid.Row="4"
-                        Grid.Column="0"
-                        Grid.ColumnSpan="3"
                         Content="Export to Boardroom"
-                        Height="32"
-                        Margin="0,10,0,0"
+                        Height="30"
+                        Margin="0"
+                        Padding="8,0"
                         HorizontalContentAlignment="Center"
                         ToolTip="Exports checked packages (all reports + boardroom-package.json) for Fab and Shipping. Pick a Boardroom project from your projects CSV."/>
-            </Grid>
+            </StackPanel>
         </Grid>
     </Border>
 </UserControl>
-
-
-

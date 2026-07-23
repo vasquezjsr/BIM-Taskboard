@@ -158,6 +158,58 @@ namespace SpoolingSavantV3Exports.Workers
             return name.Contains("HANGER");
         }
 
+        /// <summary>
+        /// MEP Fabrication ductwork — separate spool-content mode from pipework and hangers.
+        /// </summary>
+        public static bool IsFabricationDuctwork(Element element)
+        {
+            if (element == null)
+                return false;
+
+            try
+            {
+                Category category = element.Category;
+                if (category != null && category.Id.Value == (long)BuiltInCategory.OST_FabricationDuctwork)
+                    return true;
+            }
+            catch
+            {
+            }
+
+            return element is FabricationPart part && IsFabricationDuctwork(part);
+        }
+
+        public static bool IsFabricationDuctwork(FabricationPart part)
+        {
+            if (part == null)
+                return false;
+
+            try
+            {
+                Category category = ((Element)part).Category;
+                if (category != null && category.Id.Value == (long)BuiltInCategory.OST_FabricationDuctwork)
+                    return true;
+            }
+            catch
+            {
+            }
+
+            string name = (categoryNameSafe(part) ?? string.Empty).ToUpperInvariant();
+            return name.Contains("DUCT");
+        }
+
+        /// <summary>
+        /// Fabrication pipework / fittings / accessories (not hangers, not ductwork).
+        /// </summary>
+        public static bool IsFabricationPipeworkContent(Element element)
+        {
+            if (element is not FabricationPart part)
+                return false;
+            if (IsFabricationHanger(part) || IsFabricationDuctwork(part))
+                return false;
+            return true;
+        }
+
         private static string categoryNameSafe(FabricationPart part)
         {
             try

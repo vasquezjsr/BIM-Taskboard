@@ -427,13 +427,8 @@ export function projectHasMisplacedZoneTasks(
 }
 
 export function dedupeTasksByProjectTitle(tasks: Task[]): Task[] {
-  const seen = new Set<string>();
-  return tasks.filter((task) => {
-    const key = `${task.projectId}::${task.title}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  // Never drop tasks by title — duplicate titles are valid user data.
+  return tasks;
 }
 
 /** Move Building/Yard (etc.) tasks from the level parent group into the correct zone child group. */
@@ -1449,16 +1444,13 @@ export function ensureProjectHierarchy(
 
     if (!hasLevels) {
       nextGroups = [...nextGroups.filter((g) => g.projectId !== project.id), ...seed.groups];
-      if (branchTaskCount === 0) {
-        nextTasks = [...nextTasks.filter((t) => t.projectId !== project.id), ...seed.tasks];
-      } else {
-        nextTasks = [...nextTasks, ...seed.tasks];
-      }
+      // Additive only — never wipe existing project tasks when seeding hierarchy.
+      nextTasks = [...nextTasks, ...seed.tasks];
       continue;
     }
 
     if (branchTaskCount === 0) {
-      nextTasks = [...nextTasks.filter((t) => t.projectId !== project.id), ...seed.tasks];
+      nextTasks = [...nextTasks, ...seed.tasks];
     }
   }
 

@@ -40,7 +40,7 @@ internal static class AssemblyMemberChangeCoordinator
 	}
 
 	/// <summary>
-	/// Suppresses the automatic member-sync while Spooling Savant V3 (Exports) runs its own operations
+	/// Suppresses the automatic member-sync while Spooling Savant 3.0 runs its own operations
 	/// (creating/refreshing/renaming sheets, applying packages, etc.). Those operations already
 	/// assign item numbers, weld numbers, packages, continuation values and tags inside their own
 	/// transaction, so letting <see cref="OnDocumentChanged"/> queue a full re-sync afterward just
@@ -148,7 +148,8 @@ internal static class AssemblyMemberChangeCoordinator
 		foreach (string transactionName in transactionNames)
 		{
 			if (!string.IsNullOrWhiteSpace(transactionName) &&
-			    transactionName.StartsWith("Spooling Savant V3 (Exports)", StringComparison.Ordinal))
+			    (transactionName.StartsWith("Spooling Savant", StringComparison.Ordinal) ||
+			     transactionName.StartsWith("SS Manager", StringComparison.Ordinal)))
 			{
 				return true;
 			}

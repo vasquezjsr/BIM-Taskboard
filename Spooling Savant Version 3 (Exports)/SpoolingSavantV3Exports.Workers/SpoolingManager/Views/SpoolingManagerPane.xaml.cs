@@ -14,6 +14,8 @@ using Grid = System.Windows.Controls.Grid;
 using RevitView = Autodesk.Revit.DB.View;
 using Visibility = System.Windows.Visibility;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
+using System.Windows.Media.Effects;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using Autodesk.Revit.DB;
@@ -46,7 +48,11 @@ public partial class SpoolingManagerPane : System.Windows.Controls.UserControl
 
 	private bool _themeWatchInitialized;
 
+	private bool _buttonClickSoundsEnabled = true;
+
 	private ApplyAssemblyPackageRequest _pendingApplyReloadHint;
+
+	private bool _deselectRowsAfterPackageApply;
 
 	private UIApplication _uiapp;
 
@@ -54,11 +60,16 @@ public partial class SpoolingManagerPane : System.Windows.Controls.UserControl
 
 	public static readonly DependencyProperty PackageTitleEditorProperty = DependencyProperty.RegisterAttached("PackageTitleEditor", typeof(bool), typeof(SpoolingManagerPane), new PropertyMetadata(false, OnPackageTitleEditorChanged));
 
-	internal Image imgLogo;
+	internal TextBlock txtPaneTitleMode;
 
-	internal TextBlock txtLogoPlaceholder;
+	internal TextBlock txtPaneTitleMain;
+
+	internal Border brdNeonSign;
+
+	internal Border brdPaneShell;
 
 	internal System.Windows.Controls.TextBox txtSearch;
+	internal System.Windows.Controls.ComboBox cmbSpoolContentMode;
 
 	internal System.Windows.Controls.CheckBox chkSelectAll;
 
@@ -74,14 +85,26 @@ public partial class SpoolingManagerPane : System.Windows.Controls.UserControl
 
 	internal System.Windows.Controls.Button btnCreateSpoolMap;
 
+	internal System.Windows.Controls.Button btnAddToPackage;
+
+	internal System.Windows.Controls.Button btnRemoveFromPackage;
+
+	internal System.Windows.Controls.Button btnCreateSpoolSheets;
+
+	internal System.Windows.Controls.Button btnOpenSheets;
+
+	internal System.Windows.Controls.Button btnRenameSheets;
+
+	internal System.Windows.Controls.Button btnRefreshSheets;
+
 	public SpoolingManagerKind ProductKind { get; set; }
 
 	private string ToolDisplayName => ProductKind switch
 	{
-		SpoolingManagerKind.Mmc => "MMC SS Manager", 
-		SpoolingManagerKind.MmcTesting => "MMC SS Manager (Testing)", 
-		SpoolingManagerKind.AutoDimensionLab => "SS Manager (Auto Dim) — Testing", 
-		_ => "SS Manager V3", 
+		SpoolingManagerKind.Mmc => "MMC Spooling Savant",
+		SpoolingManagerKind.MmcTesting => "MMC Spooling Savant (Testing)",
+		SpoolingManagerKind.AutoDimensionLab => "Spooling Savant (Auto Dim) — Testing",
+		_ => "Spooling Savant",
 	};
 
 	[DllImport("user32.dll")]
@@ -126,6 +149,8 @@ public partial class SpoolingManagerPane : System.Windows.Controls.UserControl
 	public SpoolingManagerPane()
 	{
 		InitializeComponent();
+		InitializeNeonSign();
+		ButtonClickSoundService.Attach(this, () => _buttonClickSoundsEnabled);
 		treeAssemblies.DataContext = _packageGroups;
 		if (scrollAssemblyTree != null && treeAssemblies != null)
 		{
@@ -165,6 +190,7 @@ public partial class SpoolingManagerPane : System.Windows.Controls.UserControl
 	private void ApplyUiAppearance()
 	{
 		SsSavantUiAppearance.ApplyToElement(this);
+		RefreshNeonSignForTheme();
 	}
 
 	// Watches Revit's UI theme (light/dark) while the pane is open so the pane re-themes
@@ -233,53 +259,419 @@ public partial class SpoolingManagerPane : System.Windows.Controls.UserControl
 		{
 			ApplyUiAppearance();
 		}
+		RefreshNeonSignForTheme();
 	}
 
 	public void LoadAssemblies(UIApplication uiapp)
 	{
 		_uiapp = uiapp;
-		TryShowWorkersHotloadBanner();
+		SpoolingManagerSettings.SetActiveProject(uiapp?.ActiveUIDocument?.Document);
+		_buttonClickSoundsEnabled = SpoolingManagerSettings.Load(ProductKind).ButtonClickSoundsEnabled;
 		ApplyPlotPackagesButtonVisibility();
+		SyncSpoolContentModeComboFromSettings();
 		if (((uiapp != null) ? uiapp.Application : null) != null)
 		{
 			InstallLayout.ApplyRevitVersionNumber(uiapp.Application.VersionNumber);
 		}
-		LoadSavedLogo();
 		ApplyUiAppearance();
 		RefreshAssemblies();
 	}
 
+	private bool _syncingSpoolContentMode;
+
+	private void SyncSpoolContentModeComboFromSettings()
+	{
+		if (cmbSpoolContentMode == null)
+			return;
+
+		_syncingSpoolContentMode = true;
+		try
+		{
+			string want = SpoolingManagerSettings.Load(ProductKind).GetSpoolContentModeTag();
+			foreach (object item in cmbSpoolContentMode.Items)
+			{
+				if (item is ComboBoxItem cbi && string.Equals(cbi.Tag as string, want, StringComparison.OrdinalIgnoreCase))
+				{
+					cmbSpoolContentMode.SelectedItem = cbi;
+					UpdatePaneTitleFromTag(want);
+					return;
+				}
+			}
+
+			if (cmbSpoolContentMode.Items.Count > 0)
+				cmbSpoolContentMode.SelectedIndex = 0;
+			UpdatePaneTitleFromTag("Fabrication");
+		}
+		finally
+		{
+			_syncingSpoolContentMode = false;
+		}
+	}
+
+	private void CmbSpoolContentMode_SelectionChanged(object sender, SelectionChangedEventArgs e)
+	{
+		if (_syncingSpoolContentMode || cmbSpoolContentMode?.SelectedItem is not ComboBoxItem selected)
+			return;
+
+		string tag = selected.Tag as string ?? "Fabrication";
+		SpoolingManagerSettings settings = SpoolingManagerSettings.Load(ProductKind);
+		string previous = settings.GetSpoolContentModeTag();
+		bool modeChanged = !string.Equals(previous, tag, StringComparison.OrdinalIgnoreCase);
+
+		if (modeChanged)
+		{
+			settings.SetSpoolContentModeTag(tag);
+			if (string.Equals(tag, "NativePipe", StringComparison.OrdinalIgnoreCase))
+			{
+				settings.NumberWeldsEnabled = false;
+				settings.WeldLogEnabled = false;
+			}
+			settings.Save(ProductKind);
+		}
+
+		// Flip on every dropdown change (Fabrication / Families / Duct / Hangers).
+		PlaySpoolContentFlipTransition(
+			midpointAction: () =>
+			{
+				UpdatePaneTitleFromTag(tag);
+				ClearAssemblyRowsForModeSwap();
+			},
+			completedAction: RefreshAssemblies);
+	}
+
 	/// <summary>
-	/// Banner lives in Workers (not the locked host DLL) so every SS Manager ribbon
-	/// reload shows which build is actually running.
+	/// Cheap visual reset used at the flip midpoint so the pane expands with a clean list.
+	/// The expensive Revit queries run in <see cref="RefreshAssemblies"/> after the flip
+	/// finishes; doing them at the midpoint blocked the UI thread and stalled the animation.
 	/// </summary>
-	private static void TryShowWorkersHotloadBanner()
+	private void ClearAssemblyRowsForModeSwap()
+	{
+		foreach (AssemblyRow row in _allRows)
+		{
+			row.PropertyChanged -= OnAssemblyRowPropertyChanged;
+		}
+		_allRows.Clear();
+		_packageGroups.Clear();
+		UpdateActionButtonsEnabledState();
+	}
+
+	private void UpdatePaneTitleFromTag(string tag)
+	{
+		if (txtPaneTitleMode == null)
+		{
+			return;
+		}
+
+		if (string.Equals(tag, "Duct", StringComparison.OrdinalIgnoreCase))
+		{
+			txtPaneTitleMode.Text = "Duct";
+		}
+		else if (string.Equals(tag, "Hangers", StringComparison.OrdinalIgnoreCase))
+		{
+			txtPaneTitleMode.Text = "Hangers";
+		}
+		else if (string.Equals(tag, "NativePipe", StringComparison.OrdinalIgnoreCase))
+		{
+			txtPaneTitleMode.Text = "Families";
+		}
+		else
+		{
+			txtPaneTitleMode.Text = "Fabrication";
+		}
+	}
+
+	// ---- Neon sign (open once) ----------------------------------------------------
+
+	private DropShadowEffect _neonMainGlow;
+	private DropShadowEffect _neonModeGlow;
+	private DropShadowEffect _neonPaneShellGlow;
+	private bool _neonLit;
+	private bool _neonModeActive = true;
+	private bool _neonOpenStrikePlayed;
+	private DispatcherTimer _neonWarmupTimer;
+
+	private const double NeonOffTextOpacity = 0.22;
+	private static readonly TimeSpan NeonWarmupDelay = TimeSpan.FromSeconds(0.65);
+
+	/// <summary>
+	/// Dark mode: on pane open, neons stay dark for a short warm-up, then flicker on
+	/// and stay lit. Light mode: plain Revit-style header / border, no neon.
+	/// </summary>
+	private void InitializeNeonSign()
+	{
+		_neonMainGlow = txtPaneTitleMain?.Effect as DropShadowEffect;
+		_neonModeGlow = txtPaneTitleMode?.Effect as DropShadowEffect;
+		_neonPaneShellGlow = brdPaneShell?.Effect as DropShadowEffect;
+		RefreshNeonSignForTheme();
+		Loaded += OnNeonSignLoaded;
+		Unloaded += OnNeonSignUnloaded;
+	}
+
+	private void OnNeonSignLoaded(object sender, RoutedEventArgs e)
+	{
+		Loaded -= OnNeonSignLoaded;
+		// Start dark, wait for warm-up, then strike — only when the pane first appears.
+		Dispatcher.BeginInvoke(new Action(BeginNeonOpenWarmup), DispatcherPriority.Loaded);
+	}
+
+	private void OnNeonSignUnloaded(object sender, RoutedEventArgs e)
+	{
+		StopNeonWarmupTimer();
+	}
+
+	private void BeginNeonOpenWarmup()
+	{
+		if (!_neonModeActive || _neonOpenStrikePlayed)
+		{
+			return;
+		}
+
+		StopNeonAnimations();
+		_neonLit = false;
+		SsSavantNeonChrome.ApplyPaneSignChrome(brdNeonSign, txtPaneTitleMain, txtPaneTitleMode, neon: true, lit: false);
+		SsSavantNeonChrome.ApplyPaneOuterShell(brdPaneShell, neon: true, lit: false);
+
+		StopNeonWarmupTimer();
+		_neonWarmupTimer = new DispatcherTimer
+		{
+			Interval = NeonWarmupDelay
+		};
+		_neonWarmupTimer.Tick += delegate
+		{
+			StopNeonWarmupTimer();
+			PlayNeonOpenStrike();
+		};
+		_neonWarmupTimer.Start();
+	}
+
+	private void StopNeonWarmupTimer()
+	{
+		if (_neonWarmupTimer != null)
+		{
+			_neonWarmupTimer.Stop();
+			_neonWarmupTimer = null;
+		}
+	}
+
+	/// <summary>
+	/// Neon strike after warm-up — ribbon open or first appearance this session.
+	/// </summary>
+	private void PlayNeonOpenStrike()
+	{
+		if (!_neonModeActive)
+		{
+			return;
+		}
+		_neonOpenStrikePlayed = true;
+		StopNeonAnimations();
+		_neonLit = false;
+		SsSavantNeonChrome.ApplyPaneSignChrome(brdNeonSign, txtPaneTitleMain, txtPaneTitleMode, neon: true, lit: false);
+		SsSavantNeonChrome.ApplyPaneOuterShell(brdPaneShell, neon: true, lit: false);
+		IgniteNeonSign();
+	}
+
+	private void RefreshNeonSignForTheme()
+	{
+		_neonModeActive = SsSavantNeonChrome.IsNeonEnabled;
+		StopNeonAnimations();
+		if (!_neonModeActive)
+		{
+			StopNeonWarmupTimer();
+			_neonLit = false;
+			SsSavantNeonChrome.ApplyPaneSignChrome(brdNeonSign, txtPaneTitleMain, txtPaneTitleMode, neon: false, lit: true);
+			SsSavantNeonChrome.ApplyPaneOuterShell(brdPaneShell, neon: false, lit: true);
+			Background = brdPaneShell?.Background;
+			_neonMainGlow = null;
+			_neonModeGlow = null;
+			_neonPaneShellGlow = null;
+			return;
+		}
+
+		// Restore glow effect objects after a light→dark switch (they were cleared).
+		if (txtPaneTitleMain != null && txtPaneTitleMain.Effect == null)
+		{
+			txtPaneTitleMain.Effect = new DropShadowEffect
+			{
+				Color = SsSavantNeonChrome.NeonTitleGlow,
+				BlurRadius = 18,
+				ShadowDepth = 0,
+				Opacity = 0.0
+			};
+		}
+		if (txtPaneTitleMode != null && txtPaneTitleMode.Effect == null)
+		{
+			txtPaneTitleMode.Effect = new DropShadowEffect
+			{
+				Color = SsSavantNeonChrome.NeonModeGlow,
+				BlurRadius = 14,
+				ShadowDepth = 0,
+				Opacity = 0.0
+			};
+		}
+		if (brdPaneShell != null && brdPaneShell.Effect == null)
+		{
+			brdPaneShell.Effect = new DropShadowEffect
+			{
+				Color = SsSavantNeonChrome.DarkBorderColor,
+				BlurRadius = 14,
+				ShadowDepth = 0,
+				Opacity = 0.0
+			};
+		}
+		_neonMainGlow = txtPaneTitleMain?.Effect as DropShadowEffect;
+		_neonModeGlow = txtPaneTitleMode?.Effect as DropShadowEffect;
+		_neonPaneShellGlow = brdPaneShell?.Effect as DropShadowEffect;
+
+		// After the open strike, stay lit across theme ticks. Before that, stay dark
+		// until PlayNeonOpenStrike runs.
+		bool lit = _neonOpenStrikePlayed || _neonLit;
+		_neonLit = lit;
+		SsSavantNeonChrome.ApplyPaneSignChrome(brdNeonSign, txtPaneTitleMain, txtPaneTitleMode, neon: true, lit: lit);
+		SsSavantNeonChrome.ApplyPaneOuterShell(brdPaneShell, neon: true, lit: lit);
+		Background = brdPaneShell?.Background;
+	}
+
+	private void IgniteNeonSign()
+	{
+		if (!_neonModeActive)
+		{
+			return;
+		}
+		if (_neonLit)
+		{
+			return;
+		}
+		_neonLit = true;
+		SsSavantNeonChrome.ApplyPaneSignChrome(brdNeonSign, txtPaneTitleMain, txtPaneTitleMode, neon: true, lit: true);
+		SsSavantNeonChrome.ApplyPaneOuterShell(brdPaneShell, neon: true, lit: true);
+
+		// Set the final (lit) base values, then run a flicker that overrides them
+		// briefly — when it finishes the base values remain.
+		try
+		{
+			if (txtPaneTitleMain != null)
+			{
+				txtPaneTitleMain.Opacity = 1.0;
+				txtPaneTitleMain.BeginAnimation(OpacityProperty, BuildNeonStrike(NeonOffTextOpacity, 1.0));
+			}
+			if (txtPaneTitleMode != null)
+			{
+				txtPaneTitleMode.Opacity = 1.0;
+				txtPaneTitleMode.BeginAnimation(OpacityProperty, BuildNeonStrike(NeonOffTextOpacity, 1.0));
+			}
+			_neonMainGlow?.BeginAnimation(DropShadowEffect.OpacityProperty, BuildNeonStrike(0.0, 0.95));
+			if (_neonMainGlow != null)
+			{
+				_neonMainGlow.Opacity = 0.95;
+			}
+			_neonModeGlow?.BeginAnimation(DropShadowEffect.OpacityProperty, BuildNeonStrike(0.0, 0.95));
+			if (_neonModeGlow != null)
+			{
+				_neonModeGlow.Opacity = 0.95;
+			}
+			_neonPaneShellGlow?.BeginAnimation(DropShadowEffect.OpacityProperty, BuildNeonStrike(0.0, 0.45));
+			if (_neonPaneShellGlow != null)
+			{
+				_neonPaneShellGlow.Opacity = 0.45;
+			}
+		}
+		catch
+		{
+			// If anything about animation fails, land in the fully lit state.
+			StopNeonAnimations();
+		}
+	}
+
+	private void StopNeonAnimations()
+	{
+		txtPaneTitleMain?.BeginAnimation(OpacityProperty, null);
+		txtPaneTitleMode?.BeginAnimation(OpacityProperty, null);
+		_neonMainGlow?.BeginAnimation(DropShadowEffect.OpacityProperty, null);
+		_neonModeGlow?.BeginAnimation(DropShadowEffect.OpacityProperty, null);
+		_neonPaneShellGlow?.BeginAnimation(DropShadowEffect.OpacityProperty, null);
+	}
+
+	/// <summary>
+	/// Neon tube strike: a few abrupt off/on flashes before holding steady. Discrete
+	/// keyframes give the hard flicker of a real sign catching. FillBehavior.Stop lets
+	/// the pre-set lit base value take over when the flicker ends.
+	/// </summary>
+	private static DoubleAnimationUsingKeyFrames BuildNeonStrike(double off, double lit)
+	{
+		DoubleAnimationUsingKeyFrames animation = new DoubleAnimationUsingKeyFrames
+		{
+			Duration = TimeSpan.FromMilliseconds(560),
+			FillBehavior = FillBehavior.Stop
+		};
+		void At(double ms, double fraction)
+		{
+			animation.KeyFrames.Add(new DiscreteDoubleKeyFrame(
+				off + (lit - off) * fraction,
+				KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(ms))));
+		}
+		At(0, 0.0);
+		At(50, 0.85);
+		At(95, 0.10);
+		At(160, 0.90);
+		At(215, 0.25);
+		At(290, 1.0);
+		At(360, 0.55);
+		At(430, 1.0);
+		At(560, 1.0);
+		return animation;
+	}
+
+	/// <summary>
+	/// Horizontal flip illusion when the Spool Content mode changes: the pane squeezes to
+	/// an edge-on sliver, the title/list swap at the midpoint, then it expands back out.
+	/// Keep <paramref name="midpointAction"/> cheap (UI-only) — anything slow stalls the
+	/// animation because it runs on the UI thread between the two halves. Expensive work
+	/// (Revit element queries) belongs in <paramref name="completedAction"/>, which is
+	/// dispatched at Background priority after the expand has rendered.
+	/// </summary>
+	private void PlaySpoolContentFlipTransition(Action midpointAction, Action completedAction = null)
 	{
 		try
 		{
-			Assembly asm = typeof(SpoolingManagerPane).Assembly;
-			string tag = CreateSpoolSheetsHandler.DiagnosticBuildTag;
-			string ver = asm.GetName().Version?.ToString() ?? "?";
-			string loc = asm.Location ?? "(no location)";
-			string lwt = File.Exists(loc) ? File.GetLastWriteTime(loc).ToString("yyyy-MM-dd HH:mm:ss") : "n/a";
-			// Always show — proves which Workers build the ribbon actually loaded.
-			TaskDialog.Show(
-				"SS Manager V3",
-				"Workers loaded:\n"
-				+ tag + "\n"
-				+ "Version: " + ver + "\n"
-				+ "LastWriteTime: " + lwt + "\n\n"
-				+ loc);
+			ScaleTransform flip = new ScaleTransform(1.0, 1.0);
+			RenderTransformOrigin = new System.Windows.Point(0.5, 0.5);
+			RenderTransform = flip;
+			DoubleAnimation shrink = new DoubleAnimation(1.0, 0.0, TimeSpan.FromMilliseconds(170))
+			{
+				EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseIn }
+			};
+			shrink.Completed += (_, __) =>
+			{
+				try
+				{
+					midpointAction?.Invoke();
+				}
+				catch
+				{
+				}
+				DoubleAnimation expand = new DoubleAnimation(0.0, 1.0, TimeSpan.FromMilliseconds(170))
+				{
+					EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut }
+				};
+				expand.Completed += (_, ___) =>
+				{
+					flip.BeginAnimation(ScaleTransform.ScaleXProperty, null);
+					flip.ScaleX = 1.0;
+					RenderTransform = null;
+					if (completedAction != null)
+					{
+						// Let the fully expanded frame paint before the heavy refresh runs.
+						Dispatcher.BeginInvoke(completedAction, DispatcherPriority.Background);
+					}
+				};
+				flip.BeginAnimation(ScaleTransform.ScaleXProperty, expand);
+			};
+			flip.BeginAnimation(ScaleTransform.ScaleXProperty, shrink);
 		}
-		catch (Exception ex)
+		catch
 		{
-			try
-			{
-				TaskDialog.Show("SS Manager V3", "Workers banner failed:\n" + ex.Message);
-			}
-			catch
-			{
-			}
+			midpointAction?.Invoke();
+			completedAction?.Invoke();
 		}
 	}
 
@@ -293,10 +685,12 @@ public partial class SpoolingManagerPane : System.Windows.Controls.UserControl
 		_packageGroups.Clear();
 		if (_uiapp == null || _uiapp.ActiveUIDocument == null)
 		{
+			UpdateActionButtonsEnabledState();
 			return;
 		}
 		UIDocument activeUIDocument = _uiapp.ActiveUIDocument;
 		Document doc = activeUIDocument.Document;
+		SpoolingManagerSettings.SetActiveProject(doc);
 		RevitView activeView = doc.ActiveView;
 		if (activeView == null)
 		{
@@ -310,7 +704,11 @@ public partial class SpoolingManagerPane : System.Windows.Controls.UserControl
 			})
 			where x != null
 			select x).OrderBy((AssemblyInstance x) => AssemblyDisplayName.Get(x), StringComparer.OrdinalIgnoreCase).ToList();
-		HashSet<ElementId> hashSet = CreateSpoolSheetsHandler.GetAssemblyInstanceIdsHavingSpoolSheet(regularSheetBranch: UsesRegularSheetBranchForActiveProduct(), doc: doc, displayedAssemblyInstanceIds: visibleAssemblyIdsInActiveView);
+
+		string contentMode = SpoolingManagerSettings.Load(ProductKind).GetSpoolContentModeTag();
+		list = list.Where((AssemblyInstance a) => AssemblyMatchesSpoolContentMode(doc, a, contentMode)).ToList();
+
+		HashSet<ElementId> hashSet = CreateSpoolSheetsHandler.GetAssemblyInstanceIdsHavingSpoolSheet(regularSheetBranch: UsesRegularSheetBranchForActiveProduct(), doc: doc, displayedAssemblyInstanceIds: list.Select(a => ((Element)a).Id).ToList());
 		foreach (AssemblyInstance item in list)
 		{
 			AssemblyRow assemblyRow = new AssemblyRow
@@ -327,6 +725,72 @@ public partial class SpoolingManagerPane : System.Windows.Controls.UserControl
 		ApplyFilter();
 		chkSelectAll.IsChecked = false;
 		_assemblyShiftAnchorRow = null;
+		UpdateActionButtonsEnabledState();
+	}
+
+	/// <summary>
+	/// Fabrication = has fabrication pipework (may also include hangers).
+	/// Families = has native pipe/fitting/accessory.
+	/// Duct = fabrication members are ductwork only (no pipework, no hangers, no native).
+	/// Hangers = fabrication members are hangers only (no pipework, no duct, no native).
+	/// </summary>
+	private static bool AssemblyMatchesSpoolContentMode(Document doc, AssemblyInstance assembly, string contentMode)
+	{
+		if (doc == null || assembly == null)
+			return false;
+
+		bool hasNative = false;
+		bool hasPipework = false;
+		bool hasDuct = false;
+		bool hasHanger = false;
+
+		foreach (ElementId memberId in assembly.GetMemberIds())
+		{
+			Element member = doc.GetElement(memberId);
+			if (member == null)
+				continue;
+
+			if (NativePipeSpoolSupport.IsNativePipeworkElement(member))
+			{
+				hasNative = true;
+				continue;
+			}
+
+			if (FabricationPartClassification.IsFabricationHanger(member))
+			{
+				hasHanger = true;
+				continue;
+			}
+
+			if (FabricationPartClassification.IsFabricationDuctwork(member))
+			{
+				hasDuct = true;
+				continue;
+			}
+
+			if (FabricationPartClassification.IsFabricationPipeworkContent(member))
+			{
+				hasPipework = true;
+			}
+		}
+
+		if (string.Equals(contentMode, "NativePipe", StringComparison.OrdinalIgnoreCase))
+		{
+			return hasNative;
+		}
+
+		if (string.Equals(contentMode, "Duct", StringComparison.OrdinalIgnoreCase))
+		{
+			return hasDuct && !hasPipework && !hasHanger && !hasNative;
+		}
+
+		if (string.Equals(contentMode, "Hangers", StringComparison.OrdinalIgnoreCase))
+		{
+			return hasHanger && !hasPipework && !hasDuct && !hasNative;
+		}
+
+		// Fabrication pipework mode: must include pipework content (mixed hangers OK).
+		return hasPipework;
 	}
 
 	private static string ReadSPackageFromAssembly(AssemblyInstance assembly)
@@ -418,6 +882,53 @@ public partial class SpoolingManagerPane : System.Windows.Controls.UserControl
 			}
 		}
 		UpdateSelectAllState();
+		UpdateActionButtonsEnabledState();
+	}
+
+	/// <summary>
+	/// Sheet/package action buttons need checked rows; Spool Map and Plot Packages
+	/// additionally need at least one checked row that belongs to a package.
+	/// </summary>
+	private void UpdateActionButtonsEnabledState()
+	{
+		bool anySelected = _allRows.Any((AssemblyRow x) => x.IsSelected);
+		bool packageSelected = _allRows.Any((AssemblyRow x) => x.IsSelected && !string.IsNullOrWhiteSpace(x.SPackage));
+		if (btnAddToPackage != null)
+		{
+			btnAddToPackage.IsEnabled = anySelected;
+		}
+		if (btnRemoveFromPackage != null)
+		{
+			btnRemoveFromPackage.IsEnabled = anySelected;
+		}
+		if (btnCreateSpoolSheets != null)
+		{
+			btnCreateSpoolSheets.IsEnabled = anySelected;
+		}
+		if (btnOpenSheets != null)
+		{
+			btnOpenSheets.IsEnabled = anySelected;
+		}
+		if (btnRenameSheets != null)
+		{
+			btnRenameSheets.IsEnabled = anySelected;
+		}
+		if (btnRefreshSheets != null)
+		{
+			btnRefreshSheets.IsEnabled = anySelected;
+		}
+		if (btnCreateSpoolMap != null)
+		{
+			btnCreateSpoolMap.IsEnabled = packageSelected;
+		}
+		if (btnPlotPackages != null)
+		{
+			btnPlotPackages.IsEnabled = packageSelected;
+		}
+		if (btnExportToBoardroom != null)
+		{
+			btnExportToBoardroom.IsEnabled = packageSelected;
+		}
 	}
 
 	private void ApplyFilter()
@@ -543,7 +1054,7 @@ public partial class SpoolingManagerPane : System.Windows.Controls.UserControl
 		//IL_00af: Invalid comparison between Unknown and I4
 		if (_uiapp == null || _uiapp.ActiveUIDocument == null)
 		{
-			System.Windows.MessageBox.Show("No active Revit document was found.", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
+			SsSavantMessageBox.Show("No active Revit document was found.", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
 			return;
 		}
 		UIDocument activeUIDocument = _uiapp.ActiveUIDocument;
@@ -552,7 +1063,7 @@ public partial class SpoolingManagerPane : System.Windows.Controls.UserControl
 		List<ElementId> list = CollectTemporaryVisibilityTargets(document, activeUIDocument, selectedRows);
 		if (list.Count == 0)
 		{
-			System.Windows.MessageBox.Show("Check one or more assemblies in the list and/or select fabrication pipework or model assemblies in Revit, then try again.", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Asterisk);
+			SsSavantMessageBox.Show("Check one or more assemblies in the list and/or select fabrication pipework or model assemblies in Revit, then try again.", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Asterisk);
 			return;
 		}
 		RevitRequestBridge.Initialize();
@@ -562,7 +1073,7 @@ public partial class SpoolingManagerPane : System.Windows.Controls.UserControl
 			MemberElementIds = list
 		}) == 2)
 		{
-			System.Windows.MessageBox.Show("Revit did not run the request (another dialog may be open or the session is busy). Close other dialogs and try again.", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
+			SsSavantMessageBox.Show("Revit did not run the request (another dialog may be open or the session is busy). Close other dialogs and try again.", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
 		}
 	}
 
@@ -813,58 +1324,66 @@ public partial class SpoolingManagerPane : System.Windows.Controls.UserControl
 
 	private void OpenSettingsWindow()
 	{
+		SetSettingsButtonLit(true);
 		try
 		{
 			AssemblySettingsWindow assemblySettingsWindow = new AssemblySettingsWindow(_uiapp, ProductKind);
-			Window window = Window.GetWindow(this);
-			if (window != null)
-			{
-				assemblySettingsWindow.Owner = window;
-			}
-			if (assemblySettingsWindow.ShowDialog() == true)
-			{
-				LoadSavedLogo();
-			}
+			SsSavantDialogForeground.Attach(assemblySettingsWindow, _uiapp);
+			assemblySettingsWindow.ShowDialog();
+			_buttonClickSoundsEnabled = SpoolingManagerSettings.Load(ProductKind).ButtonClickSoundsEnabled;
 		}
 		catch (Exception ex)
 		{
-			System.Windows.MessageBox.Show("Could not open Settings.\n\n" + ex.Message, ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Hand);
+			SsSavantMessageBox.Show("Could not open Settings.\n\n" + ex.Message, ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Hand);
+		}
+		finally
+		{
+			SetSettingsButtonLit(false);
 		}
 	}
 
-	private void LoadSavedLogo()
+	private void SetSettingsButtonLit(bool lit)
 	{
-		imgLogo.Source = null;
-		txtLogoPlaceholder.Visibility = Visibility.Visible;
-		SpoolingManagerSettings settings = SpoolingManagerSettings.Load(ProductKind);
-		string logoPath = settings.LogoImagePath ?? string.Empty;
-		BitmapSource bitmapSource = AssemblySettingsWindow.DecodeLogoBitmap(logoPath);
-		if (bitmapSource == null)
+		System.Windows.Controls.Button settingsButton = SpoolingManagerXamlLoader.Find<System.Windows.Controls.Button>(this, "btnPaneSettings");
+		if (settingsButton == null)
 		{
-			bitmapSource = AssemblySettingsWindow.DecodeLogoBitmap(ResolveBundledLogoPath());
+			return;
 		}
-		if (bitmapSource != null)
-		{
-			imgLogo.Source = bitmapSource;
-			txtLogoPlaceholder.Visibility = Visibility.Collapsed;
-		}
-	}
 
-	private static string ResolveBundledLogoPath()
-	{
-		try
+		if (lit && SsSavantNeonChrome.IsNeonEnabled)
 		{
-			string deployed = Path.Combine(InstallLayout.GetAddinsRoot(), "Spooling-Savant-V3-Exports", "Icons", "SpoolingSavantLogo.png");
-			if (File.Exists(deployed))
+			settingsButton.BorderBrush = new SolidColorBrush(SsSavantNeonChrome.DarkBorderColor);
+			settingsButton.BorderThickness = new Thickness(2);
+			settingsButton.Effect = new DropShadowEffect
 			{
-				return deployed;
+				Color = SsSavantNeonChrome.DarkBorderColor,
+				BlurRadius = 14,
+				ShadowDepth = 0,
+				Opacity = 0.85
+			};
+			if (settingsButton.Content is TextBlock icon)
+			{
+				icon.Foreground = new SolidColorBrush(SsSavantNeonChrome.NeonModeColor);
+				icon.Effect = new DropShadowEffect
+				{
+					Color = SsSavantNeonChrome.NeonModeGlow,
+					BlurRadius = 12,
+					ShadowDepth = 0,
+					Opacity = 0.9
+				};
 			}
 		}
-		catch
+		else
 		{
+			settingsButton.ClearValue(System.Windows.Controls.Control.BorderBrushProperty);
+			settingsButton.ClearValue(System.Windows.Controls.Control.BorderThicknessProperty);
+			settingsButton.Effect = null;
+			if (settingsButton.Content is TextBlock icon)
+			{
+				icon.Effect = null;
+				icon.SetResourceReference(TextBlock.ForegroundProperty, "SsSavantForegroundPrimary");
+			}
 		}
-
-		return string.Empty;
 	}
 
 	private void BtnCreateSpoolSheets_Click(object sender, RoutedEventArgs e)
@@ -875,17 +1394,17 @@ public partial class SpoolingManagerPane : System.Windows.Controls.UserControl
 			select x).ToList();
 		if (list.Count == 0)
 		{
-			System.Windows.MessageBox.Show("Please select at least one assembly before creating spool sheets.", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
+			SsSavantMessageBox.Show("Please select at least one assembly before creating spool sheets.", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
 			return;
 		}
 		if (_uiapp == null || _uiapp.ActiveUIDocument == null)
 		{
-			System.Windows.MessageBox.Show("No active Revit document was found.", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
+			SsSavantMessageBox.Show("No active Revit document was found.", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
 			return;
 		}
 		if (string.IsNullOrWhiteSpace(SpoolingManagerSettings.Load(ProductKind).TitleBlockName))
 		{
-			System.Windows.MessageBox.Show("Please select a Title Block in Settings first.", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
+			SsSavantMessageBox.Show("Please select a Title Block in Settings first.", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
 			return;
 		}
 		CreateSpoolSheetsRequest createSpoolSheetsRequest = new CreateSpoolSheetsRequest
@@ -926,14 +1445,15 @@ public partial class SpoolingManagerPane : System.Windows.Controls.UserControl
 			catch
 			{
 			}
-			OperationProgressSession.Show(ToolDisplayName, hostWindow, hostHwnd);
+			OperationProgressSession.Show(ToolDisplayName, hostWindow, hostHwnd,
+				allowCancel: true, neonProgressText: "Sheets Completed");
 			OperationProgressSession.Report(1.0, "Queued…", list.Count + " spool(s) selected");
 			RevitRequestBridge.RaiseCreateSheets(createSpoolSheetsRequest);
 		}
 		catch (Exception ex)
 		{
 			OperationProgressSession.Close();
-			System.Windows.MessageBox.Show("Failed to start sheet creation.\n\n" + ex.Message, ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Hand);
+			SsSavantMessageBox.Show("Failed to start sheet creation.\n\n" + ex.Message, ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Hand);
 		}
 	}
 
@@ -944,12 +1464,12 @@ public partial class SpoolingManagerPane : System.Windows.Controls.UserControl
 		List<AssemblyRow> list = _allRows.Where((AssemblyRow x) => x.IsSelected).ToList();
 		if (list.Count == 0)
 		{
-			System.Windows.MessageBox.Show("Please select at least one assembly before opening sheets.", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
+			SsSavantMessageBox.Show("Please select at least one assembly before opening sheets.", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
 			return;
 		}
 		if (_uiapp == null || _uiapp.ActiveUIDocument == null)
 		{
-			System.Windows.MessageBox.Show("No active Revit document was found.", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
+			SsSavantMessageBox.Show("No active Revit document was found.", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
 			return;
 		}
 		Document document = _uiapp.ActiveUIDocument.Document;
@@ -966,11 +1486,11 @@ public partial class SpoolingManagerPane : System.Windows.Controls.UserControl
 		}
 		if (list2.Count == 0)
 		{
-			System.Windows.MessageBox.Show("No spool sheets were found for the selected rows.", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
+			SsSavantMessageBox.Show("No spool sheets were found for the selected rows.", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
 		}
 		else if ((int)RevitRequestBridge.RaiseOpenSpoolSheets(list2.ConvertAll((ViewSheet s) => ((Element)s).Id)) == 2)
 		{
-			System.Windows.MessageBox.Show("Revit could not open sheets (for example, another dialog may be blocking the session). Close it and try again.", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
+			SsSavantMessageBox.Show("Revit could not open sheets (for example, another dialog may be blocking the session). Close it and try again.", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
 		}
 	}
 
@@ -982,12 +1502,12 @@ public partial class SpoolingManagerPane : System.Windows.Controls.UserControl
 			select x).ToList();
 		if (list.Count == 0)
 		{
-			System.Windows.MessageBox.Show("Please select at least one assembly before renaming sheets.", "Rename Sheets", MessageBoxButton.OK, MessageBoxImage.Exclamation);
+			SsSavantMessageBox.Show("Please select at least one assembly before renaming sheets.", "Rename Sheets", MessageBoxButton.OK, MessageBoxImage.Exclamation);
 			return;
 		}
 		if (_uiapp == null || _uiapp.ActiveUIDocument == null)
 		{
-			System.Windows.MessageBox.Show("No active Revit document was found.", "Rename Sheets", MessageBoxButton.OK, MessageBoxImage.Exclamation);
+			SsSavantMessageBox.Show("No active Revit document was found.", "Rename Sheets", MessageBoxButton.OK, MessageBoxImage.Exclamation);
 			return;
 		}
 		RenameSheetsWindow renameSheetsWindow = new RenameSheetsWindow(list.Select((AssemblyRow x) => new RenameSheetRow
@@ -1014,7 +1534,7 @@ public partial class SpoolingManagerPane : System.Windows.Controls.UserControl
 		}
 		catch (Exception ex)
 		{
-			System.Windows.MessageBox.Show("Failed to start sheet rename.\n\n" + ex.Message, "Rename Sheets", MessageBoxButton.OK, MessageBoxImage.Hand);
+			SsSavantMessageBox.Show("Failed to start sheet rename.\n\n" + ex.Message, "Rename Sheets", MessageBoxButton.OK, MessageBoxImage.Hand);
 		}
 	}
 
@@ -1026,12 +1546,12 @@ public partial class SpoolingManagerPane : System.Windows.Controls.UserControl
 			select x).ToList();
 		if (list.Count == 0)
 		{
-			System.Windows.MessageBox.Show("Please select at least one assembly before refreshing.", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
+			SsSavantMessageBox.Show("Please select at least one assembly before refreshing.", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
 			return;
 		}
 		if (_uiapp == null || _uiapp.ActiveUIDocument == null)
 		{
-			System.Windows.MessageBox.Show("No active Revit document was found.", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
+			SsSavantMessageBox.Show("No active Revit document was found.", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
 			return;
 		}
 		RefreshSheetsRequest request = new RefreshSheetsRequest
@@ -1045,7 +1565,7 @@ public partial class SpoolingManagerPane : System.Windows.Controls.UserControl
 		}
 		catch (Exception ex)
 		{
-			System.Windows.MessageBox.Show("Failed to start assembly refresh.\n\n" + ex.Message, ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Hand);
+			SsSavantMessageBox.Show("Failed to start assembly refresh.\n\n" + ex.Message, ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Hand);
 		}
 	}
 
@@ -1057,7 +1577,7 @@ public partial class SpoolingManagerPane : System.Windows.Controls.UserControl
 		}
 		if (_uiapp == null || _uiapp.ActiveUIDocument == null)
 		{
-			System.Windows.MessageBox.Show("No active Revit document was found.", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
+			SsSavantMessageBox.Show("No active Revit document was found.", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
 			return;
 		}
 		List<CreateSpoolMapPackageOption> packageOptions = _packageGroups
@@ -1077,7 +1597,7 @@ public partial class SpoolingManagerPane : System.Windows.Controls.UserControl
 			.ToList();
 		if (packageOptions.Count == 0)
 		{
-			System.Windows.MessageBox.Show("No packages were found in the assembly list. Refresh the list, then try again.", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
+			SsSavantMessageBox.Show("No packages were found in the assembly list. Refresh the list, then try again.", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
 			return;
 		}
 		SpoolingManagerSettings settings = SpoolingManagerSettings.Load(ProductKind);
@@ -1103,7 +1623,7 @@ public partial class SpoolingManagerPane : System.Windows.Controls.UserControl
 			request.PackageValue,
 			out string existingDescription))
 		{
-			System.Windows.MessageBoxResult overwrite = System.Windows.MessageBox.Show(
+			System.Windows.MessageBoxResult overwrite = SsSavantMessageBox.Show(
 				"Spool Map already exists for package '" + (request.PackageLabel ?? string.Empty) + "'.\n\n" +
 				existingDescription + "\n\nOverwrite the existing Spool Map sheet and views?",
 				"Spool Map Already Exists",
@@ -1120,100 +1640,12 @@ public partial class SpoolingManagerPane : System.Windows.Controls.UserControl
 		{
 			if ((int)RevitRequestBridge.RaiseCreateSpoolMap(request) == 2)
 			{
-				System.Windows.MessageBox.Show("Revit did not queue Create Spool Map—another modal dialog may be open, or the session is busy. Close other dialogs and try again.", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
+				SsSavantMessageBox.Show("Revit did not queue Create Spool Map—another modal dialog may be open, or the session is busy. Close other dialogs and try again.", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
 			}
 		}
 		catch (Exception ex)
 		{
-			System.Windows.MessageBox.Show("Failed to start Create Spool Map.\n\n" + ex.Message, ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Hand);
-		}
-	}
-
-	private void BtnPlotPackages_Click(object sender, RoutedEventArgs e)
-	{
-		//IL_01a9: Unknown result type (might be due to invalid IL or missing references)
-		//IL_01af: Invalid comparison between Unknown and I4
-		if (ProductKind != SpoolingManagerKind.Standard)
-		{
-			return;
-		}
-		List<AssemblyRow> list = (from x in _allRows
-			where x.IsSelected
-			orderby x.SpoolName
-			select x).ToList();
-		if (list.Count == 0)
-		{
-			System.Windows.MessageBox.Show("Select assemblies whose packages you want to plot (grouped by S-Package). Choose report types next, then a folder for the PDFs.", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
-			return;
-		}
-		if (_uiapp == null || _uiapp.ActiveUIDocument == null)
-		{
-			System.Windows.MessageBox.Show("No active Revit document was found.", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
-			return;
-		}
-		List<PlotPackageBatch> batches = (from g in list.GroupBy((AssemblyRow r) => (!string.IsNullOrWhiteSpace(r.SPackage)) ? r.SPackage.Trim() : string.Empty, StringComparer.OrdinalIgnoreCase)
-			select new PlotPackageBatch
-			{
-				PackageLabel = (string.IsNullOrEmpty(g.Key) ? "(No package)" : g.Key),
-				AssemblyIds = g.Select((AssemblyRow x) => x.AssemblyId).Distinct().ToList()
-			}).ToList();
-		string defaultProject = string.Empty;
-		try
-		{
-			Document activeDoc = _uiapp.ActiveUIDocument.Document;
-			if (activeDoc?.ProjectInformation != null && !string.IsNullOrWhiteSpace(activeDoc.ProjectInformation.Name))
-			{
-				defaultProject = activeDoc.ProjectInformation.Name.Trim();
-			}
-			else if (!string.IsNullOrWhiteSpace(activeDoc?.Title))
-			{
-				defaultProject = activeDoc.Title.Trim();
-			}
-		}
-		catch
-		{
-		}
-		PlotPackagesReportPickerWindow plotPackagesReportPickerWindow = new PlotPackagesReportPickerWindow(
-			defaultProject,
-			Environment.UserName,
-			DateTime.Now.ToString("M/d/yyyy h:mm:ss tt"));
-		Window window = Window.GetWindow(this);
-		if (window != null)
-		{
-			plotPackagesReportPickerWindow.Owner = window;
-		}
-		if (plotPackagesReportPickerWindow.ShowDialog() != true || plotPackagesReportPickerWindow.SelectedOptions == null)
-		{
-			return;
-		}
-		PlotPackagesReportOptions selectedOptions = plotPackagesReportPickerWindow.SelectedOptions;
-		string outputFolder;
-		using (FolderBrowserDialog folderBrowserDialog = new FolderBrowserDialog())
-		{
-			folderBrowserDialog.Description = "Select folder for PDF files (only the reports you chose; same file names overwrite).";
-			if (folderBrowserDialog.ShowDialog() != DialogResult.OK || string.IsNullOrWhiteSpace(folderBrowserDialog.SelectedPath))
-			{
-				return;
-			}
-			outputFolder = folderBrowserDialog.SelectedPath.Trim();
-		}
-		PlotPackagesRequest request = new PlotPackagesRequest
-		{
-			OutputFolder = outputFolder,
-			Batches = batches,
-			ProductKind = ProductKind,
-			ReportOptions = selectedOptions
-		};
-		try
-		{
-			if ((int)RevitRequestBridge.RaisePlotPackages(request) == 2)
-			{
-				System.Windows.MessageBox.Show("Revit did not queue Plot Packages—another modal dialog may be open, or the session is busy. Close other dialogs and try again.", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
-			}
-		}
-		catch (Exception ex)
-		{
-			System.Windows.MessageBox.Show("Failed to start plot.\n\n" + ex.Message, ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Hand);
+			SsSavantMessageBox.Show("Failed to start Create Spool Map.\n\n" + ex.Message, ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Hand);
 		}
 	}
 
@@ -1230,13 +1662,13 @@ public partial class SpoolingManagerPane : System.Windows.Controls.UserControl
 			select x).ToList();
 		if (list.Count == 0)
 		{
-			System.Windows.MessageBox.Show("Select assemblies whose packages you want to export (grouped by S-Package).", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
+			SsSavantMessageBox.Show("Select assemblies whose packages you want to export (grouped by S-Package).", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
 			return;
 		}
 
 		if (_uiapp == null || _uiapp.ActiveUIDocument == null)
 		{
-			System.Windows.MessageBox.Show("No active Revit document was found.", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
+			SsSavantMessageBox.Show("No active Revit document was found.", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
 			return;
 		}
 
@@ -1247,7 +1679,7 @@ public partial class SpoolingManagerPane : System.Windows.Controls.UserControl
 		{
 			if (!api.TryHealth(out string healthMessage))
 			{
-				System.Windows.MessageBox.Show(
+				SsSavantMessageBox.Show(
 					healthMessage + "\n\nDefault API: " + BoardroomApiClient.DefaultBaseUrl + "\nConfirm Settings → Boardroom if you changed the URL.",
 					ToolDisplayName,
 					MessageBoxButton.OK,
@@ -1261,7 +1693,7 @@ public partial class SpoolingManagerPane : System.Windows.Controls.UserControl
 			}
 			catch (Exception ex)
 			{
-				System.Windows.MessageBox.Show(
+				SsSavantMessageBox.Show(
 					"Could not load Boardroom projects.\n\n" + ex.Message,
 					ToolDisplayName,
 					MessageBoxButton.OK,
@@ -1271,7 +1703,7 @@ public partial class SpoolingManagerPane : System.Windows.Controls.UserControl
 
 			if (projects.Count == 0)
 			{
-				System.Windows.MessageBox.Show(
+				SsSavantMessageBox.Show(
 					"Boardroom API connected, but returned no non-template projects.\n\n" +
 					"In BIM Boardroom, confirm Demo Mechanical (or another client) has projects, then try again.\n\n" +
 					"API: " + apiBaseUrl,
@@ -1343,13 +1775,101 @@ public partial class SpoolingManagerPane : System.Windows.Controls.UserControl
 			{
 				if ((int)RevitRequestBridge.RaisePlotPackages(request) == 2)
 				{
-					System.Windows.MessageBox.Show("Revit did not queue Boardroom export—another modal dialog may be open, or the session is busy. Close other dialogs and try again.", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
+					SsSavantMessageBox.Show("Revit did not queue Boardroom export—another modal dialog may be open, or the session is busy. Close other dialogs and try again.", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
 				}
 			}
 			catch (Exception ex)
 			{
-				System.Windows.MessageBox.Show("Failed to start Boardroom export.\n\n" + ex.Message, ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Hand);
+				SsSavantMessageBox.Show("Failed to start Boardroom export.\n\n" + ex.Message, ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Hand);
 			}
+		}
+	}
+
+	private void BtnPlotPackages_Click(object sender, RoutedEventArgs e)
+	{
+		//IL_01a9: Unknown result type (might be due to invalid IL or missing references)
+		//IL_01af: Invalid comparison between Unknown and I4
+		if (ProductKind != SpoolingManagerKind.Standard)
+		{
+			return;
+		}
+		List<AssemblyRow> list = (from x in _allRows
+			where x.IsSelected
+			orderby x.SpoolName
+			select x).ToList();
+		if (list.Count == 0)
+		{
+			SsSavantMessageBox.Show("Select assemblies whose packages you want to plot (grouped by S-Package). Choose report types next, then a folder for the PDFs.", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
+			return;
+		}
+		if (_uiapp == null || _uiapp.ActiveUIDocument == null)
+		{
+			SsSavantMessageBox.Show("No active Revit document was found.", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
+			return;
+		}
+		List<PlotPackageBatch> batches = (from g in list.GroupBy((AssemblyRow r) => (!string.IsNullOrWhiteSpace(r.SPackage)) ? r.SPackage.Trim() : string.Empty, StringComparer.OrdinalIgnoreCase)
+			select new PlotPackageBatch
+			{
+				PackageLabel = (string.IsNullOrEmpty(g.Key) ? "(No package)" : g.Key),
+				AssemblyIds = g.Select((AssemblyRow x) => x.AssemblyId).Distinct().ToList()
+			}).ToList();
+		string defaultProject = string.Empty;
+		try
+		{
+			Document activeDoc = _uiapp.ActiveUIDocument.Document;
+			if (activeDoc?.ProjectInformation != null && !string.IsNullOrWhiteSpace(activeDoc.ProjectInformation.Name))
+			{
+				defaultProject = activeDoc.ProjectInformation.Name.Trim();
+			}
+			else if (!string.IsNullOrWhiteSpace(activeDoc?.Title))
+			{
+				defaultProject = activeDoc.Title.Trim();
+			}
+		}
+		catch
+		{
+		}
+		PlotPackagesReportPickerWindow plotPackagesReportPickerWindow = new PlotPackagesReportPickerWindow(
+			defaultProject,
+			Environment.UserName,
+			DateTime.Now.ToString("M/d/yyyy h:mm:ss tt"));
+		Window window = Window.GetWindow(this);
+		if (window != null)
+		{
+			plotPackagesReportPickerWindow.Owner = window;
+		}
+		if (plotPackagesReportPickerWindow.ShowDialog() != true || plotPackagesReportPickerWindow.SelectedOptions == null)
+		{
+			return;
+		}
+		PlotPackagesReportOptions selectedOptions = plotPackagesReportPickerWindow.SelectedOptions;
+		string outputFolder;
+		using (FolderBrowserDialog folderBrowserDialog = new FolderBrowserDialog())
+		{
+			folderBrowserDialog.Description = "Select folder for PDF files (only the reports you chose; same file names overwrite).";
+			if (folderBrowserDialog.ShowDialog() != DialogResult.OK || string.IsNullOrWhiteSpace(folderBrowserDialog.SelectedPath))
+			{
+				return;
+			}
+			outputFolder = folderBrowserDialog.SelectedPath.Trim();
+		}
+		PlotPackagesRequest request = new PlotPackagesRequest
+		{
+			OutputFolder = outputFolder,
+			Batches = batches,
+			ProductKind = ProductKind,
+			ReportOptions = selectedOptions
+		};
+		try
+		{
+			if ((int)RevitRequestBridge.RaisePlotPackages(request) == 2)
+			{
+				SsSavantMessageBox.Show("Revit did not queue Plot Packages—another modal dialog may be open, or the session is busy. Close other dialogs and try again.", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
+			}
+		}
+		catch (Exception ex)
+		{
+			SsSavantMessageBox.Show("Failed to start plot.\n\n" + ex.Message, ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Hand);
 		}
 	}
 
@@ -1361,18 +1881,18 @@ public partial class SpoolingManagerPane : System.Windows.Controls.UserControl
 			select x).ToList();
 		if (list.Count == 0)
 		{
-			System.Windows.MessageBox.Show("Please select at least one assembly before adding to a package.", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
+			SsSavantMessageBox.Show("Please select at least one assembly before adding to a package.", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
 			return;
 		}
 		string text = ((txtPackageNumber != null) ? (txtPackageNumber.Text ?? string.Empty).Trim() : string.Empty);
 		if (text.Length == 0)
 		{
-			System.Windows.MessageBox.Show("Enter a package value for S-Package (for example a package number).", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
+			SsSavantMessageBox.Show("Enter a package value for S-Package (for example a package number).", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
 			return;
 		}
 		if (_uiapp == null || _uiapp.ActiveUIDocument == null)
 		{
-			System.Windows.MessageBox.Show("No active Revit document was found.", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
+			SsSavantMessageBox.Show("No active Revit document was found.", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
 			return;
 		}
 		ApplyAssemblyPackageRequest applyAssemblyPackageRequest = new ApplyAssemblyPackageRequest
@@ -1382,13 +1902,19 @@ public partial class SpoolingManagerPane : System.Windows.Controls.UserControl
 			ProductKind = ProductKind
 		};
 		_pendingApplyReloadHint = CloneApplyReloadHint(applyAssemblyPackageRequest);
+		_deselectRowsAfterPackageApply = true;
 		try
 		{
 			RevitRequestBridge.RaiseApplyAssemblyPackage(applyAssemblyPackageRequest);
+			if (txtPackageNumber != null)
+			{
+				txtPackageNumber.Text = string.Empty;
+			}
 		}
 		catch (Exception ex)
 		{
-			System.Windows.MessageBox.Show("Failed to apply S-Package.\n\n" + ex.Message, ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Hand);
+			_deselectRowsAfterPackageApply = false;
+			SsSavantMessageBox.Show("Failed to apply S-Package.\n\n" + ex.Message, ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Hand);
 		}
 	}
 
@@ -1400,13 +1926,13 @@ public partial class SpoolingManagerPane : System.Windows.Controls.UserControl
 			select x).ToList();
 		if (list.Count == 0)
 		{
-			System.Windows.MessageBox.Show("Please select at least one assembly before removing from a package.", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
+			SsSavantMessageBox.Show("Please select at least one assembly before removing from a package.", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
 		}
 		else if (_uiapp == null || _uiapp.ActiveUIDocument == null)
 		{
-			System.Windows.MessageBox.Show("No active Revit document was found.", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
+			SsSavantMessageBox.Show("No active Revit document was found.", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
 		}
-		else if (System.Windows.MessageBox.Show($"Clear S-Package on {list.Count} selected assembly instance(s)? They will no longer appear under that package until reassigned.", ToolDisplayName, MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) == MessageBoxResult.Yes)
+		else if (SsSavantMessageBox.Show($"Clear S-Package on {list.Count} selected assembly instance(s)? They will no longer appear under that package until reassigned.", ToolDisplayName, MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) == MessageBoxResult.Yes)
 		{
 			ApplyAssemblyPackageRequest applyAssemblyPackageRequest = new ApplyAssemblyPackageRequest
 			{
@@ -1421,7 +1947,7 @@ public partial class SpoolingManagerPane : System.Windows.Controls.UserControl
 			}
 			catch (Exception ex)
 			{
-				System.Windows.MessageBox.Show("Failed to clear S-Package.\n\n" + ex.Message, ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Hand);
+				SsSavantMessageBox.Show("Failed to clear S-Package.\n\n" + ex.Message, ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Hand);
 			}
 		}
 	}
@@ -1477,9 +2003,22 @@ public partial class SpoolingManagerPane : System.Windows.Controls.UserControl
 		base.Dispatcher.BeginInvoke((Action)delegate
 		{
 			ApplyAssemblyPackageRequest pendingApplyReloadHint = _pendingApplyReloadHint;
+			bool deselectAfterApply = _deselectRowsAfterPackageApply;
 			_pendingApplyReloadHint = null;
+			_deselectRowsAfterPackageApply = false;
 			if (pendingApplyReloadHint != null && TryRefreshRowsAfterPackageApply(pendingApplyReloadHint))
 			{
+				if (deselectAfterApply)
+				{
+					HashSet<ElementId> applied = new HashSet<ElementId>(pendingApplyReloadHint.AssemblyIds);
+					foreach (AssemblyRow allRow in _allRows)
+					{
+						if (applied.Contains(allRow.AssemblyId))
+						{
+							allRow.IsSelected = false;
+						}
+					}
+				}
 				ApplyFilter();
 				UpdateSelectAllState();
 			}
@@ -1505,7 +2044,7 @@ public partial class SpoolingManagerPane : System.Windows.Controls.UserControl
 		UIApplication uiapp = _uiapp;
 		if (((uiapp != null) ? uiapp.ActiveUIDocument : null) == null)
 		{
-			System.Windows.MessageBox.Show("No active Revit document was found.", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
+			SsSavantMessageBox.Show("No active Revit document was found.", ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Exclamation);
 			group.RevertDisplayTitleToCommitted();
 			return;
 		}
@@ -1529,7 +2068,7 @@ public partial class SpoolingManagerPane : System.Windows.Controls.UserControl
 		}
 		catch (Exception ex)
 		{
-			System.Windows.MessageBox.Show("Failed to apply S-Package.\n\n" + ex.Message, ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Hand);
+			SsSavantMessageBox.Show("Failed to apply S-Package.\n\n" + ex.Message, ToolDisplayName, MessageBoxButton.OK, MessageBoxImage.Hand);
 			group.RevertDisplayTitleToCommitted();
 		}
 	}
@@ -1625,9 +2164,16 @@ public partial class SpoolingManagerPane : System.Windows.Controls.UserControl
 		System.Windows.Controls.UserControl source = SpoolingManagerXamlLoader.LoadUserControl("SpoolingManager.Views.SpoolingManagerPane.xaml");
 		SpoolingManagerXamlLoader.ApplyUserControl(this, source);
 		SpoolingManagerXamlLoader.ApplyNamedStyle(this, "btnPaneSettings", "VgSquareButton");
-		imgLogo = SpoolingManagerXamlLoader.Find<Image>(this, "imgLogo");
-		txtLogoPlaceholder = SpoolingManagerXamlLoader.Find<TextBlock>(this, "txtLogoPlaceholder");
+		txtPaneTitleMode = SpoolingManagerXamlLoader.Find<TextBlock>(this, "txtPaneTitleMode");
+		txtPaneTitleMain = SpoolingManagerXamlLoader.Find<TextBlock>(this, "txtPaneTitleMain");
+		brdNeonSign = SpoolingManagerXamlLoader.Find<Border>(this, "brdNeonSign");
+		brdPaneShell = SpoolingManagerXamlLoader.Find<Border>(this, "brdPaneShell");
 		txtSearch = SpoolingManagerXamlLoader.Find<System.Windows.Controls.TextBox>(this, "txtSearch");
+		cmbSpoolContentMode = SpoolingManagerXamlLoader.Find<System.Windows.Controls.ComboBox>(this, "cmbSpoolContentMode");
+		if (cmbSpoolContentMode != null)
+		{
+			cmbSpoolContentMode.SelectionChanged += CmbSpoolContentMode_SelectionChanged;
+		}
 		chkSelectAll = SpoolingManagerXamlLoader.Find<System.Windows.Controls.CheckBox>(this, "chkSelectAll");
 		treeAssemblies = SpoolingManagerXamlLoader.Find<ItemsControl>(this, "treeAssemblies");
 		scrollAssemblyTree = SpoolingManagerXamlLoader.Find<ScrollViewer>(this, "scrollAssemblyTree");
@@ -1646,16 +2192,23 @@ public partial class SpoolingManagerPane : System.Windows.Controls.UserControl
 		SpoolingManagerXamlLoader.Find<System.Windows.Controls.Button>(this, "btnClear").Click += BtnClear_Click;
 		SpoolingManagerXamlLoader.Find<System.Windows.Controls.Button>(this, "btnIsolate").Click += BtnIsolate_Click;
 		SpoolingManagerXamlLoader.Find<System.Windows.Controls.Button>(this, "btnHide").Click += BtnHide_Click;
-		SpoolingManagerXamlLoader.FindButtonByContent(this, "Create Spool Sheets").Click += BtnCreateSpoolSheets_Click;
-		SpoolingManagerXamlLoader.FindButtonByContent(this, "Open Sheets").Click += BtnOpenSheets_Click;
-		SpoolingManagerXamlLoader.FindButtonByContent(this, "Rename Sheets").Click += BtnRenameSheets_Click;
-		SpoolingManagerXamlLoader.FindButtonByContent(this, "Refresh Assembly").Click += BtnRefreshSheets_Click;
-		SpoolingManagerXamlLoader.Find<System.Windows.Controls.Button>(this, "btnAddToPackage").Click += BtnAddToPackage_Click;
-		SpoolingManagerXamlLoader.Find<System.Windows.Controls.Button>(this, "btnRemoveFromPackage").Click += BtnRemoveFromPackage_Click;
+		btnCreateSpoolSheets = SpoolingManagerXamlLoader.Find<System.Windows.Controls.Button>(this, "btnCreateSpoolSheets");
+		btnCreateSpoolSheets.Click += BtnCreateSpoolSheets_Click;
+		btnOpenSheets = SpoolingManagerXamlLoader.Find<System.Windows.Controls.Button>(this, "btnOpenSheets");
+		btnOpenSheets.Click += BtnOpenSheets_Click;
+		btnRenameSheets = SpoolingManagerXamlLoader.Find<System.Windows.Controls.Button>(this, "btnRenameSheets");
+		btnRenameSheets.Click += BtnRenameSheets_Click;
+		btnRefreshSheets = SpoolingManagerXamlLoader.Find<System.Windows.Controls.Button>(this, "btnRefreshSheets");
+		btnRefreshSheets.Click += BtnRefreshSheets_Click;
+		btnAddToPackage = SpoolingManagerXamlLoader.Find<System.Windows.Controls.Button>(this, "btnAddToPackage");
+		btnAddToPackage.Click += BtnAddToPackage_Click;
+		btnRemoveFromPackage = SpoolingManagerXamlLoader.Find<System.Windows.Controls.Button>(this, "btnRemoveFromPackage");
+		btnRemoveFromPackage.Click += BtnRemoveFromPackage_Click;
 		SpoolingManagerXamlLoader.Find<System.Windows.Controls.Button>(this, "btnCollapsePackages").Click += BtnCollapsePackages_Click;
 		SpoolingManagerXamlLoader.Find<System.Windows.Controls.Button>(this, "btnExpandPackages").Click += BtnExpandPackages_Click;
 		chkSelectAll.Click += ChkSelectAll_Click;
 		txtSearch.TextChanged += TxtSearch_TextChanged;
 		treeAssemblies.AddHandler(UIElement.PreviewMouseLeftButtonDownEvent, new MouseButtonEventHandler(AssemblyList_PreviewMouseLeftButtonDown));
+		UpdateActionButtonsEnabledState();
 	}
 }

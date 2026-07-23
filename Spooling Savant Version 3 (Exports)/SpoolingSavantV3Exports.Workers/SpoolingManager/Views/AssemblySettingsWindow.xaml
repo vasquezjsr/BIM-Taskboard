@@ -8,10 +8,21 @@
         MaxHeight="900"
         WindowStartupLocation="CenterScreen"
         ResizeMode="CanResizeWithGrip"
-        Background="{DynamicResource SsSavantChromeBackground}">
-    <Border Background="{DynamicResource SsSavantChromeBackground}"
-            BorderThickness="0"
-            Padding="12">
+        WindowStyle="None"
+        ShowInTaskbar="False"
+        Background="Transparent">
+    <Border BorderThickness="2"
+            CornerRadius="12"
+            Padding="16">
+        <Border.Background>
+            <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                <GradientStop Color="#FF131730" Offset="0"/>
+                <GradientStop Color="#FF06080F" Offset="1"/>
+            </LinearGradientBrush>
+        </Border.Background>
+        <Border.BorderBrush>
+            <SolidColorBrush Color="#FF4DA3FF"/>
+        </Border.BorderBrush>
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
@@ -22,63 +33,24 @@
             <!-- Header -->
             <Grid Grid.Row="0" Margin="0,0,0,12">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="90"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
-                <Grid Grid.Column="0"
-                      Width="84"
-                      Height="84"
-                      ClipToBounds="False"
-                      VerticalAlignment="Top">
-                    <Border Width="78"
-                            Height="78"
-                            HorizontalAlignment="Left"
-                            VerticalAlignment="Top"
-                            Background="{DynamicResource SsSavantInputBackground}"
-                            BorderBrush="{DynamicResource SsSavantListBorder}"
-                            BorderThickness="1"
-                            CornerRadius="8">
-                        <Grid>
-                            <Image x:Name="imgLogoPreview"
-                                   Stretch="Uniform"
-                                   Margin="4"/>
-                            <TextBlock x:Name="txtLogoPlaceholder"
-                                       Text="LOGO"
-                                       Foreground="{DynamicResource SsSavantForegroundMuted}"
-                                       HorizontalAlignment="Center"
-                                       VerticalAlignment="Center"/>
-                        </Grid>
-                    </Border>
-
-                    <Button x:Name="btnBrowseLogo"
-                            Width="26"
-                            Height="26"
-                            MinWidth="0"
-                            MinHeight="0"
-                            Padding="0"
-                            HorizontalAlignment="Left"
-                            VerticalAlignment="Top"
-                            Margin="58,54,0,0"
-                            Cursor="Hand"
-                            ToolTip="Choose logo image"
-                            Click="BtnBrowseLogo_Click">
-                        <TextBlock FontFamily="Segoe MDL2 Assets"
-                                   Text="&#xE70F;"
-                                   FontSize="12"
-                                   Foreground="{DynamicResource SsSavantForegroundPrimary}"
-                                   HorizontalAlignment="Center"
-                                   VerticalAlignment="Center"/>
-                    </Button>
-                </Grid>
-
-                <StackPanel Grid.Column="1" Margin="12,0,12,0" VerticalAlignment="Center">
+                <StackPanel Grid.Column="0" Margin="0,0,12,0" VerticalAlignment="Center">
                     <TextBlock x:Name="txtSettingsHeaderTitle"
-                               Text="Spool Sheet Manager"
-                               FontSize="22"
-                               FontWeight="SemiBold"
-                               Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+                               Text="Spooling Savant"
+                               FontFamily="Segoe Script, Brush Script MT, Monotype Corsiva"
+                               FontSize="26"
+                               FontWeight="Bold"
+                               Foreground="#FFFFF4C8">
+                        <TextBlock.Effect>
+                            <DropShadowEffect Color="#FFFFC24D"
+                                              BlurRadius="18"
+                                              ShadowDepth="0"
+                                              Opacity="0.95"/>
+                        </TextBlock.Effect>
+                    </TextBlock>
                     <TextBlock x:Name="txtSettingsHeaderSubtitle"
                                Text="Configure sheet layout, annotations, tags, dimensions, and weld log options."
                                Margin="0,6,0,0"
@@ -86,7 +58,7 @@
                                Foreground="{DynamicResource SsSavantForegroundMuted}"/>
                 </StackPanel>
 
-                <StackPanel Grid.Column="2"
+                <StackPanel Grid.Column="1"
                             Orientation="Horizontal"
                             VerticalAlignment="Top">
                     <TextBlock x:Name="txtLayoutSettingsPrompt"
@@ -118,7 +90,10 @@
             <!-- Body -->
             <TabControl x:Name="tabMainSettings"
                         Grid.Row="1">
-                <TabItem Header="Sheet Setup">
+                <TabItem>
+                    <TabItem.Header>
+                        <TextBlock x:Name="txtTabHeaderSheetSetup" Text="Sheet Setup"/>
+                    </TabItem.Header>
                     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel Margin="0,4,0,0">
 
@@ -413,7 +388,10 @@
                     </ScrollViewer>
                 </TabItem>
 
-                <TabItem Header="Schedules">
+                <TabItem>
+                    <TabItem.Header>
+                        <TextBlock x:Name="txtTabHeaderSchedules" Text="Schedules"/>
+                    </TabItem.Header>
                     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel Margin="0,4,0,0">
                         <Border Background="{DynamicResource SsSavantListWellBackground}"
@@ -446,7 +424,10 @@
                     </ScrollViewer>
                 </TabItem>
 
-                <TabItem Header="Annotations">
+                <TabItem>
+                    <TabItem.Header>
+                        <TextBlock x:Name="txtTabHeaderAnnotations" Text="Annotations"/>
+                    </TabItem.Header>
                     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel Margin="0,4,0,0">
 
@@ -472,9 +453,11 @@
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
 
-                            <TextBlock Grid.Row="0"
+                            <TextBlock x:Name="txtTagTypeLabel"
+                                       Grid.Row="0"
                                        Grid.Column="0"
                                        Text="Pipe/Fitting Tag"
                                        Margin="0,0,12,12"
@@ -574,7 +557,7 @@
                                       VerticalAlignment="Center"
                                       HorizontalAlignment="Stretch"
                                       IsEditable="True"
-                                      ToolTip="Text note type used for weld numbers placed on the sheet weld log. Spooling Savant V3 (Exports) replaces all notes of this type on each spool sheet when Generate/Refresh runs."/>
+                                      ToolTip="Text note type used for weld numbers placed on the sheet weld log. Spooling Savant replaces all notes of this type on each spool sheet when Generate/Refresh runs."/>
 
                             <TextBlock Grid.Row="6"
                                        Grid.Column="0"
@@ -628,6 +611,23 @@
                                       Foreground="{DynamicResource SsSavantForegroundPrimary}"
                                       ToolTip="When enabled, auto-placed dimensions get a Below label showing the dimension rule (E-C, C-E, E-E, F-F, C-C, C-F)."/>
 
+                            <TextBlock x:Name="lblAutoDimFittingSelf"
+                                       Grid.Row="9"
+                                       Grid.Column="0"
+                                       Text="Fitting Dims"
+                                       Margin="0,12,12,0"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+
+                            <CheckBox x:Name="chkAutoDimFittingSelf"
+                                      Grid.Row="9"
+                                      Grid.Column="1"
+                                      Margin="0,12,0,0"
+                                      Content="Dimension fittings to themselves (Native Pipe)"
+                                      VerticalAlignment="Center"
+                                      Foreground="{DynamicResource SsSavantForegroundPrimary}"
+                                      ToolTip="Native Pipe spools only: adds a dimension across each fitting, from the fitting end to its centerline (e.g. elbow takeout)."/>
+
                         </Grid>
                     </Border>
 
@@ -671,56 +671,6 @@
                                       Content="Prefix weld tags with Package # (e.g. B0001-CHW-11-01)"
                                       ToolTip="When enabled, weld numbers and weld tags are prefixed with the assembly's Package # and a dash. When off, weld tags are assembly-only (e.g. CHW-11-01)."
                                       Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
-                            <CheckBox x:Name="chkItemNumberCustomFormat"
-                                      Margin="0,14,0,6"
-                                      VerticalAlignment="Center"
-                                      VerticalContentAlignment="Center"
-                                      Content="Custom Item Number prefix / suffix (Straights, Fittings, Valves)"
-                                      ToolTip="When enabled, Item Numbers use separate series with your prefix and suffix (e.g. P-001-S, P-001-F, P-001-V). When off, Standard uses 1, 2, 3… and MMC uses built-in P-###-S / P-###-F."
-                                      Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
-                            <Grid Margin="0,0,0,4">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="88"/>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="64"/>
-                                </Grid.ColumnDefinitions>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                </Grid.RowDefinitions>
-                                <TextBlock Grid.Row="0" Grid.Column="1" Text="Prefix" Margin="0,0,8,4"
-                                           Foreground="{DynamicResource SsSavantForegroundMuted}"/>
-                                <TextBlock Grid.Row="0" Grid.Column="2" Text="Suffix" Margin="0,0,8,4"
-                                           Foreground="{DynamicResource SsSavantForegroundMuted}"/>
-                                <TextBlock Grid.Row="0" Grid.Column="3" Text="Digits" Margin="0,0,0,4"
-                                           Foreground="{DynamicResource SsSavantForegroundMuted}"/>
-                                <TextBlock Grid.Row="1" Grid.Column="0" Text="Straight" VerticalAlignment="Center"
-                                           Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
-                                <TextBox x:Name="txtItemNumberStraightPrefix" Grid.Row="1" Grid.Column="1" Margin="0,0,8,6"
-                                         ToolTip="Prefix for straight pipe Item Numbers (e.g. P-)"/>
-                                <TextBox x:Name="txtItemNumberStraightSuffix" Grid.Row="1" Grid.Column="2" Margin="0,0,8,6"
-                                         ToolTip="Suffix for straight pipe Item Numbers (e.g. -S)"/>
-                                <TextBox x:Name="txtItemNumberDigits" Grid.Row="1" Grid.Column="3" Margin="0,0,0,6"
-                                         ToolTip="Zero-pad width for the number (e.g. 3 → 001). Applies to all three series."/>
-                                <TextBlock Grid.Row="2" Grid.Column="0" Text="Fitting" VerticalAlignment="Center"
-                                           Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
-                                <TextBox x:Name="txtItemNumberFittingPrefix" Grid.Row="2" Grid.Column="1" Margin="0,0,8,6"
-                                         ToolTip="Prefix for fitting Item Numbers (e.g. P-)"/>
-                                <TextBox x:Name="txtItemNumberFittingSuffix" Grid.Row="2" Grid.Column="2" Margin="0,0,8,6"
-                                         ToolTip="Suffix for fitting Item Numbers (e.g. -F)"/>
-                                <TextBlock Grid.Row="3" Grid.Column="0" Text="Valve" VerticalAlignment="Center"
-                                           Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
-                                <TextBox x:Name="txtItemNumberValvePrefix" Grid.Row="3" Grid.Column="1" Margin="0,0,8,0"
-                                         ToolTip="Prefix for valve Item Numbers (e.g. P-)"/>
-                                <TextBox x:Name="txtItemNumberValveSuffix" Grid.Row="3" Grid.Column="2" Margin="0,0,8,0"
-                                         ToolTip="Suffix for valve Item Numbers (e.g. -V)"/>
-                            </Grid>
-                            <TextBlock Text="Example: Prefix P- + Digits 3 + Suffix -S → P-001-S"
-                                       Margin="0,2,0,8" FontSize="11"
-                                       Foreground="{DynamicResource SsSavantForegroundMuted}"/>
                             <CheckBox x:Name="chkPlaceTrackingQr"
                                       Margin="0,12,0,0"
                                       VerticalAlignment="Center"
@@ -733,7 +683,80 @@
                                        Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
                             <TextBox x:Name="txtQrTrackingUrlBase"
                                      Margin="0,0,0,0"
-                                     ToolTip="Leave blank to encode SSV2|P={package}|A={assembly}. When set, encodes {base}?p=…&amp;a=… for a future tracking app."/>
+                                     ToolTip="Leave blank to encode SSV3|P={package}|A={assembly}. When set, encodes {base}?p=…&amp;a=… for a future tracking app."/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Background="{DynamicResource SsSavantListWellBackground}"
+                            BorderBrush="{DynamicResource SsSavantBorderOuter}"
+                            BorderThickness="1"
+                            CornerRadius="10"
+                            Padding="14"
+                            Margin="0,0,0,12">
+                        <StackPanel>
+                            <TextBlock Text="Item Numbers"
+                                       FontWeight="SemiBold"
+                                       Margin="0,0,0,8"
+                                       Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+                            <TextBlock Text="Optional custom prefix / suffix series for Straights, Fittings, and Valves (e.g. P-001-S)."
+                                       Margin="0,0,0,10"
+                                       TextWrapping="Wrap"
+                                       Foreground="{DynamicResource SsSavantForegroundMuted}"/>
+                            <CheckBox x:Name="chkItemNumberCustomFormat"
+                                      Margin="0,0,0,8"
+                                      VerticalAlignment="Center"
+                                      VerticalContentAlignment="Center"
+                                      Content="Custom Item Number prefix / suffix (Straights, Fittings, Valves)"
+                                      ToolTip="When enabled, Item Numbers use separate series with your prefix and suffix (e.g. P-001-S, P-001-F, P-001-V). When off, Standard uses 1, 2, 3… and MMC uses built-in P-###-S / P-###-F."
+                                      Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+                            <Grid Margin="0,0,0,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="88"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="72"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0" Grid.Column="1" Text="Prefix" Margin="0,0,8,4"
+                                           Foreground="{DynamicResource SsSavantForegroundMuted}"/>
+                                <TextBlock Grid.Row="0" Grid.Column="2" Text="Suffix" Margin="0,0,8,4"
+                                           Foreground="{DynamicResource SsSavantForegroundMuted}"/>
+                                <TextBlock Grid.Row="0" Grid.Column="3" Text="Start" Margin="0,0,0,4"
+                                           ToolTip="Starting value: 1→1,2,3…; 01→01,02,03…; A→A,B,C…"
+                                           Foreground="{DynamicResource SsSavantForegroundMuted}"/>
+                                <TextBlock Grid.Row="1" Grid.Column="0" Text="Straight" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+                                <TextBox x:Name="txtItemNumberStraightPrefix" Grid.Row="1" Grid.Column="1" Margin="0,0,8,6"
+                                         ToolTip="Prefix for straight pipe Item Numbers (e.g. P-)"/>
+                                <TextBox x:Name="txtItemNumberStraightSuffix" Grid.Row="1" Grid.Column="2" Margin="0,0,8,6"
+                                         ToolTip="Suffix for straight pipe Item Numbers (e.g. -S)"/>
+                                <TextBox x:Name="txtItemNumberStraightStart" Grid.Row="1" Grid.Column="3" Margin="0,0,0,6"
+                                         ToolTip="Starting value for straights: 1, 01, 001, or A"/>
+                                <TextBlock Grid.Row="2" Grid.Column="0" Text="Fitting" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+                                <TextBox x:Name="txtItemNumberFittingPrefix" Grid.Row="2" Grid.Column="1" Margin="0,0,8,6"
+                                         ToolTip="Prefix for fitting Item Numbers (e.g. P-)"/>
+                                <TextBox x:Name="txtItemNumberFittingSuffix" Grid.Row="2" Grid.Column="2" Margin="0,0,8,6"
+                                         ToolTip="Suffix for fitting Item Numbers (e.g. -F)"/>
+                                <TextBox x:Name="txtItemNumberFittingStart" Grid.Row="2" Grid.Column="3" Margin="0,0,0,6"
+                                         ToolTip="Starting value for fittings: 1, 01, 001, or A"/>
+                                <TextBlock Grid.Row="3" Grid.Column="0" Text="Valve" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+                                <TextBox x:Name="txtItemNumberValvePrefix" Grid.Row="3" Grid.Column="1" Margin="0,0,8,0"
+                                         ToolTip="Prefix for valve Item Numbers (e.g. P-)"/>
+                                <TextBox x:Name="txtItemNumberValveSuffix" Grid.Row="3" Grid.Column="2" Margin="0,0,8,0"
+                                         ToolTip="Suffix for valve Item Numbers (e.g. -V)"/>
+                                <TextBox x:Name="txtItemNumberValveStart" Grid.Row="3" Grid.Column="3" Margin="0,0,0,0"
+                                         ToolTip="Starting value for valves: 1, 01, 001, or A"/>
+                            </Grid>
+                            <TextBlock Text="Start examples: 1 → 1,2,3… · 01 → 01,02,03… · A → A,B,C…  (with Prefix P- + Suffix -S → P-01-S)"
+                                       Margin="0,2,0,0" FontSize="11" TextWrapping="Wrap"
+                                       Foreground="{DynamicResource SsSavantForegroundMuted}"/>
                         </StackPanel>
                     </Border>
 
@@ -741,7 +764,10 @@
                     </ScrollViewer>
                 </TabItem>
 
-                <TabItem Header="TigerStop">
+                <TabItem>
+                    <TabItem.Header>
+                        <TextBlock x:Name="txtTabHeaderTigerStop" Text="TigerStop"/>
+                    </TabItem.Header>
                     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel Margin="0,4,0,0">
                         <Border Background="{DynamicResource SsSavantListWellBackground}"
@@ -830,7 +856,10 @@
                     </ScrollViewer>
                 </TabItem>
 
-                <TabItem Header="PCF Files">
+                <TabItem>
+                    <TabItem.Header>
+                        <TextBlock x:Name="txtTabHeaderPcfFiles" Text="PCF Files"/>
+                    </TabItem.Header>
                     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel Margin="0,4,0,0">
                         <Border Background="{DynamicResource SsSavantListWellBackground}"
@@ -961,7 +990,10 @@
                     </ScrollViewer>
                 </TabItem>
 
-                <TabItem Header="Boardroom">
+                <TabItem>
+                    <TabItem.Header>
+                        <TextBlock x:Name="txtTabHeaderBoardroom" Text="Boardroom"/>
+                    </TabItem.Header>
                     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel Margin="0,4,0,0">
                         <Border Background="{DynamicResource SsSavantListWellBackground}"
@@ -1013,6 +1045,21 @@
 
             <!-- Footer -->
             <Grid Grid.Row="2" Margin="0,12,0,0">
+                <StackPanel Orientation="Horizontal"
+                            HorizontalAlignment="Left"
+                            VerticalAlignment="Center">
+                    <Button x:Name="btnImportSettings"
+                            Content="Import Settings"
+                            Width="128"
+                            Height="32"
+                            Margin="0,0,8,0"
+                            ToolTip="Import a saved settings preset into this project"/>
+                    <Button x:Name="btnExportSettings"
+                            Content="Export Settings"
+                            Width="128"
+                            Height="32"
+                            ToolTip="Export these settings as a reusable preset"/>
+                </StackPanel>
                 <StackPanel Orientation="Horizontal"
                             HorizontalAlignment="Right"
                             VerticalAlignment="Center">

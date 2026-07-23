@@ -14,6 +14,8 @@ public sealed class CreateAssemblyDialogSettings
 
 	public string LastAssemblyName { get; set; } = string.Empty;
 
+	public bool LastChainSpooling { get; set; }
+
 	public static string SettingsFilePath => Path.Combine(InstallLayout.GetPreferredModuleFolder(), "CreateAssemblyDialogSettings.xml");
 
 	public static string SuggestNextNumericSuffix(string value)

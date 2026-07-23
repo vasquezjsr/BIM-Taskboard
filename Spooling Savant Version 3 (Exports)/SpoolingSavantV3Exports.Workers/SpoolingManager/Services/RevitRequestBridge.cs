@@ -291,7 +291,7 @@ public static class RevitRequestBridge
 	/// </summary>
 	public static void ShowOperationSummary(string title, string message)
 	{
-		string safeTitle = (string.IsNullOrWhiteSpace(title) ? "SS Manager V3" : title);
+		string safeTitle = (string.IsNullOrWhiteSpace(title) ? "Spooling Savant" : title);
 		string safeMessage = message ?? string.Empty;
 		try
 		{
@@ -466,7 +466,7 @@ public static class RevitRequestBridge
 		_pendingTagAllRequest.TagsAfter = CountFabricationTags(doc, _pendingTagAllRequest.ViewId);
 		try
 		{
-			TaskDialog.Show("TAG ALL DEBUG", $"View activated: {_pendingTagAllRequest.ViewActivated}\n" + $"Command posted: {_pendingTagAllRequest.CommandPosted}\n" + $"Dialog handled: {_pendingTagAllRequest.DialogHandled}\n" + $"Selected elements: {_pendingTagAllRequest.ElementIds.Count}\n" + $"Fabrication tags before: {_pendingTagAllRequest.TagsBefore}\n" + $"Fabrication tags after: {_pendingTagAllRequest.TagsAfter}");
+			Views.SsSavantMessageBox.Show($"View activated: {_pendingTagAllRequest.ViewActivated}\n" + $"Command posted: {_pendingTagAllRequest.CommandPosted}\n" + $"Dialog handled: {_pendingTagAllRequest.DialogHandled}\n" + $"Selected elements: {_pendingTagAllRequest.ElementIds.Count}\n" + $"Fabrication tags before: {_pendingTagAllRequest.TagsBefore}\n" + $"Fabrication tags after: {_pendingTagAllRequest.TagsAfter}", "TAG ALL DEBUG");
 		}
 		catch
 		{
@@ -508,7 +508,7 @@ public static class RevitRequestBridge
 		}
 		try
 		{
-			Transaction val2 = new Transaction(doc, "Spooling Savant V3 (Exports): Lock 3D View After Tagging");
+			Transaction val2 = new Transaction(doc, "Spooling Savant: Lock 3D View After Tagging");
 			try
 			{
 				val2.Start();

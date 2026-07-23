@@ -11,7 +11,7 @@ namespace SpoolingSavantV3Exports.Workers.SpoolingManager.Services;
 /// </summary>
 internal static class SpoolingManagerSettingsTransferService
 {
-	public const string ExportFilter = "Spooling Savant V3 (Exports) settings (*.ssmgr.xml)|*.ssmgr.xml|XML files (*.xml)|*.xml";
+	public const string ExportFilter = "XML settings files (*.xml)|*.xml";
 
 	public static bool TryExport(SpoolingManagerSettings settings, SpoolingManagerKind kind, string exportFilePath, out string errorMessage)
 	{
@@ -63,7 +63,7 @@ internal static class SpoolingManagerSettingsTransferService
 			settings = ReadSettingsXml(fullImportPath);
 			if (settings == null)
 			{
-				errorMessage = "The selected file is not a valid Spooling Savant V3 (Exports) settings file.";
+				errorMessage = "The selected file is not a valid Spooling Savant settings file.";
 				return false;
 			}
 			NormalizeImportedSettings(settings, kind);
@@ -80,14 +80,7 @@ internal static class SpoolingManagerSettingsTransferService
 
 	public static string BuildDefaultExportFileName(SpoolingManagerKind kind)
 	{
-		string suffix = kind switch
-		{
-			SpoolingManagerKind.Mmc => "MMC",
-			SpoolingManagerKind.MmcTesting => "MMC-Testing",
-			SpoolingManagerKind.AutoDimensionLab => "AutoDimLab",
-			_ => "Standard"
-		};
-		return "SpoolingSavantV3Exports-" + suffix + "-Settings.ssmgr.xml";
+		return "Settings.xml";
 	}
 
 	private static SpoolingManagerSettings CloneSettings(SpoolingManagerSettings settings)

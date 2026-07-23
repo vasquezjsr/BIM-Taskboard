@@ -1,25 +1,35 @@
 <Window x:Class="SpoolingSavantV3Exports.Workers.SpoolingManager.Views.OperationProgressWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="SS Manager V3"
+        Title="Spooling Savant"
         Height="170"
         Width="520"
         MinHeight="150"
         MinWidth="420"
         MaxHeight="640"
         ResizeMode="NoResize"
+        WindowStyle="None"
         WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False"
         Topmost="True"
         Background="{DynamicResource SsSavantChromeBackground}">
-    <Border Background="{DynamicResource SsSavantChromeBackground}"
-            BorderThickness="0"
+    <Border BorderThickness="2"
+            CornerRadius="12"
             Padding="16">
+        <Border.Background>
+            <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                <GradientStop Color="#FF131730" Offset="0"/>
+                <GradientStop Color="#FF06080F" Offset="1"/>
+            </LinearGradientBrush>
+        </Border.Background>
+        <Border.BorderBrush>
+            <SolidColorBrush Color="#FF4DA3FF"/>
+        </Border.BorderBrush>
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
-                <RowDefinition Height="*" MinHeight="24"/>
                 <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*" MinHeight="48"/>
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
@@ -34,6 +44,7 @@
             <ScrollViewer x:Name="detailScroll"
                           Grid.Row="1"
                           Margin="0,8,0,0"
+                          MaxHeight="320"
                           VerticalScrollBarVisibility="Auto"
                           HorizontalScrollBarVisibility="Disabled"
                           CanContentScroll="False">
@@ -44,18 +55,55 @@
                            Foreground="{DynamicResource SsSavantForegroundMuted}"/>
             </ScrollViewer>
 
-            <ProgressBar x:Name="barProgress"
-                         Grid.Row="2"
-                         Margin="0,16,0,0"
-                         Height="18"
-                         Minimum="0"
-                         Maximum="100"
-                         Value="0"/>
+            <StackPanel Grid.Row="2"
+                        Margin="0,12,0,12"
+                        VerticalAlignment="Center"
+                        HorizontalAlignment="Stretch">
+                <StackPanel x:Name="pnlNeonLetters"
+                            Orientation="Horizontal"
+                            HorizontalAlignment="Center"
+                            Visibility="Collapsed"/>
+                <ProgressBar x:Name="barProgress"
+                             Height="18"
+                             Minimum="0"
+                             Maximum="100"
+                             Value="0"/>
+            </StackPanel>
+
+            <StackPanel Grid.Row="3"
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Left"
+                        VerticalAlignment="Center"
+                        Margin="0,8,0,0">
+                <Button x:Name="btnCancelOperation"
+                        Content="Cancel"
+                        Width="88"
+                        Height="28"
+                        Margin="0,0,8,0"
+                        Visibility="Collapsed"/>
+                <Button x:Name="btnPauseOperation"
+                        Content="Pause"
+                        Width="88"
+                        Height="28"
+                        Visibility="Collapsed"/>
+            </StackPanel>
+
+            <TextBlock x:Name="txtCompletedSummary"
+                       Grid.Row="3"
+                       Margin="0,8,104,0"
+                       HorizontalAlignment="Left"
+                       VerticalAlignment="Center"
+                       FontSize="14"
+                       FontWeight="SemiBold"
+                       TextWrapping="Wrap"
+                       Visibility="Collapsed"
+                       Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
 
             <TextBlock x:Name="txtPercent"
                        Grid.Row="3"
                        Margin="0,8,0,0"
                        HorizontalAlignment="Right"
+                       VerticalAlignment="Center"
                        FontSize="12"
                        Foreground="{DynamicResource SsSavantForegroundMuted}"
                        Text="0%"/>
@@ -66,7 +114,8 @@
                     Width="88"
                     Height="28"
                     HorizontalAlignment="Right"
-                    Margin="0,16,0,0"
+                    VerticalAlignment="Center"
+                    Margin="0,8,0,0"
                     Visibility="Collapsed"
                     IsDefault="True"
                     IsCancel="True"/>

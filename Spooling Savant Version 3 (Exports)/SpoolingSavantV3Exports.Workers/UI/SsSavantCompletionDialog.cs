@@ -41,14 +41,32 @@ namespace SpoolingSavantV3Exports.Workers.UI
 
 			var window = new Window
 			{
-				Title = string.IsNullOrWhiteSpace(windowTitle) ? "Spooling Savant V3 (Exports)" : windowTitle,
+				Title = string.IsNullOrWhiteSpace(windowTitle) ? "Spooling Savant" : windowTitle,
 				SizeToContent = SizeToContent.WidthAndHeight,
 				MinWidth = 320,
 				MinHeight = 120,
 				MaxWidth = 720,
 				MaxHeight = 720,
 				ResizeMode = ResizeMode.NoResize,
-				ShowInTaskbar = false
+				ShowInTaskbar = false,
+				// Chromeless neon theme (matches the progress window).
+				WindowStyle = WindowStyle.None,
+				AllowsTransparency = true,
+				Background = Brushes.Transparent
+			};
+
+			window.MouseLeftButtonDown += (_, e) =>
+			{
+				if (e.ButtonState == System.Windows.Input.MouseButtonState.Pressed)
+				{
+					try
+					{
+						window.DragMove();
+					}
+					catch
+					{
+					}
+				}
 			};
 
 			if (owner != null)
@@ -110,15 +128,19 @@ namespace SpoolingSavantV3Exports.Workers.UI
 				Children = { scroll, btn }
 			};
 
-			// Content sub-panel with equal padding on all sides; window sizes to this.
+			// Neon shell in dark mode; same rounded chromeless panel without glow in light mode.
 			var contentBorder = new Border
 			{
 				Child = contentStack,
 				HorizontalAlignment = HorizontalAlignment.Stretch,
-				VerticalAlignment = VerticalAlignment.Top
+				VerticalAlignment = VerticalAlignment.Top,
+				BorderThickness = new Thickness(2),
+				CornerRadius = new CornerRadius(12),
+				Padding = new Thickness(ContentPadding + 4)
 			};
-			SsSavantDialogChrome.ApplyThemedBorder(contentBorder, new Thickness(ContentPadding));
+			SsSavantNeonChrome.ApplyShell(contentBorder);
 			window.Content = contentBorder;
+			SsSavantDialogForeground.Attach(window);
 
 			window.Loaded += (_, __) =>
 			{

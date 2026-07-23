@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useStore } from '../store/useStore';
 
 /**
- * Always-on SSv3 export watcher (Electron). Imports boardroom-package.json into the
+ * Always-on Spooling Savant 3.0 export watcher (Electron). Imports boardroom-package.json into the
  * chosen Spooling task whenever the Exports folder changes — not only on Fab Workstation.
  */
 export function useBoardroomExportWatcher() {

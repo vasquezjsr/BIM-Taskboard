@@ -126,7 +126,7 @@ internal static class SpoolingManagerXamlLoader
 		string input = streamReader.ReadToEnd();
 		string assemblyName = executingAssembly.GetName().Name ?? "SpoolingSavantV3Exports.Workers";
 		// Embedded XAML clr-namespace assembly= must match the loaded DLL simple name (hotload / rename safe).
-		input = Regex.Replace(input, "assembly=SpoolingSavantV3Exports\\.Workers", "assembly=" + assemblyName);
+		input = Regex.Replace(input, "assembly=SpoolingSavantV2\\.Workers", "assembly=" + assemblyName);
 		input = Regex.Replace(input, "\\s+x:Class=\"[^\"]+\"", string.Empty);
 		input = Regex.Replace(input, "\\s+Click=\"[^\"]+\"", string.Empty);
 		input = Regex.Replace(input, "\\s+TextChanged=\"[^\"]+\"", string.Empty);

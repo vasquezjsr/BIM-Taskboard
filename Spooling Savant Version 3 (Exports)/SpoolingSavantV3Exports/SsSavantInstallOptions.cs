@@ -20,7 +20,7 @@ namespace SpoolingSavantV3Exports
         /// Default release catalog (ExpandEnvironmentVariables applied). Owner publishes here; all clients read updates from here.
         /// </summary>
         internal const string DefaultReleaseCatalogRoot =
-            "%USERPROFILE%\\AsBuilt MEP LLC\\AsBuiltMEP - Documents\\10_ABMEP\\06 - Revit Addin Downloads\\Spooling Savant V3 (Exports)";
+            "%USERPROFILE%\\AsBuilt MEP LLC\\AsBuiltMEP - Documents\\10_ABMEP\\06 - Revit Addin Downloads\\Spooling Savant 3.0";
 
         private static bool _initialized;
         private static string _releaseCatalogRoot = string.Empty;
@@ -29,17 +29,17 @@ namespace SpoolingSavantV3Exports
         private static SsSavantInstallRole _role = SsSavantInstallRole.User;
 
         /// <summary>
-        /// Folder that contains published version subfolders named like <c>Spooling Savant V3 (Exports) 1.0.0.0</c> (after expansion).
+        /// Folder that contains published version subfolders named like <c>Spooling Savant 3.0 1.0.0.0</c> (after expansion).
         /// </summary>
         internal static string ReleaseCatalogRoot => _releaseCatalogRoot ?? string.Empty;
 
         /// <summary>
-        /// Optional folder that already contains a built <c>Spooling Savant V3 (Exports)-Revit-{version}.msi</c> when publishing from Revit (after expansion).
+        /// Optional folder that already contains a built <c>Spooling Savant 3.0-Revit-{version}.msi</c> when publishing from Revit (after expansion).
         /// </summary>
         internal static string ReleaseMsiSourceFolder => _releaseMsiSourceFolder ?? string.Empty;
 
         /// <summary>
-        /// Root of the Spooling Savant V3 (Exports) repo / solution (folder that contains <c>Installer\SpoolingSavantV3Exports.Msi</c>). Publish runs <c>dotnet build</c> on the WiX project here.
+        /// Root of the Spooling Savant 3.0 repo / solution (folder that contains <c>Installer\SpoolingSavantV3Exports.Msi</c>). Publish runs <c>dotnet build</c> on the WiX project here.
         /// When set (in <c>SsSavantInstallOptions.txt</c> as <c>repositoryRoot</c>), ribbon hotload can resolve
         /// <c>SpoolingSavantV3Exports.Workers\bin\Debug</c> or <c>Release</c> for shadow copy under %LocalAppData%\Spooling-Savant-V3-Exports\WorkerShadow
         /// so worker rebuilds apply without replacing DLLs locked under ProgramData while Revit runs.

@@ -88,7 +88,7 @@ public class ApplyAssemblyPackageHandler : IExternalEventHandler
 		int skippedMissing2 = 0;
 		int skippedReadOnly2 = 0;
 		int skippedWrongType2 = 0;
-		string text2 = (clearPackage ? "Spooling Savant V3 (Exports): Clear S-Package" : "Spooling Savant V3 (Exports): S-Package");
+		string text2 = (clearPackage ? "Spooling Savant: Clear S-Package" : "Spooling Savant: S-Package");
 		Transaction val3 = new Transaction(val, text2);
 		try
 		{

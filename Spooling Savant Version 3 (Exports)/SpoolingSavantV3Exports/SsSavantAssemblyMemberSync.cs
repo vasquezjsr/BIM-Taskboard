@@ -174,7 +174,7 @@ namespace SpoolingSavantV3Exports
             foreach (string transactionName in transactionNames)
             {
                 if (!string.IsNullOrWhiteSpace(transactionName) &&
-                    transactionName.StartsWith("Spooling Savant V3 (Exports)", StringComparison.Ordinal))
+                    transactionName.StartsWith("Spooling Savant 3.0", StringComparison.Ordinal))
                 {
                     return true;
                 }

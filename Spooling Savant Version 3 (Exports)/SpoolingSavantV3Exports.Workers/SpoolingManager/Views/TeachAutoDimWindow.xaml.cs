@@ -164,7 +164,7 @@ public class TeachAutoDimWindow : Window
 		if (contentCorrect.Count == 0 && contentIncorrect.Count == 0
 			&& placementCorrect.Count == 0 && placementIncorrect.Count == 0)
 		{
-			MessageBox.Show(
+			SsSavantMessageBox.Show(
 				this,
 				"Mark at least one Content or Placement as Correct or Incorrect before Finish.",
 				"Teach Auto-Dim",

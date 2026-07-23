@@ -1,4 +1,4 @@
-import type { ProjectBoardType, SheetColumnDefinition, Task, TaskGroup } from '../types';
+import type { ProjectBoardType, SheetColumnDefinition, Task, TaskAttachment, TaskComment, TaskGroup } from '../types';
 import type { BoardSheetColumnOrderMap, BoardSheetColumnsMap } from '../utils/sheetColumns';
 import {
   getBoardLocalSheetColumns,
@@ -10,8 +10,12 @@ import {
   propagateMainSheetColumnToAllBoards,
   removeMainSheetColumnFromAllBoards,
 } from '../utils/sheetColumns';
-import type { ActivityLogEntry, DeletedColumnArchive } from '../utils/activityLog';
-import { appendActivityLogEntry } from '../utils/activityLog';
+import type { ActivityLogEntry, DeletedColumnArchive, DeletedTaskArchive, TaskRevisionArchive } from '../utils/activityLog';
+import {
+  appendActivityLogEntry,
+  MAX_DELETED_TASK_ARCHIVES,
+  MAX_TASK_REVISION_ARCHIVES,
+} from '../utils/activityLog';
 import { getBoardLabel } from '../types';
 import type { CustomBoard } from '../types';
 
@@ -411,4 +415,234 @@ export function stripColumnFromState(
       return { ...group, durationFields };
     }),
   };
+}
+
+/** Collect a task id and every descendant via parentTaskId. */
+export function collectTaskSubtreeIds(tasks: Task[], rootIds: Iterable<string>): Set<string> {
+  const byParent = new Map<string | null, Task[]>();
+  for (const task of tasks) {
+    const key = task.parentTaskId;
+    const list = byParent.get(key) ?? [];
+    list.push(task);
+    byParent.set(key, list);
+  }
+  const result = new Set<string>();
+  const visit = (taskId: string) => {
+    if (result.has(taskId)) return;
+    result.add(taskId);
+    for (const child of byParent.get(taskId) ?? []) {
+      visit(child.id);
+    }
+  };
+  for (const rootId of rootIds) visit(rootId);
+  return result;
+}
+
+export type SoftDeleteTasksResult = {
+  tasks: Task[];
+  taskAttachments: TaskAttachment[];
+  taskComments: TaskComment[];
+  deletedTaskArchive: DeletedTaskArchive[];
+  activityLog: ActivityLogEntry[];
+  removedIds: Set<string>;
+};
+
+/**
+ * Soft-delete task trees: move tasks + attachments + comments into archives
+ * and write Activity Log entries with archiveId for restore.
+ */
+export function softDeleteTaskTrees(options: {
+  tasks: Task[];
+  taskAttachments: TaskAttachment[];
+  taskComments: TaskComment[];
+  deletedTaskArchive: DeletedTaskArchive[];
+  activityLog: ActivityLogEntry[];
+  rootTaskIds: string[];
+  actorId: string | null;
+  reason?: string;
+  createId: () => string;
+  summaryForRoot?: (task: Task, descendantCount: number) => string;
+}): SoftDeleteTasksResult {
+  const {
+    tasks,
+    taskAttachments,
+    taskComments,
+    deletedTaskArchive,
+    activityLog,
+    rootTaskIds,
+    actorId,
+    reason = 'user',
+    createId,
+    summaryForRoot,
+  } = options;
+
+  const existing = new Set(tasks.map((task) => task.id));
+  const roots = rootTaskIds.filter((id) => existing.has(id));
+  if (roots.length === 0) {
+    return {
+      tasks,
+      taskAttachments,
+      taskComments,
+      deletedTaskArchive,
+      activityLog,
+      removedIds: new Set(),
+    };
+  }
+
+  // If parent + child are both selected, only archive the parent tree once.
+  const selected = new Set(roots);
+  const taskParent = new Map(tasks.map((task) => [task.id, task.parentTaskId] as const));
+  const topRoots = roots.filter((id) => {
+    let parentId = taskParent.get(id) ?? null;
+    while (parentId) {
+      if (selected.has(parentId)) return false;
+      parentId = taskParent.get(parentId) ?? null;
+    }
+    return true;
+  });
+
+  const removedIds = collectTaskSubtreeIds(tasks, topRoots);
+  const removedTasks = tasks.filter((task) => removedIds.has(task.id));
+  const removedAttachments = taskAttachments.filter((attachment) => removedIds.has(attachment.taskId));
+  const removedComments = taskComments.filter((comment) => removedIds.has(comment.taskId));
+
+  const taskById = new Map(removedTasks.map((task) => [task.id, task]));
+  let nextLog = activityLog;
+  const newArchives: DeletedTaskArchive[] = [];
+
+  for (const rootId of topRoots) {
+    const root = taskById.get(rootId);
+    if (!root) continue;
+    const treeIds = collectTaskSubtreeIds(removedTasks, [rootId]);
+    const treeTasks = removedTasks.filter((task) => treeIds.has(task.id));
+    const archiveId = createId();
+    const activityLogId = createId();
+    const descendantCount = treeTasks.length - 1;
+    const summary =
+      summaryForRoot?.(root, descendantCount) ??
+      (descendantCount > 0
+        ? `Deleted task "${root.title}" (+${descendantCount} subtask${descendantCount === 1 ? '' : 's'})`
+        : `Deleted task "${root.title}"`);
+
+    newArchives.push({
+      id: archiveId,
+      deletedAt: new Date().toISOString(),
+      deletedById: actorId,
+      activityLogId,
+      rootTaskId: rootId,
+      tasks: treeTasks.map((task) => ({ ...task })),
+      attachments: removedAttachments
+        .filter((attachment) => treeIds.has(attachment.taskId))
+        .map((attachment) => ({
+          ...attachment,
+          versions: attachment.versions.map((version) => ({ ...version })),
+        })),
+      comments: removedComments
+        .filter((comment) => treeIds.has(comment.taskId))
+        .map((comment) => ({ ...comment })),
+      reason,
+    });
+
+    nextLog = appendActivityLogEntry(
+      nextLog,
+      {
+        actorId,
+        action: 'deleted',
+        entityType: 'task',
+        entityId: rootId,
+        summary,
+        details: {
+          title: root.title,
+          boardType: root.boardType,
+          projectId: root.projectId,
+          subtaskCount: descendantCount,
+          reason,
+        },
+        archiveId,
+      },
+      () => activityLogId
+    );
+  }
+
+  return {
+    tasks: tasks.filter((task) => !removedIds.has(task.id)),
+    taskAttachments: taskAttachments.filter((attachment) => !removedIds.has(attachment.taskId)),
+    taskComments: taskComments.filter((comment) => !removedIds.has(comment.taskId)),
+    deletedTaskArchive: [...newArchives, ...deletedTaskArchive].slice(0, MAX_DELETED_TASK_ARCHIVES),
+    activityLog: nextLog,
+    removedIds,
+  };
+}
+
+export function applyRestoredTaskArchive(
+  archive: DeletedTaskArchive,
+  state: {
+    tasks: Task[];
+    taskAttachments: TaskAttachment[];
+    taskComments: TaskComment[];
+    taskGroups: TaskGroup[];
+  }
+): {
+  tasks: Task[];
+  taskAttachments: TaskAttachment[];
+  taskComments: TaskComment[];
+} | null {
+  if (archive.restoredAt || archive.tasks.length === 0) return null;
+  const existingIds = new Set(state.tasks.map((task) => task.id));
+  if (archive.tasks.some((task) => existingIds.has(task.id))) return null;
+
+  const groupIds = new Set(state.taskGroups.map((group) => group.id));
+  const restoredTasks = archive.tasks.map((task) => ({
+    ...task,
+    groupId: task.groupId && groupIds.has(task.groupId) ? task.groupId : null,
+  }));
+
+  const existingAttachmentIds = new Set(state.taskAttachments.map((attachment) => attachment.id));
+  const existingCommentIds = new Set(state.taskComments.map((comment) => comment.id));
+
+  return {
+    tasks: [...state.tasks, ...restoredTasks],
+    taskAttachments: [
+      ...state.taskAttachments,
+      ...archive.attachments.filter((attachment) => !existingAttachmentIds.has(attachment.id)),
+    ],
+    taskComments: [
+      ...state.taskComments,
+      ...archive.comments.filter((comment) => !existingCommentIds.has(comment.id)),
+    ],
+  };
+}
+
+/** Snapshot a task before a change and pair it with a new Activity Log entry id. */
+export function buildTaskRevisionArchive(options: {
+  task: Task;
+  actorId: string | null;
+  createId: () => string;
+}): { archive: TaskRevisionArchive; activityLogId: string; archiveId: string } {
+  const archiveId = options.createId();
+  const activityLogId = options.createId();
+  return {
+    archiveId,
+    activityLogId,
+    archive: {
+      id: archiveId,
+      changedAt: new Date().toISOString(),
+      changedById: options.actorId,
+      activityLogId,
+      taskId: options.task.id,
+      before: {
+        ...options.task,
+        assigneeIds: [...(options.task.assigneeIds ?? [])],
+        customFields: options.task.customFields ? { ...options.task.customFields } : undefined,
+        durationFields: options.task.durationFields ? { ...options.task.durationFields } : undefined,
+      },
+    },
+  };
+}
+
+export function prependTaskRevisionArchive(
+  archives: TaskRevisionArchive[],
+  archive: TaskRevisionArchive
+): TaskRevisionArchive[] {
+  return [archive, ...archives].slice(0, MAX_TASK_REVISION_ARCHIVES);
 }

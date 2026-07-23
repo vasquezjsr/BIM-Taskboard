@@ -311,6 +311,30 @@ public partial class CreateSpoolSheetsHandler
 
 		Document doc = ((Element)part).Document;
 		List<Connector> connectors = ListConnectors(part);
+
+		// Welded-on olets (anvilets/outlets) add a tap connector per olet to a straight host pipe
+		// (2 ends + N taps), which made connector-count classification report TeeLike/CrossLike.
+		// The bogus "fitting" then failed center resolution AND the pipe's open end was never
+		// anchored (open-end anchors are PipeLike-only) — so a run terminating at that open end
+		// lost its main overall (e.g. flange → open-end spool SP-05). Classify on non-olet
+		// connectors only; real tees/crosses mate to pipes at their branch ports, never to olets.
+		if (connectors.Count > 2 && pool != null)
+		{
+			List<Connector> nonOletConnectors = new List<Connector>(connectors.Count);
+			foreach (Connector connector in connectors)
+			{
+				FabricationPart tapMate = connector != null ? FindMateAtConnector(part, connector, pool) : null;
+				if (tapMate != null && IsOletPart(tapMate))
+				{
+					continue;
+				}
+				nonOletConnectors.Add(connector);
+			}
+			if (nonOletConnectors.Count >= 1)
+			{
+				connectors = nonOletConnectors;
+			}
+		}
 		int count = connectors.Count;
 
 		if (count >= 4)

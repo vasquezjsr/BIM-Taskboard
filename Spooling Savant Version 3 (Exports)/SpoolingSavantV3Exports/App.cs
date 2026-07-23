@@ -15,9 +15,12 @@ namespace SpoolingSavantV3Exports
 {
     public class App : IExternalApplication
     {
-        private const string TabName = "Spooling Savant V3 (Exports)";
-        private const string PanelName = "Spooling Savant V3 (Exports)";
+        private const string TabName = "Spooling Savant 3.0";
+        private const string PanelName = "Spooling Savant";
+        private const string LegacyTabName = "Spooling Savant V3 (Exports)";
+        private const string ProductDisplayName = "Spooling Savant 3.0";
         private const string CreateSpoolV2ButtonName = "CreateSpoolV2Button";
+        private const string TraceSpoolV2ButtonName = "TraceSpoolV2Button";
         private const string LegacyImportPcfButtonName = "ImportPcfButton";
         private const string LegacyExportPcfButtonName = "ExportPcfButton";
 
@@ -40,6 +43,7 @@ namespace SpoolingSavantV3Exports
                 RegisterButtons(application);
                 CleanupLegacyPcfButtons(application);
                 CleanupLegacyReleasePanel(application);
+                CleanupLegacyProductTab(application);
                 RegisterSsManagerDocumentRefresh(application);
                 SsSavantDocumentSharedParameters.Register(application);
                 SsSavantAssemblyMemberSync.Register(application);
@@ -47,7 +51,7 @@ namespace SpoolingSavantV3Exports
             }
             catch (Exception ex)
             {
-                TaskDialog.Show("Spooling Savant V3 (Exports)", "Failed to create the Spooling Savant V3 (Exports) ribbon.\n\n" + ex.Message);
+                TaskDialog.Show(ProductDisplayName, "Failed to create the Spooling Savant ribbon.\n\n" + ex.Message);
                 return Result.Failed;
             }
         }
@@ -166,7 +170,7 @@ namespace SpoolingSavantV3Exports
         {
             application.RegisterDockablePane(
                 SsManagerPaneIds.PaneId,
-                "SS Manager V3",
+                ProductDisplayName,
                 new SsManagerPaneProvider(SsManagerPaneHost.Instance));
         }
 
@@ -181,12 +185,12 @@ namespace SpoolingSavantV3Exports
             {
                 PushButtonData ssManagerButton = new PushButtonData(
                     "SsManagerV2Button",
-                    "SS Manager V3",
+                    "Spooling\nSavant",
                     assemblyPath,
                     typeof(SsManagerBridgeLauncher).FullName)
                 {
-                    ToolTip = "Open SS Manager dockable pane.",
-                    LongDescription = "Manage spool assemblies, packages, sheets, and plotting."
+                    ToolTip = "Open Spooling Savant (Together w/ BIM Boardroom).",
+                    LongDescription = "Manage spool assemblies, packages, sheets, plotting, and BIM Boardroom export."
                 };
 
                 if (icon != null)
@@ -217,6 +221,27 @@ namespace SpoolingSavantV3Exports
                 }
 
                 panel.AddItem(createSpoolButton);
+            }
+
+            if (FindPushButton(panel, TraceSpoolV2ButtonName) == null)
+            {
+                PushButtonData traceSpoolButton = new PushButtonData(
+                    TraceSpoolV2ButtonName,
+                    "Trace\nSpool",
+                    assemblyPath,
+                    typeof(TraceSpoolWithSsManagerBridgeLauncher).FullName)
+                {
+                    ToolTip = "Trace a spool by picking endpoints, then create the assembly.",
+                    LongDescription = "Pick fabrication (or native pipe) endpoints to gather a connected path, then create the spool assembly."
+                };
+
+                if (icon != null)
+                {
+                    traceSpoolButton.LargeImage = icon;
+                    traceSpoolButton.Image = icon;
+                }
+
+                panel.AddItem(traceSpoolButton);
             }
         }
 
@@ -254,6 +279,28 @@ namespace SpoolingSavantV3Exports
 
                 foreach (PushButton pushButton in EnumeratePushButtons(panel).ToList())
                     TryRemoveRibbonItem(panel, pushButton);
+            }
+        }
+
+        /// <summary>
+        /// Removes leftover ribbon items from older "Spooling Savant 3.0" tab builds.
+        /// </summary>
+        private static void CleanupLegacyProductTab(UIControlledApplication application)
+        {
+            if (application == null)
+                return;
+
+            try
+            {
+                foreach (RibbonPanel panel in application.GetRibbonPanels(LegacyTabName).ToList())
+                {
+                    foreach (PushButton pushButton in EnumeratePushButtons(panel).ToList())
+                        TryRemoveRibbonItem(panel, pushButton);
+                }
+            }
+            catch
+            {
+                // Legacy tab may not exist.
             }
         }
 
@@ -424,7 +471,7 @@ namespace SpoolingSavantV3Exports
         {
             const string workerAssemblyFileName = "SpoolingSavantV3Exports.Workers.dll";
             const string paneTypeName = "SpoolingSavantV3Exports.Workers.SpoolingManager.Views.SpoolingManagerPane";
-            const string dialogTitle = "SS Manager V3";
+            const string dialogTitle = "Spooling Savant 3.0";
 
             try
             {
@@ -453,31 +500,6 @@ namespace SpoolingSavantV3Exports
                     // Drop any cached Workers load so Plot Packages / export use this rebuild, not an older shadow.
                     SsSavantHotloadWorkerAssemblyLoad.InvalidateWorkersCache();
                     Assembly workerAssembly = LoadHotloadWorkerAssembly(workerPath);
-                    if (interactive && workerAssembly != null)
-                    {
-                        try
-                        {
-                            Type sheetsHandlerType = workerAssembly.GetType(
-                                "SpoolingSavantV3Exports.Workers.SpoolingManager.Services.CreateSpoolSheetsHandler",
-                                false,
-                                false);
-                            FieldInfo tagField = sheetsHandlerType?.GetField("DiagnosticBuildTag", BindingFlags.Public | BindingFlags.Static);
-                            string tag = tagField?.GetValue(null) as string ?? "(no DiagnosticBuildTag)";
-                            string loc = workerAssembly.Location ?? "(empty)";
-                            string lwt = File.Exists(loc) ? File.GetLastWriteTime(loc).ToString("yyyy-MM-dd HH:mm:ss") : "n/a";
-                            TaskDialog.Show(
-                                dialogTitle,
-                                "Hotloaded Workers:\n"
-                                + tag + "\n"
-                                + "Version: " + workerAssembly.GetName().Version + "\n"
-                                + "LastWriteTime: " + lwt + "\n\n"
-                                + loc);
-                        }
-                        catch (Exception hotloadBannerEx)
-                        {
-                            TaskDialog.Show(dialogTitle, "Workers hotloaded, but banner failed:\n" + hotloadBannerEx.Message);
-                        }
-                    }
                     Type paneType = workerAssembly.GetType(paneTypeName, false, false);
                     if (paneType == null)
                     {
@@ -600,7 +622,7 @@ namespace SpoolingSavantV3Exports
     {
         protected override string WorkerAssemblyFileName => "SpoolingSavantV3Exports.Workers.dll";
         protected override string WorkerTypeName => "SpoolingSavantV3Exports.Workers.SpoolingManager.Views.SpoolingManagerPane";
-        protected override string ToolName => "SS Manager V3";
+        protected override string ToolName => "Spooling Savant 3.0";
 
         public override Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
         {
@@ -622,5 +644,13 @@ namespace SpoolingSavantV3Exports
         protected override string WorkerAssemblyFileName => "SpoolingSavantV3Exports.Workers.dll";
         protected override string WorkerTypeName => "SpoolingSavantV3Exports.Workers.SpoolingManager.Commands.CreateAssemblyCommand";
         protected override string ToolName => "Create Spool";
+    }
+
+    [Transaction(TransactionMode.Manual)]
+    public class TraceSpoolWithSsManagerBridgeLauncher : HotloadCommandBase
+    {
+        protected override string WorkerAssemblyFileName => "SpoolingSavantV3Exports.Workers.dll";
+        protected override string WorkerTypeName => "SpoolingSavantV3Exports.Workers.SpoolingManager.Commands.TraceSpoolCommand";
+        protected override string ToolName => "Trace Spool";
     }
 }

@@ -10,7 +10,7 @@ public static class AssemblyMemberChangeBootstrap
 
 	public static void Register(UIControlledApplication application)
 	{
-		// DocumentChanged and ExternalEvent live in SpoolingSavantV3Exports.dll (SsSavantAssemblyMemberSync).
+		// DocumentChanged and ExternalEvent live in SpoolingSavantV2.dll (SsSavantAssemblyMemberSync).
 		EnsureHandler();
 	}
 

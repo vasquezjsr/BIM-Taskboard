@@ -37,6 +37,7 @@ public class RenameSheetsHandler : IExternalEventHandler
 		{
 			return;
 		}
+		SpoolingManagerSettings.SetActiveProject(doc);
 		List<string> list = new List<string>();
 		int num = 0;
 		SpoolingManagerKind productKind = pendingRequest.ProductKind;
@@ -53,11 +54,11 @@ public class RenameSheetsHandler : IExternalEventHandler
 		List<string> existingNameConflicts = GetExistingNameConflicts(doc, pendingRequest, dictionary, dictionary2);
 		if (existingNameConflicts.Count > 0)
 		{
-			TaskDialog.Show("Rename Sheets", BuildExistingNameConflictMessage(existingNameConflicts));
+			Views.SsSavantMessageBox.Show(BuildExistingNameConflictMessage(existingNameConflicts), "Rename Sheets");
 			RevitRequestBridge.NotifyRenameSheetsCompleted();
 			return;
 		}
-		Transaction val = new Transaction(doc, "Spooling Savant V3 (Exports): Rename Sheets");
+		Transaction val = new Transaction(doc, "Spooling Savant: Rename Sheets");
 		try
 		{
 			val.Start();

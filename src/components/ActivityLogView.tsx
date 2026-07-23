@@ -8,7 +8,7 @@ import {
   type ActivityLogEntry,
 } from '../utils/activityLog';
 import { employeeNameById } from '../utils/orgChart';
-import { canManageColumns, canManageOrg, canViewActivityLog } from '../utils/permissions';
+import { canEditTasks, canManageColumns, canManageOrg, canViewActivityLog } from '../utils/permissions';
 import styles from './ActivityLogView.module.css';
 
 const ACTION_FILTERS: Array<{ id: 'all' | ActivityAction; label: string }> = [
@@ -33,8 +33,12 @@ export function ActivityLogView() {
   const activityLog = useStore((s) => s.activityLog ?? []);
   const deletedColumnArchive = useStore((s) => s.deletedColumnArchive ?? []);
   const deletedEmployeeArchive = useStore((s) => s.deletedEmployeeArchive ?? []);
+  const deletedTaskArchive = useStore((s) => s.deletedTaskArchive ?? []);
+  const taskRevisionArchive = useStore((s) => s.taskRevisionArchive ?? []);
+  const tasks = useStore((s) => s.tasks);
   const restoreDeletedColumn = useStore((s) => s.restoreDeletedColumn);
   const restoreDeletedEmployee = useStore((s) => s.restoreDeletedEmployee);
+  const restoreTaskActivity = useStore((s) => s.restoreTaskActivity);
 
   // View As: page content follows the person being previewed (same as MainNav).
   // Restore actions stay on the real signed-in user so preview can't escalate privileges.
@@ -43,6 +47,7 @@ export function ActivityLogView() {
   const canView = canViewActivityLog(perspectiveUserId, employees, employeePermissions);
   const canRestoreColumns = canManageColumns(realUserId, employees, employeePermissions);
   const canRestoreEmployees = canManageOrg(realUserId, employees, employeePermissions);
+  const canRestoreTasks = canEditTasks(realUserId, employees, employeePermissions);
 
   const [actionFilter, setActionFilter] = useState<'all' | ActivityAction>('all');
   const [search, setSearch] = useState('');
@@ -82,10 +87,62 @@ export function ActivityLogView() {
     return map;
   }, [deletedEmployeeArchive, employees]);
 
+  const liveTaskIds = useMemo(() => new Set(tasks.map((task) => task.id)), [tasks]);
+
+  const restorableDeleteArchiveIds = useMemo(() => {
+    const map = new Map<string, boolean>();
+    for (const archive of deletedTaskArchive) {
+      const collision = archive.tasks.some((task) => liveTaskIds.has(task.id));
+      map.set(archive.id, !archive.restoredAt && !collision);
+    }
+    return map;
+  }, [deletedTaskArchive, liveTaskIds]);
+
+  const restorableRevisionByActivityId = useMemo(() => {
+    const map = new Map<string, boolean>();
+    for (const archive of taskRevisionArchive) {
+      map.set(archive.activityLogId, !archive.restoredAt);
+      map.set(archive.id, !archive.restoredAt);
+    }
+    return map;
+  }, [taskRevisionArchive]);
+
+  function canRestoreTaskEntry(entry: ActivityLogEntry): boolean {
+    if (entry.entityType !== 'task' || entry.restoredAt) return false;
+    if (entry.action === 'created' || entry.action === 'restored') return false;
+
+    if (entry.action === 'deleted' && entry.archiveId) {
+      return Boolean(restorableDeleteArchiveIds.get(entry.archiveId));
+    }
+
+    if (entry.archiveId && restorableRevisionByActivityId.get(entry.archiveId)) {
+      return true;
+    }
+    if (restorableRevisionByActivityId.get(entry.id)) {
+      return true;
+    }
+
+    // Legacy status changes logged before revision archives existed
+    if (
+      entry.action === 'status_changed' &&
+      typeof entry.details?.from === 'string' &&
+      entry.details.from &&
+      liveTaskIds.has(entry.entityId)
+    ) {
+      return true;
+    }
+
+    return false;
+  }
+
   const restorableEmployeeCount = deletedEmployeeArchive.filter((entry) => {
     if (entry.restoredAt) return false;
     return !employees.some((employee) => employee.id === entry.employee.id);
   }).length;
+
+  const restorableTaskCount = activityLog.filter(
+    (entry) => entry.entityType === 'task' && canRestoreTaskEntry(entry)
+  ).length;
 
   if (!canView) {
     return (
@@ -107,12 +164,13 @@ export function ActivityLogView() {
         <div>
           <h2 className={styles.title}>Activity Log</h2>
           <p className={styles.subtitle}>
-            Track creates, updates, deletes, and restores across BIM Boardroom. Deleted columns and
-            employees can be restored here by authorized users.
+            Track creates, updates, deletes, and restores across BIM Boardroom. Use Restore on a task
+            change to undo it, or bring a deleted task back — you’ll be asked to confirm.
           </p>
         </div>
         <div className={styles.stats}>
           <span>{activityLog.length} events</span>
+          <span>{restorableTaskCount} restorable tasks</span>
           <span>
             {deletedColumnArchive.filter((entry) => !entry.restoredAt).length} restorable columns
           </span>
@@ -149,13 +207,23 @@ export function ActivityLogView() {
           filteredEntries.map((entry) => {
             const isEmployee = entry.entityType === 'employee';
             const isColumn = entry.entityType === 'column';
+            const isTask = entry.entityType === 'task';
+            const taskRestorable = isTask && canRestoreTaskEntry(entry);
             const canRestoreArchive = Boolean(
-              entry.archiveId &&
-                ((isEmployee && restorableEmployeeArchiveIds.get(entry.archiveId)) ||
-                  (isColumn && restorableColumnArchiveIds.get(entry.archiveId)))
+              taskRestorable ||
+                (entry.archiveId &&
+                  ((isEmployee && restorableEmployeeArchiveIds.get(entry.archiveId)) ||
+                    (isColumn && restorableColumnArchiveIds.get(entry.archiveId))))
             );
             const canRestore =
-              (isEmployee && canRestoreEmployees) || (isColumn && canRestoreColumns);
+              (isEmployee && canRestoreEmployees) ||
+              (isColumn && canRestoreColumns) ||
+              (isTask && canRestoreTasks);
+            const restoreLabel = isEmployee
+              ? 'Restore employee'
+              : isColumn
+                ? 'Restore column'
+                : 'Restore';
 
             return (
               <ActivityRow
@@ -164,11 +232,17 @@ export function ActivityLogView() {
                 actor={actorName(entry.actorId, employees)}
                 canRestore={canRestore}
                 canRestoreArchive={canRestoreArchive}
-                restoreLabel={isEmployee ? 'Restore employee' : 'Restore column'}
+                restoreLabel={restoreLabel}
                 onRestore={() => {
-                  if (!entry.archiveId) return;
-                  if (isEmployee) restoreDeletedEmployee(entry.archiveId);
-                  else if (isColumn) restoreDeletedColumn(entry.archiveId);
+                  const message = isTask
+                    ? `Restore this task change?\n\n${entry.summary}`
+                    : isEmployee
+                      ? `Restore this employee?\n\n${entry.summary}`
+                      : `Restore this column?\n\n${entry.summary}`;
+                  if (!window.confirm(message)) return;
+                  if (isEmployee && entry.archiveId) restoreDeletedEmployee(entry.archiveId);
+                  else if (isColumn && entry.archiveId) restoreDeletedColumn(entry.archiveId);
+                  else if (isTask) restoreTaskActivity(entry.id);
                 }}
               />
             );
@@ -194,6 +268,7 @@ function ActivityRow({
   restoreLabel: string;
   onRestore: () => void;
 }) {
+  const showRestore = canRestore && canRestoreArchive;
   return (
     <article className={styles.row}>
       <div className={styles.rowMeta}>
@@ -217,7 +292,7 @@ function ActivityRow({
           </dl>
         )}
       </div>
-      {canRestore && canRestoreArchive && (
+      {showRestore && (
         <button type="button" className={styles.restoreBtn} onClick={onRestore}>
           {restoreLabel}
         </button>

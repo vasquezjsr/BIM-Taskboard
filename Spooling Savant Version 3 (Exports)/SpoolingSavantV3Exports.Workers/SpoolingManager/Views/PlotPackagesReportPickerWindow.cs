@@ -117,7 +117,7 @@ internal sealed class PlotPackagesReportPickerWindow : Window
 
 			if (!options.AnySelected)
 			{
-				MessageBox.Show(this, "Select at least one report type.", Title, MessageBoxButton.OK, MessageBoxImage.Asterisk);
+				SsSavantMessageBox.Show(this, "Select at least one report type.", Title, MessageBoxButton.OK, MessageBoxImage.Asterisk);
 				return;
 			}
 

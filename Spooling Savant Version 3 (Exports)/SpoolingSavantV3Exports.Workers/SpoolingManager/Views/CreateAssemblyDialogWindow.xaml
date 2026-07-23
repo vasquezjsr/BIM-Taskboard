@@ -2,43 +2,61 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Create Spool"
-        Width="440"
-        MinWidth="400"
-        MinHeight="340"
+        Width="460"
+        MinWidth="420"
         SizeToContent="Height"
         ResizeMode="NoResize"
         WindowStartupLocation="CenterScreen"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        ShowInTaskbar="False"
         SnapsToDevicePixels="True"
         UseLayoutRounding="True"
         TextOptions.TextFormattingMode="Display"
         TextOptions.TextRenderingMode="ClearType"
-        Background="{DynamicResource SsSavantChromeBackground}">
+        Background="Transparent">
 
-    <Border Background="{DynamicResource SsSavantChromeBackground}"
-            BorderBrush="{DynamicResource SsSavantBorderOuter}"
-            BorderThickness="1"
-            CornerRadius="14"
-            Padding="10">
+    <Border BorderThickness="2"
+            CornerRadius="12"
+            Padding="16">
+        <Border.Background>
+            <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                <GradientStop Color="#FF131730" Offset="0"/>
+                <GradientStop Color="#FF06080F" Offset="1"/>
+            </LinearGradientBrush>
+        </Border.Background>
+        <Border.BorderBrush>
+            <SolidColorBrush Color="#FF4DA3FF"/>
+        </Border.BorderBrush>
 
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-            <Border Grid.Row="0"
+            <StackPanel Grid.Row="0" Margin="0,0,0,12">
+                <TextBlock x:Name="txtDialogTitle"
+                           Text="Create Spool"
+                           FontSize="20"
+                           FontWeight="SemiBold"
+                           Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+                <TextBlock TextWrapping="Wrap"
+                           Margin="0,6,0,0"
+                           FontSize="12"
+                           Foreground="{DynamicResource SsSavantForegroundMuted}"
+                           Text="Package Name is remembered as you last confirmed. Assembly Name advances a trailing number after each successful create."/>
+            </StackPanel>
+
+            <Border Grid.Row="1"
                     Background="{DynamicResource SsSavantListWellBackground}"
-                    BorderBrush="{DynamicResource SsSavantListBorder}"
+                    BorderBrush="{DynamicResource SsSavantBorderOuter}"
                     BorderThickness="1"
                     CornerRadius="10"
                     Padding="12"
                     Margin="0,0,0,14">
                 <StackPanel>
-                    <TextBlock TextWrapping="Wrap"
-                               Style="{DynamicResource SsSavantDialogHintText}"
-                               Margin="0,0,0,12"
-                               Text="If your assembly matches an existing assembly, Revit may reuse its type name and naming rules. Package Name is remembered exactly as you last confirmed until you change it. Assembly Name is remembered separately; after a successful create, a trailing number (for example CHWS-08) advances automatically for the next run."/>
-
                     <TextBlock Text="Package Name"
                                Foreground="{DynamicResource SsSavantForegroundMuted}"
                                FontSize="11"
@@ -61,11 +79,23 @@
                                FontSize="11"
                                Margin="0,0,0,4"/>
                     <ComboBox x:Name="cmbNamingCategory"
-                              Height="32"/>
+                              Height="32"
+                              Margin="0,0,0,12"/>
+
+                    <CheckBox x:Name="chkChainSpooling"
+                              Content="Chain Spooling"
+                              VerticalContentAlignment="Center"
+                              Foreground="{DynamicResource SsSavantForegroundPrimary}"
+                              ToolTip="After OK, click the next part down the line. Everything between that pick and the assembly you just made becomes the next spool. Keep clicking; Esc stops."/>
+                    <TextBlock Text="Click the next part along the run — parts between it and the last spool become the next assembly."
+                               TextWrapping="Wrap"
+                               Margin="22,4,0,0"
+                               FontSize="11"
+                               Foreground="{DynamicResource SsSavantForegroundMuted}"/>
                 </StackPanel>
             </Border>
 
-            <StackPanel Grid.Row="1"
+            <StackPanel Grid.Row="2"
                         Orientation="Horizontal"
                         HorizontalAlignment="Right">
                 <Button Content="OK"

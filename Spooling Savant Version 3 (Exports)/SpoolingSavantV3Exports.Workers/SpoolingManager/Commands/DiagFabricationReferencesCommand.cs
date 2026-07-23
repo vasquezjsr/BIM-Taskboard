@@ -20,7 +20,7 @@ public sealed class DiagFabricationReferencesCommand : IExternalCommand
 		if (doc == null)
 		{
 			message = "No active Revit document.";
-			TaskDialog.Show(ToolTitle, message);
+			Views.SsSavantMessageBox.Show(message, ToolTitle);
 			return Result.Failed;
 		}
 
@@ -28,24 +28,25 @@ public sealed class DiagFabricationReferencesCommand : IExternalCommand
 		if (view == null)
 		{
 			message = "No active view.";
-			TaskDialog.Show(ToolTitle, message);
+			Views.SsSavantMessageBox.Show(message, ToolTitle);
 			return Result.Failed;
 		}
 
 		try
 		{
 			string reportPath = FabricationReferenceDiagnosticService.Run(doc, view, DefaultAssemblyName);
-			TaskDialog.Show(ToolTitle,
+			Views.SsSavantMessageBox.Show(
 				"Reference diagnostic complete.\n\n"
 				+ "Active view: " + view.Name + "\n"
 				+ "Assembly: " + DefaultAssemblyName + " (or view-associated assembly)\n\n"
-				+ "Report written to:\n" + reportPath);
+				+ "Report written to:\n" + reportPath,
+				ToolTitle);
 			return Result.Succeeded;
 		}
 		catch (Exception ex)
 		{
 			message = ex.Message;
-			TaskDialog.Show(ToolTitle, ex.ToString());
+			Views.SsSavantMessageBox.Show(ex.ToString(), ToolTitle);
 			return Result.Failed;
 		}
 	}

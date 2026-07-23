@@ -89,7 +89,7 @@ public class RenameSheetsWindow : Window
 		}).ToList();
 		if (!list.Any((RenameSheetRow x) => !string.IsNullOrWhiteSpace(x.NewName)))
 		{
-			MessageBox.Show("Enter at least one starting name in the New Name column.", "Rename Sheets", MessageBoxButton.OK, MessageBoxImage.Exclamation);
+			SsSavantMessageBox.Show("Enter at least one starting name in the New Name column.", "Rename Sheets", MessageBoxButton.OK, MessageBoxImage.Exclamation);
 			return null;
 		}
 		SequenceSeed sequenceSeed = null;
@@ -101,14 +101,14 @@ public class RenameSheetsWindow : Window
 				sequenceSeed = TryCreateSeed(renameSheetRow.NewName);
 				if (sequenceSeed == null)
 				{
-					MessageBox.Show("Each filled New Name must end with a number so it can auto-sequence.\n\nExample: CHWR-02", "Rename Sheets", MessageBoxButton.OK, MessageBoxImage.Exclamation);
+					SsSavantMessageBox.Show("Each filled New Name must end with a number so it can auto-sequence.\n\nExample: CHWR-02", "Rename Sheets", MessageBoxButton.OK, MessageBoxImage.Exclamation);
 					return null;
 				}
 				continue;
 			}
 			if (sequenceSeed == null)
 			{
-				MessageBox.Show("Blank rows before the first filled New Name cannot be auto-sequenced. Enter a starting name for the first group.", "Rename Sheets", MessageBoxButton.OK, MessageBoxImage.Exclamation);
+				SsSavantMessageBox.Show("Blank rows before the first filled New Name cannot be auto-sequenced. Enter a starting name for the first group.", "Rename Sheets", MessageBoxButton.OK, MessageBoxImage.Exclamation);
 				return null;
 			}
 			sequenceSeed = sequenceSeed.Next();
@@ -119,7 +119,7 @@ public class RenameSheetsWindow : Window
 			select g.Key, StringComparer.OrdinalIgnoreCase);
 		if (hashSet.Count > 0)
 		{
-			MessageBox.Show("The generated names contain duplicates.\n\n" + string.Join("\n", hashSet.OrderBy((string x) => x)), "Rename Sheets", MessageBoxButton.OK, MessageBoxImage.Exclamation);
+			SsSavantMessageBox.Show("The generated names contain duplicates.\n\n" + string.Join("\n", hashSet.OrderBy((string x) => x)), "Rename Sheets", MessageBoxButton.OK, MessageBoxImage.Exclamation);
 			return null;
 		}
 		return list;

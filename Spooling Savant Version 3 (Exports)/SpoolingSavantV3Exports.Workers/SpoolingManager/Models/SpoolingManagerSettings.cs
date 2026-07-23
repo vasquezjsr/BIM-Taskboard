@@ -2,7 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 using System.Xml.Serialization;
+using Autodesk.Revit.DB;
 using SpoolingSavantV3Exports.Workers.SpoolingManager.Infrastructure;
 using SpoolingSavantV3Exports.Workers.UI;
 
@@ -16,6 +19,8 @@ public class SpoolingManagerSettings
 	public string ThemeId { get; set; } = UiAppearanceSettings.DefaultThemeId;
 
 	public bool UseRevitGraphics { get; set; } = true;
+
+	public bool ButtonClickSoundsEnabled { get; set; } = true;
 
 	public string UiChromeBackground { get; set; } = UiAppearanceSettings.DefaultChromeBackground;
 
@@ -40,6 +45,69 @@ public class SpoolingManagerSettings
 	public string HangerTagTypeName { get; set; } = string.Empty;
 
 	public string DuctTagTypeName { get; set; } = string.Empty;
+
+	/// <summary>
+	/// When true, SS Manager targets native Revit Pipes / Pipe Fittings / Pipe Accessories
+	/// (tags, dims, shared-param categories) instead of MEP Fabrication Pipework.
+	/// </summary>
+	public bool UseNativePipework { get; set; }
+
+	/// <summary>
+	/// Spool Content dropdown: Fabrication | NativePipe | Duct | Hangers.
+	/// Kept in sync with <see cref="UseNativePipework"/> (NativePipe ⇒ true).
+	/// </summary>
+	public string SpoolContentMode { get; set; } = "Fabrication";
+
+	/// <summary>Normalized Spool Content tag used by the pane list filter.</summary>
+	public string GetSpoolContentModeTag()
+	{
+		string tag = (SpoolContentMode ?? string.Empty).Trim();
+		if (string.Equals(tag, "NativePipe", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(tag, "Families", StringComparison.OrdinalIgnoreCase))
+		{
+			return "NativePipe";
+		}
+		if (string.Equals(tag, "Duct", StringComparison.OrdinalIgnoreCase))
+		{
+			return "Duct";
+		}
+		if (string.Equals(tag, "Hangers", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(tag, "Hanger", StringComparison.OrdinalIgnoreCase))
+		{
+			return "Hangers";
+		}
+		if (UseNativePipework)
+		{
+			return "NativePipe";
+		}
+		return "Fabrication";
+	}
+
+	public void SetSpoolContentModeTag(string tag)
+	{
+		if (string.Equals(tag, "NativePipe", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(tag, "Families", StringComparison.OrdinalIgnoreCase))
+		{
+			SpoolContentMode = "NativePipe";
+			UseNativePipework = true;
+			return;
+		}
+		if (string.Equals(tag, "Duct", StringComparison.OrdinalIgnoreCase))
+		{
+			SpoolContentMode = "Duct";
+			UseNativePipework = false;
+			return;
+		}
+		if (string.Equals(tag, "Hangers", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(tag, "Hanger", StringComparison.OrdinalIgnoreCase))
+		{
+			SpoolContentMode = "Hangers";
+			UseNativePipework = false;
+			return;
+		}
+		SpoolContentMode = "Fabrication";
+		UseNativePipework = false;
+	}
 
 	public bool NumberWeldsEnabled { get; set; }
 
@@ -72,7 +140,21 @@ public class SpoolingManagerSettings
 
 	public string ItemNumberValveSuffix { get; set; } = "-V";
 
-	/// <summary>Zero-pad width for the numeric portion (e.g. 3 → 001). Minimum 1.</summary>
+	/// <summary>
+	/// Starting token for the Straight series (e.g. 1, 01, 001, A).
+	/// Digits imply zero-pad width; letters advance A,B,C…
+	/// Empty until <see cref="NormalizeItemNumberStarts"/> fills from <see cref="ItemNumberDigits"/>.
+	/// </summary>
+	public string ItemNumberStraightStart { get; set; } = string.Empty;
+
+	public string ItemNumberFittingStart { get; set; } = string.Empty;
+
+	public string ItemNumberValveStart { get; set; } = string.Empty;
+
+	/// <summary>
+	/// Legacy zero-pad width. Prefer <see cref="ItemNumberStraightStart"/> etc.
+	/// Kept so older settings XML still round-trips; new UI writes Starts instead.
+	/// </summary>
 	public int ItemNumberDigits { get; set; } = 3;
 
 	public string WeldLogTextNoteTypeName { get; set; } = string.Empty;
@@ -130,6 +212,12 @@ public class SpoolingManagerSettings
 	public string AutoDimensionTypeName { get; set; } = string.Empty;
 
 	public bool AutoDimAnnotations { get; set; }
+
+	/// <summary>
+	/// Native pipework only: also dimension each fitting to itself
+	/// (fitting end to fitting centerline, e.g. elbow takeout).
+	/// </summary>
+	public bool NativeFittingSelfDimensionsEnabled { get; set; }
 
 	/// <summary>When true, create/refresh/plot places a tracking QR in the titleblock QR slot.</summary>
 	public bool PlaceTrackingQrOnSpoolSheets { get; set; } = true;
@@ -264,6 +352,95 @@ public class SpoolingManagerSettings
 
 	public static string SettingsFilePath => GetSettingsFilePathForKind(SpoolingManagerKind.Standard);
 
+	/// <summary>
+	/// Settings are stored per Revit project. Entry points (pane load/refresh, settings window,
+	/// external-event handlers) call <see cref="SetActiveProject"/> so Load/Save resolve to the
+	/// current project's own settings file. A new project starts from defaults until saved.
+	/// </summary>
+	private static string _activeProjectKey;
+
+	public static void SetActiveProject(Document doc)
+	{
+		_activeProjectKey = ComputeProjectKey(doc);
+	}
+
+	/// <summary>
+	/// Stable per-project folder name. Prefers ProjectInformation UniqueId (same for all local
+	/// copies of a central model and stable across renames), falling back to the model path/title.
+	/// </summary>
+	private static string ComputeProjectKey(Document doc)
+	{
+		if (doc == null)
+		{
+			return null;
+		}
+		string stableId = null;
+		try
+		{
+			stableId = doc.ProjectInformation?.UniqueId;
+		}
+		catch
+		{
+		}
+		if (string.IsNullOrWhiteSpace(stableId))
+		{
+			try
+			{
+				stableId = doc.PathName;
+			}
+			catch
+			{
+			}
+		}
+		string title = null;
+		try
+		{
+			title = doc.Title;
+		}
+		catch
+		{
+		}
+		if (string.IsNullOrWhiteSpace(stableId))
+		{
+			stableId = title;
+		}
+		if (string.IsNullOrWhiteSpace(stableId))
+		{
+			return null;
+		}
+		string readable = SanitizeForFolderName(title);
+		string hash = ComputeShortHash(stableId);
+		return string.IsNullOrEmpty(readable) ? hash : readable + "_" + hash;
+	}
+
+	private static string SanitizeForFolderName(string value)
+	{
+		if (string.IsNullOrWhiteSpace(value))
+		{
+			return string.Empty;
+		}
+		char[] invalid = Path.GetInvalidFileNameChars();
+		StringBuilder sb = new StringBuilder(value.Length);
+		foreach (char c in value.Trim())
+		{
+			sb.Append(Array.IndexOf(invalid, c) >= 0 ? '_' : c);
+		}
+		string result = sb.ToString();
+		return result.Length > 60 ? result.Substring(0, 60) : result;
+	}
+
+	private static string ComputeShortHash(string value)
+	{
+		using SHA256 sha = SHA256.Create();
+		byte[] bytes = sha.ComputeHash(Encoding.UTF8.GetBytes(value ?? string.Empty));
+		StringBuilder sb = new StringBuilder(16);
+		for (int i = 0; i < 8; i++)
+		{
+			sb.Append(bytes[i].ToString("x2"));
+		}
+		return sb.ToString();
+	}
+
 	public double GetSpoolSheetScaleInchesPerFoot(SpoolingManagerKind kind)
 	{
 		if (SpoolSheetScaleInchesPerFoot.HasValue && SpoolSheetScaleInchesPerFoot.Value > 0.0)
@@ -279,13 +456,20 @@ public class SpoolingManagerSettings
 
 	public static string GetSettingsFilePathForKind(SpoolingManagerKind kind)
 	{
-		return Path.Combine(SettingsFolderPath, kind switch
+		string fileName = kind switch
 		{
 			SpoolingManagerKind.Mmc => "MmcSpoolingManagerSettings.xml", 
 			SpoolingManagerKind.MmcTesting => "MmcSpoolingManagerTestingSettings.xml", 
 			SpoolingManagerKind.AutoDimensionLab => "SpoolingManagerAutoDimensionLabSettings.xml", 
 			_ => "SpoolingManagerSettings.xml", 
-		});
+		};
+		string projectKey = _activeProjectKey;
+		if (!string.IsNullOrEmpty(projectKey))
+		{
+			return Path.Combine(SettingsFolderPath, "Projects", projectKey, fileName);
+		}
+		// No project context (e.g. appearance migration at startup) — legacy shared file.
+		return Path.Combine(SettingsFolderPath, fileName);
 	}
 
 	public static SpoolingManagerSettings Load()
@@ -308,6 +492,7 @@ public class SpoolingManagerSettings
 				RepairSpoolSheetViewScale(kind, spoolingManagerSettings);
 				RepairLogoImagePathIfStale(kind, spoolingManagerSettings);
 				spoolingManagerSettings.NormalizeScheduleOptions();
+				spoolingManagerSettings.NormalizeItemNumberStarts();
 				return spoolingManagerSettings;
 			}
 			XmlSerializer xmlSerializer = new XmlSerializer(typeof(SpoolingManagerSettings));
@@ -319,6 +504,7 @@ public class SpoolingManagerSettings
 			RepairAutoDimFlagsForIncludedViews(kind, settingsFilePathForKind, spoolingManagerSettings2);
 			RepairLogoImagePathIfStale(kind, spoolingManagerSettings2);
 			spoolingManagerSettings2.NormalizeScheduleOptions();
+			spoolingManagerSettings2.NormalizeItemNumberStarts();
 			return spoolingManagerSettings2;
 		}
 		catch
@@ -327,6 +513,7 @@ public class SpoolingManagerSettings
 			RepairSpoolSheetViewScale(kind, spoolingManagerSettings3);
 			RepairLogoImagePathIfStale(kind, spoolingManagerSettings3);
 			spoolingManagerSettings3.NormalizeScheduleOptions();
+			spoolingManagerSettings3.NormalizeItemNumberStarts();
 			return spoolingManagerSettings3;
 		}
 	}
@@ -480,9 +667,15 @@ public class SpoolingManagerSettings
 	public void Save(SpoolingManagerKind kind)
 	{
 		NormalizeScheduleOptions();
-		Directory.CreateDirectory(SettingsFolderPath);
+		NormalizeItemNumberStarts();
+		string settingsFilePath = GetSettingsFilePathForKind(kind);
+		string directory = Path.GetDirectoryName(settingsFilePath);
+		if (!string.IsNullOrEmpty(directory))
+		{
+			Directory.CreateDirectory(directory);
+		}
 		XmlSerializer xmlSerializer = new XmlSerializer(typeof(SpoolingManagerSettings));
-		using FileStream stream = File.Create(GetSettingsFilePathForKind(kind));
+		using FileStream stream = File.Create(settingsFilePath);
 		xmlSerializer.Serialize(stream, this);
 	}
 
@@ -578,5 +771,78 @@ public class SpoolingManagerSettings
 		ScheduleName = ScheduleNames.Count > 0 ? ScheduleNames[0] : string.Empty;
 		SecondScheduleEnabled = ScheduleNames.Count > 1;
 		ScheduleName2 = ScheduleNames.Count > 1 ? ScheduleNames[1] : string.Empty;
+	}
+
+	/// <summary>
+	/// Fills empty Start tokens from legacy <see cref="ItemNumberDigits"/> (e.g. 3 → 001).
+	/// </summary>
+	public void NormalizeItemNumberStarts()
+	{
+		string fromDigits = BuildDefaultStartFromDigits(ItemNumberDigits);
+		ItemNumberStraightStart = CoalesceItemNumberStart(ItemNumberStraightStart, fromDigits);
+		ItemNumberFittingStart = CoalesceItemNumberStart(ItemNumberFittingStart, fromDigits);
+		ItemNumberValveStart = CoalesceItemNumberStart(ItemNumberValveStart, fromDigits);
+
+		int inferred = InferDigitsFromStart(ItemNumberStraightStart);
+		if (inferred > 0)
+		{
+			ItemNumberDigits = inferred;
+		}
+	}
+
+	private static string BuildDefaultStartFromDigits(int digits)
+	{
+		int width = digits < 1 ? 3 : (digits > 8 ? 8 : digits);
+		return "1".PadLeft(width, '0');
+	}
+
+	private static string CoalesceItemNumberStart(string value, string fallback)
+	{
+		string text = (value ?? string.Empty).Trim();
+		if (text.Length == 0)
+		{
+			return fallback;
+		}
+
+		bool digits = true;
+		bool letters = true;
+		for (int i = 0; i < text.Length; i++)
+		{
+			if (!char.IsDigit(text[i]))
+			{
+				digits = false;
+			}
+
+			if (!char.IsLetter(text[i]))
+			{
+				letters = false;
+			}
+		}
+
+		if (digits || letters)
+		{
+			return text;
+		}
+
+		return fallback;
+	}
+
+	private static int InferDigitsFromStart(string start)
+	{
+		string text = (start ?? string.Empty).Trim();
+		if (text.Length == 0)
+		{
+			return 0;
+		}
+
+		for (int i = 0; i < text.Length; i++)
+		{
+			if (!char.IsDigit(text[i]))
+			{
+				return 0;
+			}
+		}
+
+		return Math.Min(8, Math.Max(1, text.Length));
 	}
 }

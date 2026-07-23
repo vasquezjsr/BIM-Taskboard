@@ -19,30 +19,6 @@ public sealed class CreateAssemblyCommand : IExternalCommand
 
 	public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
 	{
-		//IL_0400: Unknown result type (might be due to invalid IL or missing references)
-		//IL_0410: Unknown result type (might be due to invalid IL or missing references)
-		//IL_0414: Unknown result type (might be due to invalid IL or missing references)
-		//IL_02f9: Unknown result type (might be due to invalid IL or missing references)
-		//IL_02ff: Invalid comparison between Unknown and I4
-		//IL_005c: Unknown result type (might be due to invalid IL or missing references)
-		//IL_0085: Unknown result type (might be due to invalid IL or missing references)
-		//IL_0385: Unknown result type (might be due to invalid IL or missing references)
-		//IL_00ae: Unknown result type (might be due to invalid IL or missing references)
-		//IL_0358: Unknown result type (might be due to invalid IL or missing references)
-		//IL_035e: Invalid comparison between Unknown and I4
-		//IL_03ee: Unknown result type (might be due to invalid IL or missing references)
-		//IL_00d8: Unknown result type (might be due to invalid IL or missing references)
-		//IL_0153: Unknown result type (might be due to invalid IL or missing references)
-		//IL_015a: Expected O, but got Unknown
-		//IL_015c: Unknown result type (might be due to invalid IL or missing references)
-		//IL_0184: Unknown result type (might be due to invalid IL or missing references)
-		//IL_01c9: Unknown result type (might be due to invalid IL or missing references)
-		//IL_01d0: Expected O, but got Unknown
-		//IL_01d2: Unknown result type (might be due to invalid IL or missing references)
-		//IL_020c: Unknown result type (might be due to invalid IL or missing references)
-		//IL_027b: Unknown result type (might be due to invalid IL or missing references)
-		//IL_0282: Expected O, but got Unknown
-		//IL_0284: Unknown result type (might be due to invalid IL or missing references)
 		UIApplication application = commandData.Application;
 		if (((application != null) ? application.Application : null) != null)
 		{
@@ -52,44 +28,105 @@ public sealed class CreateAssemblyCommand : IExternalCommand
 		Document doc = ((val != null) ? val.Document : null);
 		if (doc == null)
 		{
-			TaskDialog.Show(ToolTitle, "No active Revit document.");
+			Views.SsSavantMessageBox.Show("No active Revit document.", ToolTitle);
 			return (Result)(-1);
 		}
 		ICollection<ElementId> elementIds = val.Selection.GetElementIds();
 		if (elementIds == null || elementIds.Count == 0)
 		{
-			TaskDialog.Show(ToolTitle, "Select one or more elements that can belong to an assembly, then run the command again.");
+			Views.SsSavantMessageBox.Show("Select one or more elements that can belong to an assembly, then run the command again.", ToolTitle);
 			return (Result)1;
 		}
 		List<ElementId> list = CollectAssemblyMemberCandidates(doc, elementIds);
 		if (list.Count == 0)
 		{
-			TaskDialog.Show(ToolTitle, "None of the selected elements can be used as assembly members (they may already belong to an assembly or are not valid categories).");
+			Views.SsSavantMessageBox.Show("None of the selected elements can be used as assembly members (they may already belong to an assembly or are not valid categories).", ToolTitle);
 			return (Result)1;
 		}
-		IReadOnlyList<AssemblyNamingCategoryOption> readOnlyList = BuildNamingCategoryOptions(doc, list);
-		if (readOnlyList.Count == 0)
+
+		return CreateSpoolFromMemberIds(application, val, doc, list, ToolTitle, ref message);
+	}
+
+	/// <summary>
+	/// Shared create path used by Create Spool (pre-selection) and Trace Spool (gathered endpoints).
+	/// When <paramref name="session"/> is non-null and <paramref name="promptDialog"/> is false,
+	/// reuses category/package from the session and the next numeric name from saved settings.
+	/// </summary>
+	internal static Result CreateSpoolFromMemberIds(
+		UIApplication application,
+		UIDocument uidoc,
+		Document doc,
+		List<ElementId> memberIds,
+		string toolTitle,
+		ref string message,
+		CreateSpoolSession session = null,
+		bool promptDialog = true)
+	{
+		if (application == null || doc == null || memberIds == null || memberIds.Count == 0)
 		{
-			TaskDialog.Show(ToolTitle, "No naming category is valid for the current selection. Try a different selection or naming setup.");
 			return (Result)1;
 		}
-		CreateAssemblyDialogWindow createAssemblyDialogWindow = new CreateAssemblyDialogWindow(readOnlyList);
-		IntPtr mainWindowHandle = application.MainWindowHandle;
-		if (mainWindowHandle != IntPtr.Zero)
+
+		if (session == null)
 		{
-			new WindowInteropHelper(createAssemblyDialogWindow).Owner = mainWindowHandle;
+			session = new CreateSpoolSession();
 		}
-		if (createAssemblyDialogWindow.ShowDialog() != true)
+
+		List<ElementId> list = CollectAssemblyMemberCandidates(doc, memberIds);
+		if (list.Count == 0)
 		{
+			Views.SsSavantMessageBox.Show("None of the elements can be used as assembly members (they may already belong to an assembly or are not valid categories).", toolTitle);
 			return (Result)1;
 		}
-		ElementId selectedNamingCategoryId = createAssemblyDialogWindow.SelectedNamingCategoryId;
-		string enteredAssemblyName = createAssemblyDialogWindow.EnteredAssemblyName;
-		string text = createAssemblyDialogWindow.PersistedPackageNameSnapshot ?? string.Empty;
+
+		ElementId selectedNamingCategoryId;
+		string enteredAssemblyName;
+		string text;
+		bool startChainSpooling = false;
+
+		if (promptDialog || session.NamingCategoryId == null
+			|| session.NamingCategoryId == ElementId.InvalidElementId)
+		{
+			IReadOnlyList<AssemblyNamingCategoryOption> readOnlyList = BuildNamingCategoryOptions(doc, list);
+			if (readOnlyList.Count == 0)
+			{
+				Views.SsSavantMessageBox.Show("No naming category is valid for the current selection. Try a different selection or naming setup.", toolTitle);
+				return (Result)1;
+			}
+			CreateAssemblyDialogWindow createAssemblyDialogWindow = new CreateAssemblyDialogWindow(readOnlyList);
+			IntPtr mainWindowHandle = application.MainWindowHandle;
+			if (mainWindowHandle != IntPtr.Zero)
+			{
+				new WindowInteropHelper(createAssemblyDialogWindow).Owner = mainWindowHandle;
+			}
+			if (createAssemblyDialogWindow.ShowDialog() != true)
+			{
+				return (Result)1;
+			}
+			selectedNamingCategoryId = createAssemblyDialogWindow.SelectedNamingCategoryId;
+			enteredAssemblyName = createAssemblyDialogWindow.EnteredAssemblyName;
+			text = createAssemblyDialogWindow.PersistedPackageNameSnapshot ?? string.Empty;
+			session.NamingCategoryId = selectedNamingCategoryId;
+			session.PackageName = text;
+			session.ChainSpooling = createAssemblyDialogWindow.ChainSpoolingEnabled;
+			startChainSpooling = session.ChainSpooling;
+		}
+		else
+		{
+			selectedNamingCategoryId = session.NamingCategoryId;
+			text = session.PackageName ?? string.Empty;
+			CreateAssemblyDialogSettings settings = CreateAssemblyDialogSettings.Load();
+			enteredAssemblyName = AssemblyTypeNaming.Sanitize(settings.LastAssemblyName ?? string.Empty);
+			if (enteredAssemblyName.Length == 0)
+			{
+				enteredAssemblyName = "Assembly-01";
+			}
+		}
+
 		AssemblyInstance val2 = null;
 		try
 		{
-			Transaction val3 = new Transaction(doc, "Spooling Savant V3 (Exports): Create Assembly");
+			Transaction val3 = new Transaction(doc, "Spooling Savant: Create Assembly");
 			try
 			{
 				val3.Start();
@@ -110,7 +147,7 @@ public sealed class CreateAssemblyCommand : IExternalCommand
 			{
 				throw new InvalidOperationException("Assembly name is empty or contains only invalid characters. Use letters, numbers, spaces, hyphens, and underscores.");
 			}
-			Transaction val4 = new Transaction(doc, "Spooling Savant V3 (Exports): Name assembly");
+			Transaction val4 = new Transaction(doc, "Spooling Savant: Name assembly");
 			try
 			{
 				val4.Start();
@@ -129,12 +166,12 @@ public sealed class CreateAssemblyCommand : IExternalCommand
 			}
 			if (text.Length > 0)
 			{
-				Transaction val6 = new Transaction(doc, "Spooling Savant V3 (Exports): Apply S-Package");
+				Transaction val6 = new Transaction(doc, "Spooling Savant: Apply S-Package");
 				try
 				{
 					val6.Start();
 					Element element2 = doc.GetElement(id);
-					Parameter obj2 = (((element2 is AssemblyInstance) ? element2 : null) ?? throw new InvalidOperationException("The new assembly could not be reloaded for S-Package.")).LookupParameter("S-Package") ?? throw new InvalidOperationException("S-Package was not found on the new assembly. Reopen the project so Spooling Savant V3 (Exports) can bind shared parameters at load.");
+					Parameter obj2 = (((element2 is AssemblyInstance) ? element2 : null) ?? throw new InvalidOperationException("The new assembly could not be reloaded for S-Package.")).LookupParameter("S-Package") ?? throw new InvalidOperationException("S-Package was not found on the new assembly. Reopen the project so Spooling Savant can bind shared parameters at load.");
 					if (((APIObject)obj2).IsReadOnly)
 					{
 						throw new InvalidOperationException("S-Package is read-only on this assembly.");
@@ -168,19 +205,49 @@ public sealed class CreateAssemblyCommand : IExternalCommand
 			CreateAssemblyDialogSettings createAssemblyDialogSettings = CreateAssemblyDialogSettings.Load();
 			createAssemblyDialogSettings.LastPackageName = text;
 			createAssemblyDialogSettings.LastAssemblyName = CreateAssemblyDialogSettings.SuggestNextNumericSuffix(enteredAssemblyName);
-			createAssemblyDialogSettings.Save();
-			if (val2 != null)
+			if (promptDialog)
 			{
-				val.Selection.SetElementIds((ICollection<ElementId>)new List<ElementId> { ((Element)val2).Id });
+				createAssemblyDialogSettings.LastChainSpooling = session.ChainSpooling;
 			}
+			createAssemblyDialogSettings.Save();
+			session.LastCreatedAssemblyId = id;
+			if (val2 != null && uidoc != null)
+			{
+				uidoc.Selection.SetElementIds((ICollection<ElementId>)new List<ElementId> { ((Element)val2).Id });
+			}
+
+			if (startChainSpooling && uidoc != null)
+			{
+				ChainSpoolingRunner.Run(
+					application,
+					uidoc,
+					doc,
+					id,
+					session,
+					toolTitle,
+					ref message);
+			}
+
 			return (Result)0;
 		}
 		catch (Exception ex)
 		{
-			TaskDialog.Show(ToolTitle, ex.Message);
+			Views.SsSavantMessageBox.Show(ex.Message, toolTitle);
 			message = ex.Message;
 			return (Result)(-1);
 		}
+	}
+
+	/// <summary>Carries naming category / package across continuous Trace / Chain Spooling creates.</summary>
+	internal sealed class CreateSpoolSession
+	{
+		public ElementId NamingCategoryId { get; set; }
+
+		public string PackageName { get; set; } = string.Empty;
+
+		public bool ChainSpooling { get; set; }
+
+		public ElementId LastCreatedAssemblyId { get; set; }
 	}
 
 	private static List<ElementId> CollectAssemblyMemberCandidates(Document doc, ICollection<ElementId> selection)

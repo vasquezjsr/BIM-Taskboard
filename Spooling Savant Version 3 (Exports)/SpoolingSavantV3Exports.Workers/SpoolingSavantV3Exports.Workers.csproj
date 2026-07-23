@@ -75,6 +75,7 @@
     <Compile Include="FabricationConnectorEnds.cs" />
     <Compile Include="FabricationSavantParameterSync.cs" />
     <Compile Include="FabricationHangerParameterSync.cs" />
+    <Compile Include="NativePipeParameterSync.cs" />
     <Compile Include="SsSavantHotloadDependencyScope.cs" />
     <Compile Include="Commands\PipeFittingsBomPdfCommand.cs" />
     <Compile Include="FabricationPipeSelectionFilter.cs" />
@@ -83,6 +84,8 @@
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="SpoolingManager\AssemblyDisplayName.cs" />
     <Compile Include="SpoolingManager\Commands\CreateAssemblyCommand.cs" />
+    <Compile Include="SpoolingManager\Commands\TraceSpoolCommand.cs" />
+    <Compile Include="SpoolingManager\Commands\TraceSpoolEndpointSelectionFilter.cs" />
     <Compile Include="SpoolingManager\Commands\DiagFabricationReferencesCommand.cs" />
     <Compile Include="SpoolingManager\Services\FabricationReferenceDiagnosticService.cs" />
     <Compile Include="SpoolingManager\Infrastructure\InstallLayout.cs" />
@@ -145,6 +148,12 @@
     <Compile Include="SpoolingManager\Services\DimensionInspectorService.cs" />
     <Compile Include="SpoolingManager\Services\DimensionInspectorSession.cs" />
     <Compile Include="SpoolingManager\Services\CreateSpoolSheetsHandler.AssemblyLine.cs" />
+    <Compile Include="SpoolingManager\Services\CreateSpoolSheetsHandler.NativePipeDimensionSynthesis.cs" />
+    <Compile Include="SpoolingManager\Services\NativePipeSpoolSupport.cs" />
+    <Compile Include="SpoolingManager\Services\ItemNumberSequenceFormatter.cs" />
+    <Compile Include="SpoolingManager\Services\SpoolTracePathGatherer.cs" />
+    <Compile Include="SpoolingManager\Services\ChainSpoolingRunner.cs" />
+    <Compile Include="SpoolingManager\Services\ButtonClickSoundService.cs" />
     <Compile Include="SpoolingManager\Services\OpenSpoolSheetsHandler.cs" />
     <Compile Include="SpoolingManager\Services\PlotPackagesHandler.cs" />
     <Compile Include="SpoolingManager\Services\SpoolTagOrganizer.cs" />
@@ -188,6 +197,7 @@
     <Compile Include="SpoolingManager\Views\CreateSpoolMapDialogWindow.cs" />
     <Compile Include="SpoolingManager\Views\PlotPackagesReportPickerWindow.cs" />
     <Compile Include="SpoolingManager\Views\ExportToBoardroomWindow.cs" />
+    <Compile Include="SpoolingManager\Views\SsSavantMessageBox.cs" />
     <Compile Include="SpoolingManager\Views\RenameSheetsWindow.xaml.cs">
       <DependentUpon>RenameSheetsWindow.xaml</DependentUpon>
     </Compile>
@@ -203,6 +213,8 @@
     <Compile Include="SsSavantSharedParameterPaths.cs" />
     <Compile Include="UI\SsSavantAppearanceStore.cs" />
     <Compile Include="UI\SsSavantChrome.cs" />
+    <Compile Include="UI\SsSavantNeonChrome.cs" />
+    <Compile Include="UI\SsSavantDialogForeground.cs" />
     <Compile Include="UI\SsSavantCompletionDialog.cs" />
     <Compile Include="UI\SsSavantDialogChrome.cs" />
     <Compile Include="UI\SsSavantSimplePrompts.cs" />

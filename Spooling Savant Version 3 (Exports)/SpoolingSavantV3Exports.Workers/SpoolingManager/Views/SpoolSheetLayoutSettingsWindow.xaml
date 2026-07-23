@@ -6,10 +6,21 @@
         Width="520"
         WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize"
-        Background="{DynamicResource SsSavantChromeBackground}">
-    <Border Background="{DynamicResource SsSavantChromeBackground}"
-            BorderThickness="0"
-            Padding="12">
+        WindowStyle="None"
+        ShowInTaskbar="False"
+        Background="Transparent">
+    <Border BorderThickness="2"
+            CornerRadius="12"
+            Padding="16">
+        <Border.Background>
+            <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                <GradientStop Color="#FF131730" Offset="0"/>
+                <GradientStop Color="#FF06080F" Offset="1"/>
+            </LinearGradientBrush>
+        </Border.Background>
+        <Border.BorderBrush>
+            <SolidColorBrush Color="#FF4DA3FF"/>
+        </Border.BorderBrush>
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
@@ -19,10 +30,18 @@
 
             <StackPanel Grid.Row="0" Margin="0,0,0,14">
                 <TextBlock x:Name="txtLayoutTitle"
-                           Text="Schedule on sheet"
-                           FontSize="18"
-                           FontWeight="SemiBold"
-                           Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+                           Text="Schedule On Sheet"
+                           FontFamily="Segoe Script, Brush Script MT, Monotype Corsiva"
+                           FontSize="22"
+                           FontWeight="Bold"
+                           Foreground="#FFFFF4C8">
+                    <TextBlock.Effect>
+                        <DropShadowEffect Color="#FFFFC24D"
+                                          BlurRadius="18"
+                                          ShadowDepth="0"
+                                          Opacity="0.95"/>
+                    </TextBlock.Effect>
+                </TextBlock>
                 <TextBlock Text="Choose where spool sheets and views appear in the Project Browser. Schedule and weld log inset distances are measured from the title block bounding box on the sheet. Click OK, then Save on Spool Sheet Manager to write the settings file."
                            Margin="0,8,0,0"
                            TextWrapping="Wrap"
@@ -41,6 +60,7 @@
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
                     <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
@@ -171,8 +191,22 @@
                              Grid.Row="7"
                              Grid.Column="1"
                              Height="28"
+                             Margin="0,0,0,12"
                              VerticalAlignment="Center"
                              ToolTip="Blank = 6 rows (24 weld slots max across four WELD NUMBER columns)."/>
+
+                    <TextBlock Grid.Row="8" Grid.Column="0"
+                               Text="Sounds"
+                               Margin="0,0,12,0"
+                               VerticalAlignment="Center"
+                               TextWrapping="Wrap"
+                               ToolTip="Play sounds for button clicks and tab changes in Spooling Savant."
+                               Foreground="{DynamicResource SsSavantForegroundPrimary}"/>
+                    <CheckBox x:Name="chkSounds"
+                              Grid.Row="8"
+                              Grid.Column="1"
+                              VerticalAlignment="Center"
+                              ToolTip="Play sounds for button clicks and tab changes in Spooling Savant."/>
                 </Grid>
             </Border>
 

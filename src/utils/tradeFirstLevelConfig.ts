@@ -174,9 +174,11 @@ export function applyTradeFirstProjectLevelConfig(
 
       if (removeIds.size > 0) {
         nextGroups = nextGroups.filter((group) => !removeIds.has(group.id));
-        nextTasks = nextTasks.filter(
-          (task) => task.projectId !== projectId || !task.groupId || !removeIds.has(task.groupId)
-        );
+        nextTasks = nextTasks.map((task) => {
+          if (task.projectId !== projectId) return task;
+          if (!task.groupId || !removeIds.has(task.groupId)) return task;
+          return { ...task, groupId: null };
+        });
       }
 
       const refreshedLevels = nextGroups
@@ -263,9 +265,12 @@ export function revertTemplateExpandedLevels(
   }
 
   let nextGroups = taskGroups.filter((group) => !removeIds.has(group.id));
-  let nextTasks = tasks.filter(
-    (task) => task.projectId !== projectId || !task.groupId || !removeIds.has(task.groupId)
-  );
+  // Keep every task — never wipe user/template work. Orphan from removed level groups.
+  let nextTasks = tasks.map((task) => {
+    if (task.projectId !== projectId) return task;
+    if (!task.groupId || !removeIds.has(task.groupId)) return task;
+    return { ...task, groupId: null };
+  });
 
   nextGroups = nextGroups.map((group) => {
     if (group.projectId !== projectId) return group;

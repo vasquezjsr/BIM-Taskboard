@@ -14,6 +14,6 @@ public sealed class WeldLogExportRow
 
 	public string WeldType { get; set; } = string.Empty;
 
-	/// <summary>Assembly / spool name so Boardroom can group Field Welds under the right assembly.</summary>
+	/// <summary>Assembly / spool name for grouping Field Welds under the right assembly.</summary>
 	public string Assembly { get; set; } = string.Empty;
 }

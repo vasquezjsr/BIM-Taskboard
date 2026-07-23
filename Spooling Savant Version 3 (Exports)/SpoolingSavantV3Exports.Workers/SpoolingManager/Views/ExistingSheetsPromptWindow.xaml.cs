@@ -54,7 +54,18 @@ public class ExistingSheetsPromptWindow : Window
 	public void InitializeComponent()
 	{
 		Window source = SpoolingManagerXamlLoader.LoadWindow("SpoolingManager.Views.ExistingSheetsPromptWindow.xaml");
+		// Chromeless rounded sign, matching the sheet generation progress box.
+		// Must be set before the window is shown.
+		base.WindowStyle = WindowStyle.None;
+		base.AllowsTransparency = true;
 		SpoolingManagerXamlLoader.ApplyWindow(this, source);
+		base.Background = System.Windows.Media.Brushes.Transparent;
+		base.ResizeMode = ResizeMode.NoResize;
+		if (Content is Border shell)
+		{
+			SpoolingSavantV3Exports.Workers.UI.SsSavantNeonChrome.ApplyShell(shell);
+		}
+		SpoolingSavantV3Exports.Workers.UI.SsSavantDialogForeground.Attach(this);
 		lstExistingSheets = SpoolingManagerXamlLoader.Find<ListBox>(this, "lstExistingSheets");
 		btnCancel = SpoolingManagerXamlLoader.Find<Button>(this, "btnCancel");
 		btnSkipExisting = SpoolingManagerXamlLoader.Find<Button>(this, "btnSkipExisting");
@@ -62,5 +73,19 @@ public class ExistingSheetsPromptWindow : Window
 		btnCancel.Click += BtnCancel_Click;
 		btnSkipExisting.Click += BtnSkipExisting_Click;
 		btnRegenerateExisting.Click += BtnRegenerateExisting_Click;
+		// Without a title bar the window still needs to be movable.
+		MouseLeftButtonDown += delegate(object sender, System.Windows.Input.MouseButtonEventArgs e)
+		{
+			if (e.ButtonState == System.Windows.Input.MouseButtonState.Pressed)
+			{
+				try
+				{
+					DragMove();
+				}
+				catch
+				{
+				}
+			}
+		};
 	}
 }

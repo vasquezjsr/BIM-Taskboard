@@ -528,6 +528,7 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 		_batchSheetGeneration = true;
 		UIDocument activeUIDocument = app.ActiveUIDocument;
 		Document document = activeUIDocument.Document;
+		SpoolingManagerSettings.SetActiveProject(document);
 		CreateSpoolSheetsRequest pendingRequest = PendingRequest;
 		if (pendingRequest == null || pendingRequest.AssemblyIds.Count == 0)
 		{
@@ -536,6 +537,11 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 		}
 		SpoolingManagerKind productKind = pendingRequest.ProductKind;
 		SpoolingManagerSettings spoolingManagerSettings = SpoolingManagerSettings.Load(productKind);
+		if (spoolingManagerSettings.UseNativePipework)
+		{
+			spoolingManagerSettings.NumberWeldsEnabled = false;
+			spoolingManagerSettings.WeldLogEnabled = false;
+		}
 		bool flag = UsesRegularSheetBranch(spoolingManagerSettings, productKind);
 		string toolWindowTitle = GetToolWindowTitle(productKind);
 		SpoolPerf spoolPerf = new SpoolPerf
@@ -571,7 +577,7 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 		{
 			_batchSheetGeneration = false;
 			OperationProgressSession.Close();
-			MessageBox.Show("Title Block NOT FOUND:\n" + spoolingManagerSettings.TitleBlockName, toolWindowTitle);
+			Views.SsSavantMessageBox.Show("Title Block NOT FOUND:\n" + spoolingManagerSettings.TitleBlockName, toolWindowTitle);
 			return;
 		}
 		FamilySymbol val2 = null;
@@ -585,7 +591,7 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 			if (val2 == null)
 			{
 				OperationProgressSession.Close();
-				MessageBox.Show("Pipe/Fitting Tag NOT FOUND:\n" + spoolingManagerSettings.TagTypeName, toolWindowTitle);
+				Views.SsSavantMessageBox.Show("Pipe/Fitting Tag NOT FOUND:\n" + spoolingManagerSettings.TagTypeName, toolWindowTitle);
 				return;
 			}
 		}
@@ -595,7 +601,7 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 			if (val2b == null)
 			{
 				OperationProgressSession.Close();
-				MessageBox.Show("Weld Tag Type NOT FOUND:\n" + spoolingManagerSettings.WeldTagTypeName, toolWindowTitle);
+				Views.SsSavantMessageBox.Show("Weld Tag Type NOT FOUND:\n" + spoolingManagerSettings.WeldTagTypeName, toolWindowTitle);
 				return;
 			}
 		}
@@ -605,7 +611,7 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 			if (val2c == null)
 			{
 				OperationProgressSession.Close();
-				MessageBox.Show("Continuation Tag Type NOT FOUND:\n" + spoolingManagerSettings.AssemblyTagTypeName, toolWindowTitle);
+				Views.SsSavantMessageBox.Show("Continuation Tag Type NOT FOUND:\n" + spoolingManagerSettings.AssemblyTagTypeName, toolWindowTitle);
 				return;
 			}
 		}
@@ -616,7 +622,7 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 			if (weldLogTextNoteType == null)
 			{
 				OperationProgressSession.Close();
-				MessageBox.Show("Weld Log Text Type NOT FOUND:\n" + spoolingManagerSettings.WeldLogTextNoteTypeName, toolWindowTitle);
+				Views.SsSavantMessageBox.Show("Weld Log Text Type NOT FOUND:\n" + spoolingManagerSettings.WeldLogTextNoteTypeName, toolWindowTitle);
 				return;
 			}
 		}
@@ -664,14 +670,18 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 			}
 		}
 		string fatalError = null;
+		bool cancelled = false;
 		if (pendingRequest.ExistingSheetAction == ExistingSheetAction.RegenerateExisting)
 		{
 			ReportSheetProgress(6.0, "Closing open sheets…", "So existing sheets can be replaced");
 			LeaveOpenViewsBlockingSpoolSheetRegenerate(activeUIDocument, document, pendingRequest.AssemblyIds, flag);
 		}
-		Transaction val5 = new Transaction(document, "Spooling Savant V3 Exports: Create Spool Sheets");
+		Transaction val5 = new Transaction(document, "Spooling Savant: Create Spool Sheets");
 		try
 		{
+			// Cancel is only armed inside this try so the OperationCanceledException
+			// is always caught here and rolled back cleanly.
+			_sheetCancelArmed = true;
 			val5.Start();
 			long activateSymbolsMark = spoolPerf.Mark();
 			if (!val.IsActive)
@@ -738,6 +748,8 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 			num3 = generationContext.CreatedTags;
 			numWeldLogNotes = generationContext.WeldLogNotes;
 			ReportSheetProgress(96.0, "Saving…", "Commit transaction");
+			// Past this point the commit is under way — a late Cancel click must not throw.
+			_sheetCancelArmed = false;
 			long startMark10 = spoolPerf.Mark();
 			FlushPendingRegen(document);
 			using (AssemblyMemberChangeCoordinator.SuppressAutoSync())
@@ -746,6 +758,20 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 			}
 			spoolPerf.Add("Commit", startMark10);
 			ReportSheetProgress(100.0, "Done", num + " sheet(s) created");
+		}
+		catch (OperationCanceledException)
+		{
+			cancelled = true;
+			try
+			{
+				if (val5.HasStarted() && val5.GetStatus() == TransactionStatus.Started)
+				{
+					val5.RollBack();
+				}
+			}
+			catch
+			{
+			}
 		}
 		catch (Exception ex)
 		{
@@ -765,13 +791,15 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 		{
 			_batchSheetGeneration = false;
 			_regenPendingDuringBatch = false;
+			_sheetCancelArmed = false;
 			((IDisposable)val5)?.Dispose();
 		}
-		string text3 = $"{num} sheet(s) created.";
+		// Single-line summary shown in the bottom row of the completion dialog.
+		string text3 = $"{num} sheet(s) created";
 		double totalMs = spoolPerf.TotalMs(perfTotalMark);
 		if (totalMs > 0.0)
 		{
-			text3 = text3 + "\nCompleted in " + FormatStepDuration(totalMs);
+			text3 = text3 + " in " + FormatStepDuration(totalMs);
 		}
 		if (TestingReportsEnabled)
 		{
@@ -813,6 +841,10 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 		{
 			text3 = text3 + "\n\nSheet creation failed and was rolled back:\n" + fatalError;
 		}
+		if (cancelled)
+		{
+			text3 = "Sheet creation cancelled.\nAll partial work was rolled back — no sheets were created.";
+		}
 		// Reuse the progress window chrome (modeless) instead of a native TaskDialog.
 		OperationProgressSession.ShowCompleted(toolWindowTitle, text3);
 	}
@@ -822,6 +854,14 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 		return "Create Spool Sheets";
 	}
 
+	/// <summary>
+	/// True while sheet generation may still be cancelled cleanly (before the transaction
+	/// commit begins). The Cancel click is delivered by the dispatcher pump inside
+	/// <see cref="OperationProgressSession.Report"/>, so every progress report doubles
+	/// as a cancellation checkpoint.
+	/// </summary>
+	private static bool _sheetCancelArmed;
+
 	private static void ReportSheetProgress(double percent, string status, string detail = null)
 	{
 		try
@@ -830,6 +870,17 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 		}
 		catch
 		{
+		}
+		if (!_sheetCancelArmed)
+		{
+			return;
+		}
+		// Pause holds the run right here (dispatcher keeps pumping so Resume/Cancel work).
+		OperationProgressSession.WaitWhilePaused();
+		if (OperationProgressSession.CancelRequested)
+		{
+			_sheetCancelArmed = false;
+			throw new OperationCanceledException("Sheet creation was cancelled.");
 		}
 	}
 
@@ -960,7 +1011,7 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 		string[] array = new string[2]
 		{
 			Path.Combine(SpoolingManagerSettings.SettingsFolderPath, "TestingReports"),
-			Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Spooling-Savant-V2", "SpoolingManager", "TestingReports")
+			Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Spooling-Savant-V3-Exports", "SpoolingManager", "TestingReports")
 		};
 		foreach (string text in array)
 		{
@@ -997,7 +1048,7 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 			string[] array = new string[2]
 			{
 				Path.Combine(SpoolingManagerSettings.SettingsFolderPath, "TestingReports"),
-				Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Spooling-Savant-V2", "SpoolingManager", "TestingReports")
+				Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Spooling-Savant-V3-Exports", "SpoolingManager", "TestingReports")
 			};
 			foreach (string text in array)
 			{
@@ -1043,7 +1094,7 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 			string[] array = new string[2]
 			{
 				Path.Combine(SpoolingManagerSettings.SettingsFolderPath, "TestingReports"),
-				Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Spooling-Savant-V2", "SpoolingManager", "TestingReports")
+				Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Spooling-Savant-V3-Exports", "SpoolingManager", "TestingReports")
 			};
 			foreach (string text2 in array)
 			{
@@ -2569,10 +2620,10 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 	{
 		return kind switch
 		{
-			SpoolingManagerKind.Mmc => "MMC SS Manager",
-			SpoolingManagerKind.MmcTesting => "MMC SS Manager (Testing)",
-			SpoolingManagerKind.AutoDimensionLab => "SS Manager (Auto Dim) — Testing",
-			_ => "SS Manager V3",
+			SpoolingManagerKind.Mmc => "MMC Spooling Savant",
+			SpoolingManagerKind.MmcTesting => "MMC Spooling Savant (Testing)",
+			SpoolingManagerKind.AutoDimensionLab => "Spooling Savant (Auto Dim) — Testing",
+			_ => "Spooling Savant",
 		};
 	}
 
@@ -3151,7 +3202,9 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 				}
 				result.ElementReferenceSuccesses++;
 				val3.HasLeader = true;
-				SetTagHeadPosition(val3, GetTagHeadPoint(val, view, placement, kind, settings, elementAnchorPoint));
+				XYZ oletHead = GetOletBranchTagHeadPoint(item, view, placement, kind, settings, elementAnchorPoint)
+					?? GetTagHeadPoint(val, view, placement, kind, settings, elementAnchorPoint);
+				SetTagHeadPosition(val3, oletHead);
 				layoutTags.Add(new TagLayoutData
 				{
 					Tag = val3,
@@ -3166,6 +3219,182 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 				result.Exceptions++;
 			}
 		}
+	}
+
+	/// <summary>
+	/// Seed olet tags along the branch takeoff (away from the host run), not along the pipe.
+	/// Along-run seeds land on the OD or flee past the flange.
+	/// </summary>
+	private static XYZ GetOletBranchTagHeadPoint(
+		FabricationPart olet,
+		View view,
+		string placement,
+		SpoolingManagerKind kind,
+		SpoolingManagerSettings settings,
+		XYZ anchorPoint)
+	{
+		if (olet == null || view == null)
+		{
+			return null;
+		}
+
+		XYZ branchDir = TryGetOletBranchOutwardDirection(olet, view);
+		if (branchDir == null || branchDir.GetLength() < 1E-09)
+		{
+			return null;
+		}
+
+		// Leave from the branch opening (tip), not the olet body center — matches shop drawings.
+		XYZ tip = TryGetOletBranchTipPoint(olet) ?? anchorPoint;
+		if (tip == null)
+		{
+			return null;
+		}
+
+		double sheetFeet = GetTagLeaderBaselineInchesOnSheet(view, kind, settings) / 12.0;
+		double offset = ConvertSheetOffsetToModelDistance(view, sheetFeet);
+		offset = Math.Max(offset, ConvertSheetOffsetToModelDistance(view, 0.50 / 12.0));
+		return tip + branchDir.Normalize().Multiply(offset);
+	}
+
+	private static XYZ TryGetOletBranchOutwardDirection(FabricationPart olet, View view)
+	{
+		if (olet?.ConnectorManager == null || view == null)
+		{
+			return null;
+		}
+
+		if (!TryResolveOletHostAndTipConnectors(olet, out Connector hostConn, out Connector tipConn))
+		{
+			return null;
+		}
+
+		XYZ away = tipConn.Origin - hostConn.Origin;
+		XYZ tipZ = null;
+		try
+		{
+			tipZ = tipConn.CoordinateSystem.BasisZ;
+		}
+		catch
+		{
+		}
+
+		// Prefer tip BasisZ (opening facing). Align it with host→tip so it leaves the run.
+		if (tipZ != null && tipZ.GetLength() > 1E-09)
+		{
+			tipZ = tipZ.Normalize();
+			if (away.GetLength() > 1E-09 && tipZ.DotProduct(away) < 0.0)
+			{
+				tipZ = tipZ.Negate();
+			}
+
+			away = tipZ;
+		}
+
+		if (away == null || away.GetLength() < 1E-09)
+		{
+			return null;
+		}
+
+		XYZ right = view.RightDirection.Normalize();
+		XYZ up = view.UpDirection.Normalize();
+		double u = away.DotProduct(right);
+		double v = away.DotProduct(up);
+		XYZ planar = right.Multiply(u) + up.Multiply(v);
+		if (planar.GetLength() < 1E-09)
+		{
+			return null;
+		}
+
+		return planar;
+	}
+
+	/// <summary>
+	/// Host connector mates the longest run pipe; tip is the other connector (branch opening).
+	/// Thread-O-Lets often show both ends "connected" to pipework — length picks the run.
+	/// </summary>
+	private static bool TryResolveOletHostAndTipConnectors(
+		FabricationPart olet,
+		out Connector hostConn,
+		out Connector tipConn)
+	{
+		hostConn = null;
+		tipConn = null;
+		if (olet?.ConnectorManager == null)
+		{
+			return false;
+		}
+
+		List<(Connector conn, FabricationPart mate, double mateLen)> list =
+			new List<(Connector, FabricationPart, double)>();
+		foreach (Connector connector in olet.ConnectorManager.Connectors)
+		{
+			if (connector?.Origin == null)
+			{
+				continue;
+			}
+
+			FabricationPart mate = TryGetConnectedFabricationMate(olet, connector);
+			double mateLen = 0.0;
+			if (mate != null && IsPipeRunPart(mate))
+			{
+				mateLen = Math.Max(GetFabricationStraightLineLength(mate), 1.0 / 48.0);
+			}
+
+			list.Add((connector, mate, mateLen));
+		}
+
+		if (list.Count < 2)
+		{
+			return false;
+		}
+
+		hostConn = list.OrderByDescending((x) => x.mateLen).First().conn;
+		Connector hostLocal = hostConn;
+		tipConn = list.First((x) => x.conn.Origin.DistanceTo(hostLocal.Origin) > 1E-09).conn;
+		return tipConn != null;
+	}
+
+	/// <summary>Branch opening (tip) in model space — leader should leave from here.</summary>
+	private static XYZ TryGetOletBranchTipPoint(FabricationPart olet)
+	{
+		if (!TryResolveOletHostAndTipConnectors(olet, out _, out Connector tipConn))
+		{
+			return null;
+		}
+
+		return tipConn?.Origin;
+	}
+
+	/// <summary>Fabrication mate through connector AllRefs (no pool required).</summary>
+	private static FabricationPart TryGetConnectedFabricationMate(FabricationPart self, Connector connector)
+	{
+		if (self == null || connector == null)
+		{
+			return null;
+		}
+
+		try
+		{
+			if (!connector.IsConnected)
+			{
+				return null;
+			}
+
+			foreach (Connector other in connector.AllRefs)
+			{
+				if (other?.Owner is FabricationPart mate
+					&& ((Element)mate).Id != ((Element)self).Id)
+				{
+					return mate;
+				}
+			}
+		}
+		catch
+		{
+		}
+
+		return null;
 	}
 
 	private static bool IsOletBranchStubPipe(FabricationPart pipe, IList<FabricationPart> pool)
@@ -4640,6 +4869,34 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 		List<PendingGroupedTag> list2 = new List<PendingGroupedTag>();
 		HashSet<ElementId> alreadyTaggedPartIds = GetExistingTaggedFabricationPartIds(doc, view, null);
 		List<FabricationPart> taggableParts = GetTaggablePartsForView(doc, assembly, view);
+
+		bool nativeMode = settings != null && settings.UseNativePipework;
+		if (nativeMode || taggableParts.Count == 0)
+		{
+			List<Element> nativeMembers = GetNativePipeworkMembersForView(doc, assembly, view);
+			if (nativeMembers.Count > 0 && tagType != null)
+			{
+				return CreateNativePipeworkTags(
+					doc,
+					assembly,
+					view,
+					tagType,
+					nativeMembers,
+					alreadyTaggedPartIds,
+					restrictToPartIds,
+					flag,
+					placement,
+					kind,
+					settings,
+					tagCreationResult);
+			}
+
+			if (nativeMode)
+			{
+				return tagCreationResult;
+			}
+		}
+
 		foreach (FabricationPart item in taggableParts)
 		{
 			try
@@ -4865,7 +5122,11 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 					continue;
 				}
 				val4.HasLeader = true;
-				SetTagHeadPosition(val4, GetTagHeadPoint(val3, view, placement, kind, settings, elementAnchorPoint));
+				XYZ headPoint = IsOletPart(item)
+					? (GetOletBranchTagHeadPoint(item, view, placement, kind, settings, elementAnchorPoint)
+						?? GetTagHeadPoint(val3, view, placement, kind, settings, elementAnchorPoint))
+					: GetTagHeadPoint(val3, view, placement, kind, settings, elementAnchorPoint);
+				SetTagHeadPosition(val4, headPoint);
 				list.Add(new TagLayoutData
 				{
 					Tag = val4,
@@ -4891,6 +5152,9 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 		if (tagType != null)
 		{
 			AppendFlangeTags(doc, assembly, view, tagType, placement, kind, settings, list, tagCreationResult);
+			// Olets often fail the primary loop (tiny faces / branch stubs). Second-chance
+			// pass so Thread-O-Lets get Item Number tags, then the organizer seats them.
+			AppendOletFittingTags(doc, assembly, view, tagType, placement, kind, settings, list, tagCreationResult, restrictToPartIds);
 			AppendUntaggedBranchTakeoffPipeTags(doc, assembly, view, tagType, placement, kind, settings, list, tagCreationResult, restrictToPartIds, alreadyTaggedPartIds);
 		}
 		if (sweldTagging)
@@ -4954,8 +5218,9 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 	}
 
 	/// <summary>
-	/// Post-pass after placement: optional host-ring organize for MEP item tags only.
-	/// Never runs on View3D and never touches weld (SWeld) tags — both crash Revit.
+	/// Post-pass after placement: host-ring organize for MEP item tags.
+	/// Never touches weld (SWeld) tags — those have crashed Revit when moved.
+	/// Runs on sheet views and 3D Ortho so tags clear the spool like dimensions do.
 	/// </summary>
 	private static void TryOrganizeCreatedSpoolTags(
 		Document doc,
@@ -4964,13 +5229,6 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 		IList<TagLayoutData> layoutTags)
 	{
 		if (doc == null || assembly == null || view == null)
-		{
-			return;
-		}
-
-		// Weld tags on 3D + SpoolTagOrganizer have crashed Revit (stack overflow).
-		// Leave weld tags exactly where AppendSWeldTags placed them.
-		if (view is View3D)
 		{
 			return;
 		}
@@ -5026,18 +5284,82 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 				return;
 			}
 
-			doc.Regenerate();
-			// Prefer 1/2"–3/4"; organizer expands up to 2" when elbows are crowded so tags
-			// never stay on the assembly or stacked on each other.
+			// Regenerate so head moves stick on View3D, then organize.
+			try
+			{
+				doc.Regenerate();
+			}
+			catch
+			{
+			}
+
+			// 1/2" off the body (3/8" + 1/8") — keep View3D leaders inside the crop.
+			const double tagBodyClearanceInches = 0.50;
 			SpoolTagOrganizer.Organize(
 				doc,
 				view,
 				memberIds,
 				tagIds,
-				minimumDistanceInches: 0.50,
-				maximumDistanceInches: 0.75,
-				tagClearanceInches: 0.08,
-				minLeaderSeparationInches: 0.06);
+				minimumDistanceInches: tagBodyClearanceInches,
+				maximumDistanceInches: view is View3D ? 0.65 : 0.85,
+				tagClearanceInches: view is View3D ? 0.04 : 0.08,
+				minLeaderSeparationInches: 0.04);
+
+			// Capture heads after organize — Finalize/Straighten can snap them back onto the host.
+			Dictionary<ElementId, XYZ> organizedHeads = new Dictionary<ElementId, XYZ>();
+			foreach (ElementId tagId in tagIds)
+			{
+				IndependentTag tag = doc.GetElement(tagId) as IndependentTag;
+				if (tag == null)
+				{
+					continue;
+				}
+
+				try
+				{
+					organizedHeads[tagId] = tag.TagHeadPosition;
+				}
+				catch
+				{
+				}
+			}
+
+			if (layoutTags != null && layoutTags.Count > 0)
+			{
+				FinalizeTagLeaderMode(view, layoutTags);
+			}
+
+			foreach (KeyValuePair<ElementId, XYZ> pair in organizedHeads)
+			{
+				IndependentTag tag = doc.GetElement(pair.Key) as IndependentTag;
+				if (tag == null || pair.Value == null)
+				{
+					continue;
+				}
+
+				try
+				{
+					tag.HasLeader = true;
+					TrySetLeaderEndCondition(tag, "Free");
+					tag.TagHeadPosition = pair.Value;
+				}
+				catch
+				{
+				}
+			}
+
+			if (view is View3D view3D)
+			{
+				ClampIndependentTagHeadsInsideView3DCrop(doc, view3D, tagIds);
+			}
+
+			try
+			{
+				doc.Regenerate();
+			}
+			catch
+			{
+			}
 		}
 		catch (Exception ex)
 		{
@@ -5056,6 +5378,125 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 					Path.Combine(logDir, "SpoolTagOrganizer.log"),
 					DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
 					+ "\tWRAPPER_ERROR " + DiagnosticBuildTag + " " + ex.Message + Environment.NewLine);
+			}
+			catch
+			{
+			}
+		}
+	}
+
+	/// <summary>
+	/// Keep IndependentTag heads inside the View3D crop so sheet Outline (blue box) stays near the crop.
+	/// Pulls along host→head toward the host until inside an inset of the crop rectangle.
+	/// </summary>
+	private static void ClampIndependentTagHeadsInsideView3DCrop(
+		Document doc,
+		View3D view3D,
+		ICollection<ElementId> tagIds)
+	{
+		if (doc == null || view3D == null || tagIds == null || tagIds.Count == 0)
+		{
+			return;
+		}
+
+		if (!view3D.CropBoxActive)
+		{
+			return;
+		}
+
+		BoundingBoxXYZ crop = view3D.CropBox;
+		if (crop?.Transform == null)
+		{
+			return;
+		}
+
+		// Inset for pill half-size so tag BB does not poke Outline past the crop.
+		double inset = ConvertSheetOffsetToModelDistance((View)(object)view3D, 0.28 / 12.0);
+		Transform inverse = crop.Transform.Inverse;
+		Transform forward = crop.Transform;
+		double minU = crop.Min.X + inset;
+		double maxU = crop.Max.X - inset;
+		double minV = crop.Min.Y + inset;
+		double maxV = crop.Max.Y - inset;
+		if (minU >= maxU || minV >= maxV)
+		{
+			return;
+		}
+
+		foreach (ElementId tagId in tagIds)
+		{
+			IndependentTag tag = doc.GetElement(tagId) as IndependentTag;
+			if (tag == null)
+			{
+				continue;
+			}
+
+			try
+			{
+				XYZ head = tag.TagHeadPosition;
+				XYZ local = inverse.OfPoint(head);
+				if (local.X >= minU && local.X <= maxU && local.Y >= minV && local.Y <= maxV)
+				{
+					continue;
+				}
+
+				XYZ hostPt = null;
+				foreach (Reference reference in tag.GetTaggedReferences())
+				{
+					Element host = doc.GetElement(reference.ElementId);
+					BoundingBoxXYZ box = host?.get_BoundingBox((View)(object)view3D) ?? host?.get_BoundingBox(null);
+					if (box != null)
+					{
+						hostPt = (box.Min + box.Max) * 0.5;
+						break;
+					}
+				}
+
+				if (hostPt == null)
+				{
+					continue;
+				}
+
+				XYZ hostLocal = inverse.OfPoint(hostPt);
+				double du = local.X - hostLocal.X;
+				double dv = local.Y - hostLocal.Y;
+				double len = Math.Sqrt(du * du + dv * dv);
+				if (len < 1E-09)
+				{
+					du = 1.0;
+					dv = 0.0;
+					len = 1.0;
+				}
+
+				du /= len;
+				dv /= len;
+				double bestR = 0.0;
+				for (double r = len; r >= 0.05; r -= 0.03)
+				{
+					double u = hostLocal.X + du * r;
+					double v = hostLocal.Y + dv * r;
+					if (u >= minU && u <= maxU && v >= minV && v <= maxV)
+					{
+						bestR = r;
+						break;
+					}
+				}
+
+				if (bestR < 1E-09)
+				{
+					bestR = 0.20;
+				}
+
+				XYZ clamped = forward.OfPoint(new XYZ(
+					hostLocal.X + du * bestR,
+					hostLocal.Y + dv * bestR,
+					hostLocal.Z));
+				if (!tag.HasLeader)
+				{
+					tag.HasLeader = true;
+				}
+
+				tag.TagHeadPosition = clamped;
 			}
 			catch
 			{
@@ -5134,6 +5575,219 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 		return list;
 	}
 
+	private static List<Element> GetNativePipeworkMembersForView(Document doc, AssemblyInstance assembly, View view)
+	{
+		var result = new List<Element>();
+		if (doc == null || assembly == null)
+			return result;
+
+		HashSet<ElementId> memberIds = new HashSet<ElementId>(assembly.GetMemberIds());
+		try
+		{
+			if (view != null)
+			{
+				foreach (Element e in new FilteredElementCollector(doc, ((Element)view).Id).WhereElementIsNotElementType())
+				{
+					if (e == null || !memberIds.Contains(e.Id))
+						continue;
+					if (NativePipeSpoolSupport.IsNativePipeworkElement(e))
+						result.Add(e);
+				}
+			}
+		}
+		catch
+		{
+		}
+
+		if (result.Count > 0)
+			return result;
+
+		foreach (ElementId id in memberIds)
+		{
+			Element e = doc.GetElement(id);
+			if (NativePipeSpoolSupport.IsNativePipeworkElement(e))
+				result.Add(e);
+		}
+
+		return result;
+	}
+
+	private static TagCreationResult CreateNativePipeworkTags(
+		Document doc,
+		AssemblyInstance assembly,
+		View view,
+		FamilySymbol tagType,
+		List<Element> members,
+		HashSet<ElementId> alreadyTaggedPartIds,
+		ICollection<ElementId> restrictToPartIds,
+		bool isView3D,
+		string placement,
+		SpoolingManagerKind kind,
+		SpoolingManagerSettings settings,
+		TagCreationResult result)
+	{
+		if (result == null)
+			result = new TagCreationResult();
+		if (doc == null || view == null || tagType == null || members == null)
+			return result;
+
+		alreadyTaggedPartIds ??= new HashSet<ElementId>();
+		View3D view3D = isView3D ? view as View3D : null;
+		List<TagLayoutData> layoutTags = new List<TagLayoutData>();
+
+		foreach (Element element in members)
+		{
+			if (element == null)
+				continue;
+
+			ElementId partId = element.Id;
+			if (restrictToPartIds != null && !restrictToPartIds.Contains(partId))
+				continue;
+			if (alreadyTaggedPartIds.Contains(partId))
+				continue;
+
+			result.PartsEvaluated++;
+			XYZ anchor = GetNativeElementTagAnchorPoint(element, members, view) ?? GetElementAnchorPoint(element, view);
+			if (anchor == null)
+				continue;
+
+			List<XYZ> candidates = GetElementAnchorCandidates(element, view);
+			if (candidates.Count == 0)
+				candidates.Add(anchor);
+
+			IndependentTag tag = null;
+			Reference tagReference = null;
+			try
+			{
+				Reference elementRef = new Reference(element);
+				result.ElementReferenceAttempts++;
+				tag = TryCreateTagWithStrategies(doc, view, tagType, elementRef, anchor, result);
+				if (tag != null)
+				{
+					result.ElementReferenceSuccesses++;
+					tagReference = elementRef;
+				}
+			}
+			catch
+			{
+			}
+
+			if (tag == null && view3D != null)
+			{
+				foreach (XYZ candidate in candidates)
+				{
+					try
+					{
+						Reference picked = Get3DPickedReference(view3D, element, candidate, (FindReferenceTarget)1);
+						if (picked == null)
+							continue;
+						result.ElementReferenceAttempts++;
+						tag = TryCreateTagWithStrategies(doc, view, tagType, picked, candidate, result);
+						if (tag != null)
+						{
+							result.ElementReferenceSuccesses++;
+							tagReference = picked;
+							anchor = candidate;
+							break;
+						}
+					}
+					catch
+					{
+					}
+				}
+			}
+
+			if (tag != null)
+			{
+				try
+				{
+					tag.HasLeader = true;
+				}
+				catch
+				{
+				}
+				SetTagHeadPosition(tag, GetTagHeadPoint(element, view, placement, kind, settings, anchor));
+				layoutTags.Add(new TagLayoutData
+				{
+					Tag = tag,
+					AnchorPoint = anchor,
+					Reference = tagReference
+				});
+				alreadyTaggedPartIds.Add(partId);
+				result.CreatedCount++;
+			}
+		}
+
+		// Same finishing pipeline as Fabrication parts: overlap resolution, leader length limits,
+		// free-end leader condition, and the host-ring organizer.
+		if (layoutTags.Count > 1)
+		{
+			ResolveTagOverlaps(view, layoutTags, kind, settings);
+		}
+		if (layoutTags.Count > 0)
+		{
+			double baselineInches = GetTagLeaderBaselineInchesOnSheet(view, kind, settings);
+			double maxInches = GetTagLeaderMaxInchesOnSheet(view, kind, settings, baselineInches);
+			EnsureMinimumTagHeadDistances(view, layoutTags, baselineInches / 12.0);
+			ClampTagHeadDistances(view, layoutTags, maxInches / 12.0);
+			FinalizeTagLeaderMode(view, layoutTags);
+			if (assembly != null)
+			{
+				TryOrganizeCreatedSpoolTags(doc, assembly, view, layoutTags);
+			}
+		}
+
+		return result;
+	}
+
+	/// <summary>
+	/// Native pipes anchor their tag leader at the free (unconnected) connector end,
+	/// matching the MEP Fabrication part behavior. Fittings/accessories keep their center.
+	/// </summary>
+	private static XYZ GetNativeElementTagAnchorPoint(Element element, List<Element> members, View view)
+	{
+		if (element == null)
+		{
+			return null;
+		}
+		if (!NativePipeSpoolSupport.IsNativePipe(element))
+		{
+			return GetElementApproxCenter(element);
+		}
+		try
+		{
+			XYZ freeEnd = null;
+			foreach (Connector connector in ListConnectorsForElement(element))
+			{
+				if (connector?.Origin == null)
+				{
+					continue;
+				}
+				bool connected = false;
+				try
+				{
+					connected = connector.IsConnected;
+				}
+				catch
+				{
+				}
+				if (!connected || FindMateAtConnectorElement(element, connector, members) == null)
+				{
+					freeEnd = connector.Origin;
+					break;
+				}
+			}
+			if (freeEnd != null)
+			{
+				return freeEnd;
+			}
+		}
+		catch
+		{
+		}
+		return GetElementApproxCenter(element);
+	}
+
 	internal static void RestrictViewToAssemblyElements(Document doc, AssemblyInstance assembly, View view)
 	{
 		//IL_002e: Unknown result type (might be due to invalid IL or missing references)
@@ -5152,6 +5806,21 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 		catch
 		{
 		}
+
+		try
+		{
+			foreach (Element e in new FilteredElementCollector(doc, ((Element)view).Id).WhereElementIsNotElementType())
+			{
+				if (e == null || assemblyMemberIds.Contains(e.Id))
+					continue;
+				if (NativePipeSpoolSupport.IsNativePipeworkElement(e))
+					list.Add(e.Id);
+			}
+		}
+		catch
+		{
+		}
+
 		if (list.Count == 0)
 		{
 			return;
@@ -6030,6 +6699,9 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 		}
 		TryEnsureSpoolViewFineDetail(view);
 		TrySetViewCategoryVisible(view, BuiltInCategory.OST_FabricationPipework);
+		TrySetViewCategoryVisible(view, BuiltInCategory.OST_PipeCurves);
+		TrySetViewCategoryVisible(view, BuiltInCategory.OST_PipeFitting);
+		TrySetViewCategoryVisible(view, BuiltInCategory.OST_PipeAccessory);
 		if (view is View3D)
 		{
 			return;
@@ -6041,20 +6713,7 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 
 	private static void ApplyViewScale(View view, int scale)
 	{
-		if (view == null)
-		{
-			return;
-		}
-		try
-		{
-			if (view.Scale != scale)
-			{
-				view.Scale = scale;
-			}
-		}
-		catch
-		{
-		}
+		TrySetSpoolViewScale(view, scale);
 	}
 
 	private static void EnsureSpoolAssemblyDetailViewCrop(View view)
@@ -6170,11 +6829,495 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 		}
 		try
 		{
-			if (view is View3D)
+			if (view is View3D view3D)
 			{
+				FitSpoolAssembly3DOrthoCropToContent(
+					doc,
+					assembly,
+					view3D,
+					includeTagExtents,
+					includeDimensionExtents);
 				return;
 			}
 			FitSpoolAssemblyDetailViewCropToContent(doc, assembly, view, includeTagExtents, includeDimensionExtents, includeDimensionLabelExtents);
+		}
+		catch
+		{
+		}
+	}
+
+	/// <summary>
+	/// Tighten the 3D Ortho crop around the spool and refresh the sheet viewport.
+	/// Does not hide, delete, or move tags.
+	/// </summary>
+	private static Viewport TryTightenView3DOrthoViewportOnSheet(
+		Document doc,
+		ViewSheet sheet,
+		AssemblyInstance assembly,
+		View3D view3D,
+		Viewport viewport,
+		string placement)
+	{
+		if (doc == null || sheet == null || assembly == null || view3D == null)
+		{
+			return viewport;
+		}
+
+		try
+		{
+			// Keep fab tags visible — never hide/delete them as part of crop fit.
+			TrySetFabricationTagCategoriesHidden(view3D, hidden: false, affectedCategoryIds: null);
+
+			FitSpoolAssemblyViewCropToContent(
+				doc,
+				assembly,
+				(View)(object)view3D,
+				includeTagExtents: false);
+
+			try
+			{
+				doc.Regenerate();
+			}
+			catch
+			{
+			}
+
+			return RecreateView3DOrthoViewportFromCrop(
+				doc,
+				sheet,
+				assembly,
+				view3D,
+				viewport,
+				placement);
+		}
+		catch
+		{
+			return viewport;
+		}
+	}
+
+	/// <summary>
+	/// Rebuild the 3D Ortho sheet viewport after the crop has been tightened.
+	/// </summary>
+	private static Viewport RecreateView3DOrthoViewportFromCrop(
+		Document doc,
+		ViewSheet sheet,
+		AssemblyInstance assembly,
+		View3D view3D,
+		Viewport viewport,
+		string placement)
+	{
+		if (doc == null || sheet == null || view3D == null)
+		{
+			return viewport;
+		}
+
+		try
+		{
+			FitSpoolAssemblyViewCropToContent(
+				doc,
+				assembly,
+				(View)(object)view3D,
+				includeTagExtents: false);
+			doc.Regenerate();
+		}
+		catch
+		{
+		}
+
+		XYZ center = null;
+		ElementId viewportTypeId = ElementId.InvalidElementId;
+		if (viewport != null)
+		{
+			try
+			{
+				center = viewport.GetBoxCenter();
+				viewportTypeId = ((Element)viewport).GetTypeId();
+				sheet.DeleteViewport(viewport);
+			}
+			catch
+			{
+			}
+		}
+
+		if (center == null)
+		{
+			center = GetSheetPlacementPoint(doc, sheet, placement);
+		}
+
+		try
+		{
+			doc.Regenerate();
+		}
+		catch
+		{
+		}
+
+		Viewport fresh = PlaceViewOnSheet(doc, sheet, (View)(object)view3D, placement);
+		if (fresh == null && center != null)
+		{
+			try
+			{
+				fresh = Viewport.Create(doc, ((Element)sheet).Id, ((Element)view3D).Id, center);
+			}
+			catch
+			{
+			}
+		}
+
+		if (fresh == null)
+		{
+			return null;
+		}
+
+		if (viewportTypeId != null && viewportTypeId != ElementId.InvalidElementId)
+		{
+			try
+			{
+				((Element)fresh).ChangeTypeId(viewportTypeId);
+			}
+			catch
+			{
+			}
+		}
+
+		try
+		{
+			if (center != null)
+			{
+				fresh.SetBoxCenter(center);
+			}
+		}
+		catch
+		{
+		}
+
+		FitSpoolViewportOnSheet(doc, sheet, (View)(object)view3D, fresh, placement);
+		TryPositionViewportTitleBelow(fresh);
+		return fresh;
+	}
+
+	private static void TrySetFabricationTagCategoriesHidden(
+		View view,
+		bool hidden,
+		List<ElementId> affectedCategoryIds)
+	{
+		if (view == null)
+		{
+			return;
+		}
+
+		try
+		{
+			Document doc = view.Document;
+			if (doc?.Settings?.Categories == null)
+			{
+				return;
+			}
+
+			if (!hidden && affectedCategoryIds != null && affectedCategoryIds.Count > 0)
+			{
+				foreach (ElementId catId in affectedCategoryIds)
+				{
+					try
+					{
+						view.SetCategoryHidden(catId, false);
+					}
+					catch
+					{
+					}
+				}
+
+				return;
+			}
+
+			foreach (Category category in doc.Settings.Categories)
+			{
+				if (category == null)
+				{
+					continue;
+				}
+
+				string name = category.Name ?? string.Empty;
+				if (name.IndexOf("Fabrication", StringComparison.OrdinalIgnoreCase) < 0
+					|| name.IndexOf("Tag", StringComparison.OrdinalIgnoreCase) < 0)
+				{
+					continue;
+				}
+
+				try
+				{
+					view.SetCategoryHidden(category.Id, hidden);
+					if (hidden && affectedCategoryIds != null)
+					{
+						affectedCategoryIds.Add(category.Id);
+					}
+				}
+				catch
+				{
+				}
+			}
+		}
+		catch
+		{
+		}
+	}
+
+	/// <summary>
+	/// Tight crop for 3D Ortho so the sheet viewport hugs the spool
+	/// instead of leaving a tall empty view box.
+	/// </summary>
+	private static void FitSpoolAssembly3DOrthoCropToContent(
+		Document doc,
+		AssemblyInstance assembly,
+		View3D view3D,
+		bool includeTagExtents,
+		bool includeDimensionExtents = false)
+	{
+		if (doc == null || assembly == null || view3D == null)
+		{
+			return;
+		}
+
+		try
+		{
+			// Section box optional — native crop X/Y shrink is what tightens the sheet viewbox.
+			// Custom section transforms have caused oversized View.Outline on some hosts.
+		}
+		catch
+		{
+		}
+
+		List<XYZ> points = CollectSpoolViewExtentPoints(
+			doc,
+			assembly,
+			(View)(object)view3D,
+			includeTagExtents,
+			includeDimensionExtents,
+			includeDimensionLabelExtents: false);
+		if (points.Count == 0)
+		{
+			return;
+		}
+
+		try
+		{
+			ElementId templateId = view3D.ViewTemplateId;
+			if (templateId != ElementId.InvalidElementId)
+			{
+				TryAllowCropOutsideTemplateControl((View)(object)view3D);
+			}
+
+			// Activate first so Revit builds the native crop transform. Replacing that
+			// transform with a custom orientation blows View.Outline (tall empty viewport).
+			if (!view3D.CropBoxActive)
+			{
+				view3D.CropBoxActive = true;
+			}
+
+			BoundingBoxXYZ cropBox = view3D.CropBox;
+			if (cropBox?.Transform == null)
+			{
+				return;
+			}
+
+			// Parts-only crop with room for short 3/8" tags. Never include tag heads —
+			// that is what stretches the blue viewbox.
+			if (!TryApplyView3DCropBox(view3D, cropBox, points, paperMarginInches: 0.75))
+			{
+				if (templateId != ElementId.InvalidElementId)
+				{
+					try
+					{
+						view3D.ViewTemplateId = ElementId.InvalidElementId;
+						view3D.CropBoxActive = true;
+						TryApplyView3DCropBox(view3D, view3D.CropBox ?? cropBox, points, 0.75);
+						view3D.ViewTemplateId = templateId;
+					}
+					catch
+					{
+					}
+				}
+			}
+
+			// Hard guarantee — never leave 3D Ortho with crop off (enormous viewbox).
+			if (!view3D.CropBoxActive)
+			{
+				view3D.CropBoxActive = true;
+				TryApplyView3DCropBox(view3D, view3D.CropBox ?? cropBox, points, 0.75);
+			}
+
+			view3D.CropBoxVisible = false;
+		}
+		catch
+		{
+		}
+	}
+
+	private static bool TryApplyView3DCropBox(
+		View3D view3D,
+		BoundingBoxXYZ cropBox,
+		IList<XYZ> modelPoints,
+		double paperMarginInches)
+	{
+		if (view3D == null || cropBox?.Transform == null || modelPoints == null || modelPoints.Count == 0)
+		{
+			return false;
+		}
+
+		try
+		{
+			// Near/far clip at the same offset crushes crop depth to ~0 and hides the spool.
+			TryDisableCrushedView3DClipPlanes(view3D);
+
+			Transform inverse = cropBox.Transform.Inverse;
+			double minX = double.PositiveInfinity;
+			double minY = double.PositiveInfinity;
+			double minZ = double.PositiveInfinity;
+			double maxX = double.NegativeInfinity;
+			double maxY = double.NegativeInfinity;
+			double maxZ = double.NegativeInfinity;
+			foreach (XYZ modelPoint in modelPoints)
+			{
+				if (modelPoint == null)
+				{
+					continue;
+				}
+
+				XYZ local = inverse.OfPoint(modelPoint);
+				minX = Math.Min(minX, local.X);
+				minY = Math.Min(minY, local.Y);
+				minZ = Math.Min(minZ, local.Z);
+				maxX = Math.Max(maxX, local.X);
+				maxY = Math.Max(maxY, local.Y);
+				maxZ = Math.Max(maxZ, local.Z);
+			}
+
+			if (minX >= maxX || minY >= maxY)
+			{
+				return false;
+			}
+
+			double marginFeet = ConvertSheetOffsetToModelDistance(
+				(View)(object)view3D,
+				Math.Max(0.10, paperMarginInches) / 12.0);
+			double depthPad = Math.Max(2.0, marginFeet * 4.0);
+			if (double.IsInfinity(minZ) || double.IsInfinity(maxZ) || maxZ - minZ < 1.0 / 12.0)
+			{
+				double midZ = 0.0;
+				minZ = midZ - depthPad;
+				maxZ = midZ + depthPad;
+			}
+
+			// Keep the native crop Transform. Always use content-based Z with pad —
+			// preserving a crushed near/far Z (0.02') blanks the assembly on the sheet.
+			view3D.CropBoxActive = true;
+			view3D.CropBox = new BoundingBoxXYZ
+			{
+				Transform = cropBox.Transform,
+				Min = new XYZ(minX - marginFeet, minY - marginFeet, minZ - depthPad),
+				Max = new XYZ(maxX + marginFeet, maxY + marginFeet, maxZ + depthPad)
+			};
+			view3D.CropBoxVisible = false;
+
+			BoundingBoxXYZ applied = view3D.CropBox;
+			if (applied != null && applied.Max.Z - applied.Min.Z < 0.5)
+			{
+				// Revit re-crushed Z via clip planes — widen offsets and retry once.
+				TryEnsureView3DClipDepth(view3D, minDepthFeet: 20.0);
+				view3D.CropBox = new BoundingBoxXYZ
+				{
+					Transform = cropBox.Transform,
+					Min = new XYZ(minX - marginFeet, minY - marginFeet, minZ - depthPad),
+					Max = new XYZ(maxX + marginFeet, maxY + marginFeet, maxZ + depthPad)
+				};
+				applied = view3D.CropBox;
+				if (applied != null && applied.Max.Z - applied.Min.Z < 0.5)
+				{
+					// Keep XY crop ON — turning crop off is what blew the blue box to ±100'.
+					TryEnsureView3DClipDepth(view3D, minDepthFeet: 40.0);
+					view3D.CropBoxActive = true;
+					view3D.CropBox = new BoundingBoxXYZ
+					{
+						Transform = cropBox.Transform,
+						Min = new XYZ(minX - marginFeet, minY - marginFeet, -40.0),
+						Max = new XYZ(maxX + marginFeet, maxY + marginFeet, 40.0)
+					};
+				}
+			}
+
+			view3D.CropBoxActive = true;
+			view3D.CropBoxVisible = false;
+			return true;
+		}
+		catch
+		{
+			return false;
+		}
+	}
+
+	private static void TryDisableCrushedView3DClipPlanes(View3D view3D)
+	{
+		if (view3D == null)
+		{
+			return;
+		}
+
+		try
+		{
+			Parameter nearActive = view3D.get_Parameter(BuiltInParameter.VIEWER_BOUND_ACTIVE_NEAR);
+			Parameter farActive = view3D.get_Parameter(BuiltInParameter.VIEWER_BOUND_ACTIVE_FAR);
+			Parameter nearOffset = view3D.get_Parameter(BuiltInParameter.VIEWER_BOUND_OFFSET_NEAR);
+			Parameter farOffset = view3D.get_Parameter(BuiltInParameter.VIEWER_BOUND_OFFSET_FAR);
+			double near = nearOffset != null ? nearOffset.AsDouble() : 0.0;
+			double far = farOffset != null ? farOffset.AsDouble() : 0.0;
+			bool crushed = Math.Abs(far - near) < 0.5
+				|| (view3D.CropBoxActive
+					&& view3D.CropBox != null
+					&& view3D.CropBox.Max.Z - view3D.CropBox.Min.Z < 0.5);
+			if (!crushed)
+			{
+				return;
+			}
+
+			if (nearActive != null && !((APIObject)nearActive).IsReadOnly)
+			{
+				nearActive.Set(0);
+			}
+
+			if (farActive != null && !((APIObject)farActive).IsReadOnly)
+			{
+				farActive.Set(0);
+			}
+
+			TryEnsureView3DClipDepth(view3D, minDepthFeet: 20.0);
+		}
+		catch
+		{
+		}
+	}
+
+	private static void TryEnsureView3DClipDepth(View3D view3D, double minDepthFeet)
+	{
+		if (view3D == null || minDepthFeet <= 0.0)
+		{
+			return;
+		}
+
+		try
+		{
+			Parameter nearOffset = view3D.get_Parameter(BuiltInParameter.VIEWER_BOUND_OFFSET_NEAR);
+			Parameter farOffset = view3D.get_Parameter(BuiltInParameter.VIEWER_BOUND_OFFSET_FAR);
+			double half = Math.Max(10.0, minDepthFeet * 0.5);
+			if (nearOffset != null && !((APIObject)nearOffset).IsReadOnly)
+			{
+				nearOffset.Set(half);
+			}
+
+			if (farOffset != null && !((APIObject)farOffset).IsReadOnly)
+			{
+				farOffset.Set(half);
+			}
 		}
 		catch
 		{
@@ -6318,13 +7461,11 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 				}
 			}
 		}
-		if (includeTagExtents && memberPoints.Count > 0)
+		if (includeTagExtents)
 		{
-			XYZ center = new XYZ(memberPoints.Average((XYZ p) => p.X), memberPoints.Average((XYZ p) => p.Y), memberPoints.Average((XYZ p) => p.Z));
-			double maxSpan = ComputePointCloudMaxSpan(memberPoints) * 1.05 + 0.25;
 			foreach (XYZ tagHead in CollectTagHeadPositions(doc, view))
 			{
-				if (tagHead != null && center.DistanceTo(tagHead) <= maxSpan)
+				if (tagHead != null)
 				{
 					points.Add(tagHead);
 				}
@@ -6591,23 +7732,9 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 			return;
 		}
 		double marginFeet = ConvertSheetOffsetToModelDistance((View)(object)view3D, includeDimensionExtents ? 0.25 : (1.0 / 24.0));
-		Transform sectionTransform = null;
-		try
-		{
-			BoundingBoxXYZ existingSectionBox = view3D.GetSectionBox();
-			if (existingSectionBox?.Transform != null)
-			{
-				sectionTransform = existingSectionBox.Transform;
-			}
-		}
-		catch
-		{
-		}
-		if (sectionTransform == null)
-		{
-			XYZ centerWorld = new XYZ(list.Average((XYZ p) => p.X), list.Average((XYZ p) => p.Y), list.Average((XYZ p) => p.Z));
-			sectionTransform = TryBuildView3DSectionBoxTransform(view3D, centerWorld);
-		}
+		XYZ centerWorld = new XYZ(list.Average((XYZ p) => p.X), list.Average((XYZ p) => p.Y), list.Average((XYZ p) => p.Z));
+		// Always rebuild from the live camera — stale inactive section boxes sit at world origin.
+		Transform sectionTransform = TryBuildView3DSectionBoxTransform(view3D, centerWorld);
 		if (sectionTransform == null)
 		{
 			return;
@@ -7248,7 +8375,7 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 		return list;
 	}
 
-	private static int GetSpoolSheetViewScale(SpoolingManagerKind kind, SpoolingManagerSettings settings)
+	internal static int GetSpoolSheetViewScale(SpoolingManagerKind kind, SpoolingManagerSettings settings)
 	{
 		if (kind == SpoolingManagerKind.AutoDimensionLab)
 		{
@@ -7300,9 +8427,8 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 		}
 	}
 
-	// Keeps a placed viewport fully inside the sheet. Preserves the configured view scale
-	// when the view already fits; only shrinks the scale when the view is larger than the
-	// sheet, then clamps the viewport position so nothing runs off the sheet edge.
+	// Keeps a placed viewport centered and clamps it when possible. View scale is never
+	// changed here: every generated view must retain the scale selected in settings.
 	private static void FitSpoolViewportOnSheet(Document doc, ViewSheet sheet, View view, Viewport viewport, string placement)
 	{
 		if (doc == null || sheet == null || view == null || viewport == null)
@@ -7323,39 +8449,13 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 			{
 				return;
 			}
-			int maxIterations = _batchSheetGeneration ? 3 : 8;
 			RegenForViewportFit(doc);
-			for (int i = 0; i < maxIterations; i++)
+			Outline boxOutline = viewport.GetBoxOutline();
+			if (boxOutline != null && !boxOutline.IsEmpty)
 			{
-				Outline boxOutline = viewport.GetBoxOutline();
-				if (boxOutline == null || boxOutline.IsEmpty)
-				{
-					break;
-				}
 				double width = boxOutline.MaximumPoint.X - boxOutline.MinimumPoint.X;
 				double height = boxOutline.MaximumPoint.Y - boxOutline.MinimumPoint.Y;
-				TryAppendAutoDimDiagnosticLog("view-scale", view?.Name ?? "?", "FitSpoolViewportOnSheet iter=" + i + " scale=" + view.Scale + " boxW=" + width.ToString("F3") + " boxH=" + height.ToString("F3") + " maxW=" + maxWidth.ToString("F3") + " maxH=" + maxHeight.ToString("F3"), 0, 0);
-				if (width <= maxWidth && height <= maxHeight)
-				{
-					break;
-				}
-				int currentScale = view.Scale;
-				if (currentScale <= 0)
-				{
-					break;
-				}
-				double ratio = Math.Max(width / maxWidth, height / maxHeight);
-				int newScale = SnapUpToStandardViewScale((int)Math.Ceiling((double)currentScale * ratio));
-				if (newScale <= currentScale)
-				{
-					newScale = currentScale + 1;
-				}
-				TryAppendAutoDimDiagnosticLog("view-scale", view?.Name ?? "?", "FitSpoolViewportOnSheet rescale " + currentScale + " -> " + newScale, 0, 0);
-				if (!TrySetSpoolViewScale(view, newScale))
-				{
-					break;
-				}
-				RegenForViewportFit(doc);
+				TryAppendAutoDimDiagnosticLog("view-scale", view?.Name ?? "?", "FitSpoolViewportOnSheet preserve scale=" + view.Scale + " boxW=" + width.ToString("F3") + " boxH=" + height.ToString("F3") + " maxW=" + maxWidth.ToString("F3") + " maxH=" + maxHeight.ToString("F3"), 0, 0);
 			}
 			viewport.SetBoxCenter(GetSheetPlacementPoint(doc, sheet, placement));
 			RegenForViewportFit(doc);
@@ -7468,7 +8568,7 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 
 	// Sets the view scale even when a view template controls it, so a large spool can always be
 	// shrunk to fit the sheet instead of being left oversized (which reads as "cut off").
-	private static bool TrySetSpoolViewScale(View view, int newScale)
+	internal static bool TrySetSpoolViewScale(View view, int newScale)
 	{
 		if (view == null || newScale <= 0)
 		{
@@ -7502,11 +8602,11 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 			ElementId templateId = view.ViewTemplateId;
 			if (templateId != ElementId.InvalidElementId)
 			{
+				// The template has already been applied. Detaching it preserves those
+				// applied values while allowing this generated view to honor its selected scale.
 				view.ViewTemplateId = ElementId.InvalidElementId;
 				view.Scale = newScale;
-				view.ViewTemplateId = templateId;
-				TryAllowScaleOutsideTemplateControl(view);
-				return true;
+				return view.Scale == newScale;
 			}
 		}
 		catch
@@ -7857,9 +8957,9 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 	}
 
 	/// <summary>
-	/// Shorten the viewport title line to the view name, center it under the
-	/// assembly (fallback: viewbox), and place the title so its top is 1/8"
-	/// below the viewbox. Push farther only if tags/dims still collide.
+	/// Shorten the viewport title underline so it ends at the last letter of the view name,
+	/// center it under the viewbox, and place the title so its top is 1/8" below the viewbox.
+	/// Never inside the viewbox.
 	/// </summary>
 	private static void TryPositionViewportTitleBelow(Viewport viewport)
 	{
@@ -7890,24 +8990,20 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 			double boxMinX = boxOutline.MinimumPoint.X;
 			double boxMinY = boxOutline.MinimumPoint.Y;
 			double boxMaxX = boxOutline.MaximumPoint.X;
-			double boxWidth = boxMaxX - boxMinX;
 
 			View view = doc.GetElement(viewport.ViewId) as View;
 			string viewName = ((Element)view)?.Name ?? string.Empty;
 
 			double lineLength = EstimateViewportTitleLineLength(viewName);
-			lineLength = Math.Min(lineLength, Math.Max(boxWidth * 0.45, lineLength));
 
-			// Center under the VIEWBOX (not the assembly footprint).
+			// ALWAYS 1/8" below the viewbox bottom — never inside the viewbox.
 			double viewboxCenterX = (boxMinX + boxMaxX) * 0.5;
-
-			const double viewboxClearanceInches = 0.125; // 1/8" below viewbox
+			const double viewboxClearanceInches = 0.125;
 			double viewboxClearance = viewboxClearanceInches / 12.0;
+			double targetTitleTopY = boxMinY - viewboxClearance;
 
-			// Seed: line roughly centered; then correct using measured label outline
-			// so the FULL title (bubble + name) is centered under the viewbox.
 			double labelLeftX = viewboxCenterX - lineLength * 0.5;
-			double seedLabelY = boxMinY - viewboxClearance;
+			double seedLabelY = targetTitleTopY;
 
 			viewport.LabelLineLength = lineLength;
 			viewport.LabelOffset = new XYZ(labelLeftX - boxMinX, seedLabelY - boxMinY, 0.0);
@@ -7920,38 +9016,57 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 			{
 			}
 
-			Outline labelOutline = null;
-			try
+			// Correct using measured label outline; clamp so the title never enters the viewbox.
+			for (int pass = 0; pass < 3; pass++)
 			{
-				labelOutline = viewport.GetLabelOutline();
-			}
-			catch
-			{
-			}
+				Outline labelOutline = null;
+				try
+				{
+					labelOutline = viewport.GetLabelOutline();
+				}
+				catch
+				{
+				}
 
-			if (labelOutline != null && !labelOutline.IsEmpty)
-			{
+				if (labelOutline == null || labelOutline.IsEmpty)
+				{
+					break;
+				}
+
 				double labelCenterX =
 					(labelOutline.MinimumPoint.X + labelOutline.MaximumPoint.X) * 0.5;
 				double labelTopY = labelOutline.MaximumPoint.Y;
-				double targetTopY = boxMinY - viewboxClearance;
+				double deltaX = labelCenterX - viewboxCenterX;
+				double deltaY = labelTopY - targetTitleTopY;
 
-				double deltaX = labelCenterX - viewboxCenterX; // >0 means title too far right
-				double deltaY = labelTopY - targetTopY; // >0 means title too high
-
-				if (Math.Abs(deltaX) > 1e-9 || Math.Abs(deltaY) > 1e-9)
+				// If any part of the title is still inside/on the viewbox, push further down.
+				if (labelTopY > boxMinY - 1e-9)
 				{
-					XYZ offset = viewport.LabelOffset;
-					viewport.LabelOffset = new XYZ(
-						offset.X - deltaX,
-						offset.Y - deltaY,
-						0.0);
+					deltaY = labelTopY - targetTitleTopY;
+				}
+
+				if (Math.Abs(deltaX) <= 1e-9 && Math.Abs(deltaY) <= 1e-9)
+				{
+					break;
+				}
+
+				XYZ offset = viewport.LabelOffset;
+				viewport.LabelOffset = new XYZ(
+					offset.X - deltaX,
+					offset.Y - deltaY,
+					0.0);
+
+				try
+				{
+					doc.Regenerate();
+				}
+				catch
+				{
 				}
 			}
 
-			// Do NOT call EnsureViewportTitleClearance here. On elevations with wide
-			// dims it shoved titles to the title block. GitHub rule stays: 1/8" under
-			// the blue viewbox only.
+			// Do NOT call EnsureViewportTitleClearance here — it can drag titles up into
+			// the view. Hard rule: 1/8" under the blue viewbox only.
 		}
 		catch
 		{
@@ -8290,20 +9405,45 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 	}
 
 	/// <summary>
-	/// Approximate sheet-space length of the viewport title underline for a view name.
+	/// Sheet-space length of the viewport title underline — ends at the last letter of the
+	/// view name (no trailing overhang).
 	/// </summary>
 	private static double EstimateViewportTitleLineLength(string viewName)
 	{
 		string name = (viewName ?? string.Empty).Trim();
 		if (name.Length == 0)
 		{
-			return 1.0 / 12.0; // 1"
+			return 0.5 / 12.0; // 1/2"
 		}
 
-		const double inchesPerChar = 0.10;
-		double inches = Math.Max(0.55, name.Length * inchesPerChar);
-		inches += 0.08;
-		return inches / 12.0;
+		// Approximate Revit viewport-title glyph widths (inches) for typical title text.
+		double inches = 0.0;
+		foreach (char ch in name)
+		{
+			if (ch == ' ')
+			{
+				inches += 0.040;
+			}
+			else if (ch == 'i' || ch == 'l' || ch == 'I' || ch == '1' || ch == 't' || ch == 'f' || ch == 'j')
+			{
+				inches += 0.042;
+			}
+			else if (ch == 'm' || ch == 'w' || ch == 'M' || ch == 'W')
+			{
+				inches += 0.110;
+			}
+			else if (char.IsUpper(ch))
+			{
+				inches += 0.078;
+			}
+			else
+			{
+				inches += 0.068;
+			}
+		}
+
+		// No trailing pad — line stops at the last letter. Floor only for empty names.
+		return Math.Max(0.20, inches * 0.92) / 12.0;
 	}
 
 	private static XYZ GetSheetPlacementPoint(Document doc, ViewSheet sheet, string placement)
@@ -9171,63 +10311,84 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 
 	private static XYZ GetTagHeadPoint(Element element, View view, string placement, SpoolingManagerKind kind, SpoolingManagerSettings settings, XYZ anchorPoint = null)
 	{
-		//IL_00cb: Unknown result type (might be due to invalid IL or missing references)
-		BoundingBoxXYZ val = element.get_BoundingBox(view) ?? element.get_BoundingBox(null);
-		if (val == null)
-		{
-			return null;
-		}
-		List<XYZ> list = GetBoundingBoxCorners(val).ToList();
-		if (list.Count == 0)
-		{
-			return null;
-		}
+		// Place a short seed head near the tagged snap — not at the part AABB corner.
+		// Parking on AABB corners aimed leaders down long pipes until past the whole run.
 		XYZ right = view.RightDirection.Normalize();
 		XYZ up = view.UpDirection.Normalize();
-		XYZ val2 = (XYZ)(((object)anchorPoint) ?? ((object)new XYZ(list.Average((XYZ x) => x.X), list.Average((XYZ x) => x.Y), list.Average((XYZ x) => x.Z))));
-		double num = list.Min((XYZ c) => c.DotProduct(right));
-		double num2 = list.Max((XYZ c) => c.DotProduct(right));
-		double num3 = list.Min((XYZ c) => c.DotProduct(up));
-		double num4 = list.Max((XYZ c) => c.DotProduct(up));
-		double num5 = Math.Max(num2 - num, 0.1);
-		double num6 = Math.Max(num4 - num3, 0.1);
-		double sheetFeet = GetTagLeaderBaselineInchesOnSheet(view, kind, settings) / 12.0;
-		double num7 = Math.Max(ConvertSheetOffsetToModelDistance(view, sheetFeet), num5 * 0.05);
-		double num8 = Math.Max(ConvertSheetOffsetToModelDistance(view, sheetFeet), num6 * 0.05);
-		double num9 = (num + num2) * 0.5;
-		double num10 = (num3 + num4) * 0.5;
+		XYZ anchor = anchorPoint;
+		if (anchor == null)
+		{
+			BoundingBoxXYZ box = element?.get_BoundingBox(view) ?? element?.get_BoundingBox(null);
+			if (box == null)
+			{
+				return null;
+			}
+
+			List<XYZ> corners = GetBoundingBoxCorners(box).ToList();
+			if (corners.Count == 0)
+			{
+				return null;
+			}
+
+			anchor = new XYZ(
+				corners.Average((XYZ x) => x.X),
+				corners.Average((XYZ x) => x.Y),
+				corners.Average((XYZ x) => x.Z));
+		}
+
+		double dirU = 0.0;
+		double dirV = 0.0;
 		switch ((placement ?? string.Empty).Trim().ToLowerInvariant())
 		{
 		case "top left":
-			num9 = num - num7;
-			num10 = num4 + num8;
+			dirU = -1.0;
+			dirV = 1.0;
 			break;
 		case "top center":
-			num10 = num4 + num8;
+			dirV = 1.0;
 			break;
 		case "top right":
-			num9 = num2 + num7;
-			num10 = num4 + num8;
+			dirU = 1.0;
+			dirV = 1.0;
 			break;
 		case "middle left":
-			num9 = num - num7;
+			dirU = -1.0;
 			break;
 		case "middle right":
-			num9 = num2 + num7;
+			dirU = 1.0;
 			break;
 		case "bottom left":
-			num9 = num - num7;
-			num10 = num3 - num8;
+			dirU = -1.0;
+			dirV = -1.0;
 			break;
 		case "bottom center":
-			num10 = num3 - num8;
+			dirV = -1.0;
 			break;
 		case "bottom right":
-			num9 = num2 + num7;
-			num10 = num3 - num8;
+			dirU = 1.0;
+			dirV = -1.0;
+			break;
+		default:
+			dirU = 1.0;
+			dirV = 1.0;
 			break;
 		}
-		return val2 + right.Multiply(num9 - val2.DotProduct(right)) + up.Multiply(num10 - val2.DotProduct(up));
+
+		double dirLen = Math.Sqrt(dirU * dirU + dirV * dirV);
+		if (dirLen < 1E-09)
+		{
+			dirU = 1.0;
+			dirV = 1.0;
+			dirLen = Math.Sqrt(2.0);
+		}
+
+		dirU /= dirLen;
+		dirV /= dirLen;
+
+		// Seed only — SpoolTagOrganizer pushes until the pill clears the host body, then stops.
+		double sheetFeet = GetTagLeaderBaselineInchesOnSheet(view, kind, settings) / 12.0;
+		double offset = ConvertSheetOffsetToModelDistance(view, sheetFeet);
+		return anchor + right.Multiply(dirU * offset) + up.Multiply(dirV * offset);
 	}
 
 	private static XYZ GetElementAnchorPoint(Element element, View view)
@@ -9362,20 +10523,22 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 
 	private static double GetTagLeaderBaselineInchesOnSheet(View view, SpoolingManagerKind kind, SpoolingManagerSettings settings)
 	{
+		// Seed length only (paper inches). Organizer owns final clearance off the host body.
 		if (kind.IsMmcStyle())
 		{
-			return 0.8;
+			return 0.35;
 		}
-		return 0.5 * GetTagLeaderScaleFactor(view, kind);
+		return 0.28 * GetTagLeaderScaleFactor(view, kind);
 	}
 
 	private static double GetTagLeaderMaxInchesOnSheet(View view, SpoolingManagerKind kind, SpoolingManagerSettings settings, double baselineInches)
 	{
+		// Soft pre-organize ceiling; keep tags close.
 		if (kind.IsMmcStyle())
 		{
-			return Math.Max(baselineInches + 0.2, baselineInches * 2.0);
+			return Math.Max(baselineInches + 0.20, 0.65);
 		}
-		return 1.25 * GetTagLeaderScaleFactor(view, kind);
+		return 0.65 * GetTagLeaderScaleFactor(view, kind);
 	}
 
 	private static double GetTagLeaderScaleFactor(View view, SpoolingManagerKind kind)
@@ -9678,8 +10841,18 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 		}
 		try
 		{
-			tag.HasLeader = false;
-			tag.HasLeader = true;
+			// Do NOT toggle HasLeader off/on — that snaps TagHeadPosition back onto the host
+			// on View3D and undoes SpoolTagOrganizer seats.
+			try
+			{
+				if (!tag.HasLeader)
+				{
+					tag.HasLeader = true;
+				}
+			}
+			catch
+			{
+			}
 			TrySetLeaderEndCondition(tag, "Free");
 			if (reference != null && anchorPoint != null)
 			{
@@ -9865,6 +11038,12 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 		SpoolingManagerKind kind = SpoolingManagerKind.Standard,
 		SpoolingManagerSettings settings = null)
 	{
+		if (settings != null && settings.UseNativePipework)
+		{
+			AssignNativeAssemblyItemNumbers(doc, assembly, kind, settings);
+			return;
+		}
+
 		List<FabricationPart> source = GetAssemblyFabricationParts(doc, assembly);
 		foreach (FabricationPart item in source.Where(ShouldClearFabricationItemNumber))
 		{
@@ -9905,6 +11084,151 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 	}
 
 	/// <summary>
+	/// Native Revit pipework does not have Fabrication Item Number. Number equivalent
+	/// pipe/fitting/accessory groups into the S-Item Number shared instance parameter.
+	/// Mark is intentionally not modified because duplicate Mark values trigger Revit warnings.
+	/// </summary>
+	private static void AssignNativeAssemblyItemNumbers(
+		Document doc,
+		AssemblyInstance assembly,
+		SpoolingManagerKind kind,
+		SpoolingManagerSettings settings)
+	{
+		if (doc == null || assembly == null)
+		{
+			return;
+		}
+
+		List<IGrouping<string, Element>> groups = (from id in assembly.GetMemberIds()
+			let element = doc.GetElement(id)
+			where NativePipeSpoolSupport.IsNativePipeworkElement(element)
+			group element by GetNativeItemGroupingKey(element) into itemGroup
+			orderby GetNativeItemSortPriority(itemGroup.First())
+			select itemGroup)
+			.ThenBy((IGrouping<string, Element> group) => group.Key, StringComparer.OrdinalIgnoreCase)
+			.ToList();
+
+		if (settings != null && settings.ItemNumberCustomFormatEnabled)
+		{
+			settings.NormalizeItemNumberStarts();
+			AssignNativeItemNumberSeries(
+				groups.Where((IGrouping<string, Element> group) => GetNativeItemSortPriority(group.First()) == 0).ToList(),
+				settings.ItemNumberStraightPrefix,
+				settings.ItemNumberStraightSuffix,
+				settings.ItemNumberStraightStart);
+			AssignNativeItemNumberSeries(
+				groups.Where((IGrouping<string, Element> group) => GetNativeItemSortPriority(group.First()) == 1).ToList(),
+				settings.ItemNumberFittingPrefix,
+				settings.ItemNumberFittingSuffix,
+				settings.ItemNumberFittingStart);
+			AssignNativeItemNumberSeries(
+				groups.Where((IGrouping<string, Element> group) => GetNativeItemSortPriority(group.First()) == 2).ToList(),
+				settings.ItemNumberValvePrefix,
+				settings.ItemNumberValveSuffix,
+				settings.ItemNumberValveStart);
+			return;
+		}
+
+		if (kind.IsMmcStyle())
+		{
+			List<IGrouping<string, Element>> straights = groups
+				.Where((IGrouping<string, Element> group) => GetNativeItemSortPriority(group.First()) == 0)
+				.ToList();
+			List<IGrouping<string, Element>> fittings = groups
+				.Where((IGrouping<string, Element> group) => GetNativeItemSortPriority(group.First()) != 0)
+				.ToList();
+			for (int i = 0; i < straights.Count; i++)
+			{
+				SetNativeItemNumberOnGroup(straights[i], $"P-{i + 1:D3}-S");
+			}
+			for (int i = 0; i < fittings.Count; i++)
+			{
+				SetNativeItemNumberOnGroup(fittings[i], $"P-{i + 1:D3}-F");
+			}
+			return;
+		}
+
+		for (int i = 0; i < groups.Count; i++)
+		{
+			SetNativeItemNumberOnGroup(groups[i], (i + 1).ToString(CultureInfo.InvariantCulture));
+		}
+	}
+
+	private static void AssignNativeItemNumberSeries(
+		List<IGrouping<string, Element>> groups,
+		string prefix,
+		string suffix,
+		string startToken)
+	{
+		for (int i = 0; i < groups.Count; i++)
+		{
+			string number = ItemNumberSequenceFormatter.Format(startToken, i);
+			SetNativeItemNumberOnGroup(groups[i], (prefix ?? string.Empty) + number + (suffix ?? string.Empty));
+		}
+	}
+
+	private static void SetNativeItemNumberOnGroup(IGrouping<string, Element> group, string value)
+	{
+		foreach (Element element in group)
+		{
+			try
+			{
+				Parameter itemNumber = element.LookupParameter(
+					SsSavantSharedParameterBootstrap.SItemNumberParameterName);
+				if (itemNumber != null
+					&& !itemNumber.IsReadOnly
+					&& itemNumber.StorageType == StorageType.String)
+				{
+					itemNumber.Set(value ?? string.Empty);
+				}
+			}
+			catch
+			{
+			}
+		}
+	}
+
+	private static int GetNativeItemSortPriority(Element element)
+	{
+		if (NativePipeSpoolSupport.IsNativePipe(element))
+		{
+			return 0;
+		}
+		return NativePipeSpoolSupport.IsNativePipeAccessory(element) ? 2 : 1;
+	}
+
+	private static string GetNativeItemGroupingKey(Element element)
+	{
+		if (element == null)
+		{
+			return string.Empty;
+		}
+
+		ElementType elementType = element.Document?.GetElement(element.GetTypeId()) as ElementType;
+		List<string> values = new List<string>
+		{
+			GetNativeItemSortPriority(element).ToString(CultureInfo.InvariantCulture),
+			element.GetTypeId()?.Value.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+			NormalizeGroupingToken(elementType?.FamilyName),
+			NormalizeGroupingToken(elementType?.Name),
+			NormalizeGroupingToken(GetPartParameterValue(element, "Size")),
+			NormalizeGroupingToken(GetPartParameterValue(element, "Diameter")),
+			NormalizeGroupingToken(GetPartParameterValue(element, "Nominal Diameter")),
+			NormalizeGroupingToken(GetPartParameterValue(element, "Angle"))
+		};
+
+		if (NativePipeSpoolSupport.IsNativePipe(element)
+			&& element.Location is LocationCurve locationCurve
+			&& locationCurve.Curve != null)
+		{
+			double roundedLength = Math.Round(locationCurve.Curve.Length * 96.0) / 96.0;
+			values.Add(roundedLength.ToString("F4", CultureInfo.InvariantCulture));
+		}
+
+		return string.Join("|", values);
+	}
+
+	/// <summary>
 	/// Separate Straight / Fitting / Valve series using configurable prefix + suffix
 	/// (e.g. P-001-S, P-001-F, P-001-V).
 	/// </summary>
@@ -9917,7 +11241,7 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 			return;
 		}
 
-		int digits = settings.ItemNumberDigits < 1 ? 1 : settings.ItemNumberDigits;
+		settings.NormalizeItemNumberStarts();
 		List<IGrouping<string, FabricationPart>> straights = groups
 			.Where((IGrouping<string, FabricationPart> g) => GetFabricationSortPriority(g.First()) == 0)
 			.ToList();
@@ -9936,24 +11260,24 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 			straights,
 			settings.ItemNumberStraightPrefix,
 			settings.ItemNumberStraightSuffix,
-			digits);
+			settings.ItemNumberStraightStart);
 		AssignSeriesItemNumbers(
 			fittings,
 			settings.ItemNumberFittingPrefix,
 			settings.ItemNumberFittingSuffix,
-			digits);
+			settings.ItemNumberFittingStart);
 		AssignSeriesItemNumbers(
 			valves,
 			settings.ItemNumberValvePrefix,
 			settings.ItemNumberValveSuffix,
-			digits);
+			settings.ItemNumberValveStart);
 	}
 
 	private static void AssignSeriesItemNumbers(
 		List<IGrouping<string, FabricationPart>> groups,
 		string prefix,
 		string suffix,
-		int digits)
+		string startToken)
 	{
 		if (groups == null || groups.Count == 0)
 		{
@@ -9962,10 +11286,9 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 
 		string safePrefix = prefix ?? string.Empty;
 		string safeSuffix = suffix ?? string.Empty;
-		string format = "D" + digits.ToString(CultureInfo.InvariantCulture);
 		for (int i = 0; i < groups.Count; i++)
 		{
-			string number = (i + 1).ToString(format, CultureInfo.InvariantCulture);
+			string number = ItemNumberSequenceFormatter.Format(startToken, i);
 			SetFabricationItemNumberOnGroup(groups[i], safePrefix + number + safeSuffix);
 		}
 	}
@@ -10133,18 +11456,18 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 	private static void SetFabricationItemNumber(FabricationPart part, string itemNumber)
 	{
 		Parameter val = part?.get_Parameter((BuiltInParameter)(-1140975));
-		if (val == null || ((APIObject)val).IsReadOnly)
+		if (val != null && !((APIObject)val).IsReadOnly)
 		{
-			return;
+			try
+			{
+				val.Set(itemNumber ?? string.Empty);
+			}
+			catch
+			{
+			}
 		}
 
-		try
-		{
-			val.Set(itemNumber ?? string.Empty);
-		}
-		catch
-		{
-		}
+		SetSItemNumberOnElement((Element)(object)part, itemNumber);
 	}
 
 	private static bool IsMmcStraightFabricationPart(FabricationPart part)
@@ -10156,30 +11479,49 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 	{
 		foreach (FabricationPart item in group)
 		{
-			Parameter val = item.get_Parameter((BuiltInParameter)(-1140975));
-			if (val != null && !((APIObject)val).IsReadOnly)
-			{
-				try
-				{
-					val.Set(itemNumber);
-				}
-				catch
-				{
-				}
-			}
+			SetFabricationItemNumber(item, itemNumber);
 		}
 	}
 
 	private static void ClearFabricationItemNumber(FabricationPart part)
 	{
 		Parameter val = ((part != null) ? part.get_Parameter((BuiltInParameter)(-1140975)) : null);
-		if (val == null || ((APIObject)val).IsReadOnly)
+		if (val != null && !((APIObject)val).IsReadOnly)
+		{
+			try
+			{
+				val.Set(string.Empty);
+			}
+			catch
+			{
+			}
+		}
+
+		SetSItemNumberOnElement((Element)(object)part, string.Empty);
+	}
+
+	/// <summary>
+	/// Mirrors Fabrication Item Number onto shared parameter S-Item Number when bound.
+	/// </summary>
+	private static void SetSItemNumberOnElement(Element element, string itemNumber)
+	{
+		if (element == null)
 		{
 			return;
 		}
+
 		try
 		{
-			val.Set(string.Empty);
+			Parameter itemNumberParam = element.LookupParameter(
+				SsSavantSharedParameterBootstrap.SItemNumberParameterName);
+			if (itemNumberParam == null
+				|| itemNumberParam.IsReadOnly
+				|| itemNumberParam.StorageType != StorageType.String)
+			{
+				return;
+			}
+
+			itemNumberParam.Set(itemNumber ?? string.Empty);
 		}
 		catch
 		{
@@ -10791,6 +12133,20 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 		{
 			return false;
 		}
+
+		if (spoolSettings != null && spoolSettings.UseNativePipework)
+		{
+			if (TryNativeMepSpoolAutoDimensions(doc, view, assembly, spoolSettings, out diagnostic))
+			{
+				return true;
+			}
+			if (string.IsNullOrEmpty(diagnostic))
+			{
+				diagnostic = "Auto-dimension skipped: native pipe assembly needs a pipe and a fitting/accessory to measure.";
+			}
+			return false;
+		}
+
 		List<FabricationPart> fabricationParts = GetAssemblyFabricationParts(doc, assembly)
 			.Where((p) => !IsGasketPart(p) && !IsWeldPart(p))
 			.ToList();
@@ -10895,25 +12251,29 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 			select doc.GetElement(id) into e
 			where e != null && e.Category != null
 			select e).ToList();
-		List<Element> list2 = list.Where(IsNativePipeElement).ToList();
-		List<Element> list3 = list.Where(IsNativePipeFittingElement).ToList();
-		if (list2.Count == 0 || list3.Count == 0)
+		List<Element> pipes = list.Where(IsNativePipeElement).ToList();
+		List<Element> fittings = list.Where((Element e) => IsNativePipeFittingElement(e) || NativePipeSpoolSupport.IsNativePipeAccessory(e)).ToList();
+		if (pipes.Count == 0)
 		{
+			diagnostic = "Auto-dimension skipped: native pipe assembly has no Pipe elements to measure.";
 			return false;
 		}
-		Element val = list2.OrderByDescending(GetMepCurveLineLength).FirstOrDefault();
-		if (val == null || GetMepCurveLineLength(val) < 1.0 / 24.0)
+		Element dominantPipe = pipes.OrderByDescending(GetMepCurveLineLength).FirstOrDefault();
+		if (dominantPipe == null || GetMepCurveLineLength(dominantPipe) < 1.0 / 24.0)
 		{
+			diagnostic = "Auto-dimension skipped: no native pipe with a measurable straight length was found.";
 			return false;
 		}
-		Line mepCenterLine = GetMepCenterLine(val);
+		Line mepCenterLine = GetMepCenterLine(dominantPipe);
 		if ((GeometryObject)(object)mepCenterLine == (GeometryObject)null)
 		{
+			diagnostic = "Auto-dimension skipped: dominant native pipe has no straight centerline.";
 			return false;
 		}
 		XYZ vn = view.ViewDirection;
 		if (vn == null || vn.GetLength() < 1E-09)
 		{
+			diagnostic = "Auto-dimension skipped: view direction is invalid.";
 			return false;
 		}
 		vn = vn.Normalize();
@@ -10924,60 +12284,343 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 			XYZ rightDirection = view.RightDirection;
 			if (rightDirection == null || rightDirection.GetLength() < 1E-09)
 			{
+				diagnostic = "Auto-dimension skipped: pipe run is perpendicular to the view and no fallback axis exists.";
 				return false;
 			}
 			rightDirection = rightDirection.Normalize();
 			val2 = rightDirection - vn * rightDirection.DotProduct(vn);
 			if (val2.GetLength() < 1E-09)
 			{
+				diagnostic = "Auto-dimension skipped: could not project a run axis into the view plane.";
 				return false;
 			}
 		}
 		XYZ unitAxis = val2.Normalize();
-		Element val3 = (from f in list3
+		int stackIndex = 0;
+		List<string> failures = new List<string>();
+
+		// Native dimensions use pipe end-face references when available. Fitting centers
+		// without family refs are witnessed by a tiny near-invisible detail curve owned
+		// by the assembly view (reference planes do not display dimensions there).
+
+		// Bare pipe (no fittings/accessories): required E-E, open end to open end.
+		if (fittings.Count == 0)
+		{
+			XYZ endA = ((Curve)mepCenterLine).GetEndPoint(0);
+			XYZ endB = ((Curve)mepCenterLine).GetEndPoint(1);
+			if (endA.DistanceTo(endB) >= 1.0 / 24.0)
+			{
+				if (TryPlaceNativeReferenceDimension(
+					doc,
+					view,
+					dominantPipe,
+					endA,
+					dominantPipe,
+					endB,
+					spoolSettings,
+					ref stackIndex,
+					out string barePipeFailure))
+				{
+					return true;
+				}
+				if (!string.IsNullOrEmpty(barePipeFailure))
+				{
+					failures.Add("bare pipe E-E: " + barePipeFailure);
+				}
+			}
+			diagnostic = failures.Count > 0
+				? "Auto-dimension (native): " + string.Join("; ", failures)
+				: "Auto-dimension skipped: bare native pipe run could not be dimensioned.";
+			return false;
+		}
+
+		if (!TryGetNativePipeOpenEnd(dominantPipe, list, unitAxis, vn, out XYZ pipeEndPt))
+		{
+			diagnostic = "Auto-dimension skipped: could not resolve an open pipe-end anchor on the native run.";
+			return false;
+		}
+
+		// E -> C: open pipe end to each fitting/accessory center, farthest along the run first
+		// so the widest (overall-style) dimension wins; then nearer fittings as chain segments.
+		int placedCount = 0;
+		var orderedFittings = (from f in fittings
 			select new
 			{
 				F = f,
-				C = GetElementApproxCenter(f)
+				C = GetNativeFittingConnectorAnchor(f, dominantPipe) ?? GetElementApproxCenter(f)
 			} into x
-			where x.C != null
-			orderby DotInPlane(x.C, unitAxis, vn)
-			select x.F).FirstOrDefault();
-		if (val3 == null)
+			where x.C != null && x.C.DistanceTo(pipeEndPt) >= 1.0 / 24.0
+			orderby Math.Abs(DotInPlane(x.C, unitAxis, vn) - DotInPlane(pipeEndPt, unitAxis, vn)) descending
+			select x).ToList();
+		if (orderedFittings.Count == 0)
+		{
+			diagnostic = "Auto-dimension skipped: no native fitting/accessory center could be resolved away from the pipe end.";
+			return false;
+		}
+		Element chainFitting = null;
+		XYZ chainFittingCenter = null;
+		foreach (var candidate in orderedFittings)
+		{
+			if (TryPlaceNativeReferenceDimension(
+				doc,
+				view,
+				dominantPipe,
+				pipeEndPt,
+				candidate.F,
+				candidate.C,
+				spoolSettings,
+				ref stackIndex,
+				out string failureDetail))
+			{
+				placedCount++;
+				chainFitting = candidate.F;
+				chainFittingCenter = candidate.C;
+				break;
+			}
+			if (!string.IsNullOrEmpty(failureDetail))
+			{
+				failures.Add(failureDetail);
+			}
+		}
+
+		// Pass-through run (pipe - tee - pipe): also place C -> E from the fitting to each
+		// other pipe's open end, then the overall E -> E across the whole run.
+		if (chainFitting != null && chainFittingCenter != null)
+		{
+			Element farOtherPipe = null;
+			XYZ farOtherEnd = null;
+			double dominantEndProjection = DotInPlane(pipeEndPt, unitAxis, vn);
+			foreach (Element otherPipe in pipes)
+			{
+				if (otherPipe.Id == dominantPipe.Id)
+				{
+					continue;
+				}
+				if (!TryGetNativePipeOpenEnd(otherPipe, list, unitAxis, vn, out XYZ otherEndPt)
+					|| otherEndPt == null
+					|| otherEndPt.DistanceTo(chainFittingCenter) < 1.0 / 24.0)
+				{
+					continue;
+				}
+				if (TryPlaceNativeReferenceDimension(
+					doc,
+					view,
+					chainFitting,
+					chainFittingCenter,
+					otherPipe,
+					otherEndPt,
+					spoolSettings,
+					ref stackIndex,
+					out string segmentFailure))
+				{
+					placedCount++;
+				}
+				else if (!string.IsNullOrEmpty(segmentFailure))
+				{
+					failures.Add("fitting C-E: " + segmentFailure);
+				}
+				double span = Math.Abs(DotInPlane(otherEndPt, unitAxis, vn) - dominantEndProjection);
+				if (farOtherEnd == null
+					|| span > Math.Abs(DotInPlane(farOtherEnd, unitAxis, vn) - dominantEndProjection))
+				{
+					farOtherPipe = otherPipe;
+					farOtherEnd = otherEndPt;
+				}
+			}
+			if (farOtherPipe != null
+				&& farOtherEnd != null
+				&& farOtherEnd.DistanceTo(pipeEndPt) >= 1.0 / 24.0)
+			{
+				if (TryPlaceNativeReferenceDimension(
+					doc,
+					view,
+					dominantPipe,
+					pipeEndPt,
+					farOtherPipe,
+					farOtherEnd,
+					spoolSettings,
+					ref stackIndex,
+					out string overallFailure))
+				{
+					placedCount++;
+				}
+				else if (!string.IsNullOrEmpty(overallFailure))
+				{
+					failures.Add("overall E-E: " + overallFailure);
+				}
+			}
+		}
+
+		// Optional fitting self dims (Annotation Settings): fitting end to fitting
+		// centerline along the run axis, e.g. the elbow takeout at the end of a run.
+		if (spoolSettings != null && spoolSettings.NativeFittingSelfDimensionsEnabled)
+		{
+			foreach (Element fitting in fittings)
+			{
+				XYZ center = GetNativeFittingConnectorAnchor(fitting, dominantPipe)
+					?? GetElementApproxCenter(fitting);
+				if (center == null)
+				{
+					continue;
+				}
+				double centerProjection = DotInPlane(center, unitAxis, vn);
+				XYZ bestEnd = null;
+				double bestOffset = 0.0;
+				foreach (Connector connector in ListConnectorsForElement(fitting))
+				{
+					XYZ origin = connector?.Origin;
+					if (origin == null)
+					{
+						continue;
+					}
+					double offset = Math.Abs(DotInPlane(origin, unitAxis, vn) - centerProjection);
+					if (offset >= 1.0 / 24.0 && offset > bestOffset)
+					{
+						bestOffset = offset;
+						bestEnd = origin;
+					}
+				}
+				if (bestEnd == null)
+				{
+					continue;
+				}
+				if (TryPlaceNativeReferenceDimension(
+					doc,
+					view,
+					fitting,
+					bestEnd,
+					fitting,
+					center,
+					spoolSettings,
+					ref stackIndex,
+					out string selfFailure))
+				{
+					placedCount++;
+				}
+				else if (!string.IsNullOrEmpty(selfFailure))
+				{
+					failures.Add("fitting self E-C: " + selfFailure);
+				}
+			}
+		}
+
+		if (placedCount > 0)
+		{
+			return true;
+		}
+		diagnostic = failures.Count > 0
+			? "Auto-dimension (native): " + string.Join("; ", failures.Distinct().Take(3))
+			: "Auto-dimension skipped: no native pipe-to-fitting dimension could be placed.";
+		return false;
+	}
+
+	/// <summary>
+	/// Resolve fitting C as the intersection of its connector centerlines. For a 90-degree
+	/// elbow this is the true centerline intersection, not either connector or their centroid.
+	/// </summary>
+	private static XYZ GetNativeFittingConnectorAnchor(Element fitting, Element referencePipe)
+	{
+		XYZ center = GetElementApproxCenter(fitting);
+		if (fitting == null)
+		{
+			return center;
+		}
+		try
+		{
+			List<Connector> connectors = ListConnectorsForElement(fitting);
+			if (connectors.Count == 0)
+			{
+				return center;
+			}
+			for (int i = 0; i < connectors.Count; i++)
+			{
+				for (int j = i + 1; j < connectors.Count; j++)
+				{
+					if (TryIntersectNativeConnectorCenterlines(
+						connectors[i],
+						connectors[j],
+						out XYZ intersection))
+					{
+						return intersection;
+					}
+				}
+			}
+
+			// Collinear connectors (couplings/reducers) have no unique infinite-line
+			// intersection; their midpoint is the family center.
+			double x = 0.0;
+			double y = 0.0;
+			double z = 0.0;
+			int count = 0;
+			foreach (Connector connector in connectors)
+			{
+				XYZ origin = connector?.Origin;
+				if (origin == null)
+				{
+					continue;
+				}
+				x += origin.X;
+				y += origin.Y;
+				z += origin.Z;
+				count++;
+			}
+			if (count > 0)
+			{
+				return new XYZ(x / count, y / count, z / count);
+			}
+		}
+		catch
+		{
+		}
+		return center;
+	}
+
+	private static bool TryIntersectNativeConnectorCenterlines(
+		Connector connectorA,
+		Connector connectorB,
+		out XYZ intersection)
+	{
+		intersection = null;
+		if (connectorA?.Origin == null || connectorB?.Origin == null)
 		{
 			return false;
 		}
-		XYZ elementApproxCenter = GetElementApproxCenter(val3);
-		if (elementApproxCenter == null)
+		try
 		{
-			return false;
-		}
-		if (!TryGetNativePipeOpenEnd(val, list, unitAxis, vn, out var pipeEndPt))
-		{
-			return false;
-		}
-		double num = DotInPlane(pipeEndPt, unitAxis, vn);
-		double num2 = DotInPlane(elementApproxCenter, unitAxis, vn);
-		if (num < num2)
-		{
-			unitAxis = unitAxis.Negate();
-			if (!TryGetNativePipeOpenEnd(val, list, unitAxis, vn, out pipeEndPt))
+			XYZ p = connectorA.Origin;
+			XYZ q = connectorB.Origin;
+			XYZ u = connectorA.CoordinateSystem?.BasisZ;
+			XYZ v = connectorB.CoordinateSystem?.BasisZ;
+			if (u == null || v == null || u.GetLength() < 1E-09 || v.GetLength() < 1E-09)
 			{
 				return false;
 			}
-			elementApproxCenter = GetElementApproxCenter(val3);
-			if (elementApproxCenter == null)
+			u = u.Normalize();
+			v = v.Normalize();
+			double uv = u.DotProduct(v);
+			double denominator = 1.0 - uv * uv;
+			if (Math.Abs(denominator) < 1E-06)
 			{
 				return false;
 			}
+			XYZ w = p - q;
+			double uw = u.DotProduct(w);
+			double vw = v.DotProduct(w);
+			double parameterU = (uv * vw - uw) / denominator;
+			double parameterV = (vw - uv * uw) / denominator;
+			XYZ onA = p + u.Multiply(parameterU);
+			XYZ onB = q + v.Multiply(parameterV);
+			if (onA.DistanceTo(onB) > 1.0 / 24.0)
+			{
+				return false;
+			}
+			intersection = (onA + onB) * 0.5;
+			return true;
 		}
-		if (pipeEndPt.DistanceTo(elementApproxCenter) < 1.0 / 24.0)
+		catch
 		{
 			return false;
 		}
-		int stackIndex = 0;
-		string failureDetail;
-		return TryPlaceSpoolLinearDimensionSleeveStyle(doc, view, val3, elementApproxCenter, val, pipeEndPt, spoolSettings, ref stackIndex, out failureDetail);
 	}
 
 	private static bool IsNativePipeElement(Element e)
@@ -17213,7 +18856,9 @@ public partial class CreateSpoolSheetsHandler : IExternalEventHandler
 				failureDetail = "Refusing to dimension a single fitting to itself.";
 				return false;
 			}
-			if (!(elemNearFitting is FabricationPart barePipe && IsPipeRunPart(barePipe) && val.GetLength() >= 1.0 / 24.0))
+			bool isBareFabPipe = elemNearFitting is FabricationPart barePipe && IsPipeRunPart(barePipe);
+			bool isBareNativePipe = IsNativePipeElement(elemNearFitting);
+			if (!((isBareFabPipe || isBareNativePipe) && val.GetLength() >= 1.0 / 24.0))
 			{
 				failureDetail = "Refusing same-element dimension unless it is a bare pipe open-end to open-end (E-E).";
 				return false;

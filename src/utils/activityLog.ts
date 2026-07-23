@@ -1,8 +1,18 @@
-import type { AppPermission, Employee, ProjectBoardType, SheetColumnDefinition, TaskDurationRange } from '../types';
+import type {
+  AppPermission,
+  Employee,
+  ProjectBoardType,
+  SheetColumnDefinition,
+  Task,
+  TaskAttachment,
+  TaskComment,
+  TaskDurationRange,
+} from '../types';
 import type { EmployeeAssigneeStyle } from '../data/assigneeColors';
 import type { EmployeeCredential } from './auth';
 
 export const MAX_ACTIVITY_LOG_ENTRIES = 2000;
+export const MAX_DELETED_TASK_ARCHIVES = 500;
 
 export type ActivityAction =
   | 'created'
@@ -73,6 +83,37 @@ export interface DeletedEmployeeArchive {
   restoredAt?: string;
   restoredById?: string | null;
 }
+
+/** Soft-deleted task tree snapshot for Activity Log restore. */
+export interface DeletedTaskArchive {
+  id: string;
+  deletedAt: string;
+  deletedById: string | null;
+  activityLogId: string;
+  /** Task the user (or cascade) targeted; `tasks` includes descendants. */
+  rootTaskId: string;
+  tasks: Task[];
+  attachments: TaskAttachment[];
+  comments: TaskComment[];
+  /** Why the archive was created (user delete, project remove, etc.). */
+  reason?: string;
+  restoredAt?: string;
+  restoredById?: string | null;
+}
+
+/** Pre-change task snapshot so Activity Log can Restore updates / status changes. */
+export interface TaskRevisionArchive {
+  id: string;
+  changedAt: string;
+  changedById: string | null;
+  activityLogId: string;
+  taskId: string;
+  before: Task;
+  restoredAt?: string;
+  restoredById?: string | null;
+}
+
+export const MAX_TASK_REVISION_ARCHIVES = 2000;
 
 export function appendActivityLogEntry(
   log: ActivityLogEntry[],

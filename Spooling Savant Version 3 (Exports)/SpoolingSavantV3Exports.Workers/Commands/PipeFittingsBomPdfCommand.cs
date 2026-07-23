@@ -20,6 +20,7 @@ using System.Windows.Input;
 using Microsoft.Win32;
 
 using SpoolingSavantV3Exports.Workers;
+using SpoolingSavantV3Exports.Workers.SpoolingManager.Views;
 using SpoolingSavantV3Exports.Workers.UI;
 
 using Wpf = System.Windows.Controls;
@@ -79,7 +80,7 @@ namespace ABMEP.Work
 
             if (refs == null || refs.Count == 0)
             {
-                TaskDialog.Show("Pipe BOM", "No elements selected.");
+                SsSavantMessageBox.Show("No elements selected.", "Pipe BOM");
                 return Result.Cancelled;
             }
 
@@ -93,8 +94,8 @@ namespace ABMEP.Work
 
             if (parts.Count == 0)
             {
-                TaskDialog.Show("Pipe BOM",
-                    "Selected elements do not include any MEP Fabrication Pipework.");
+                SsSavantMessageBox.Show(
+                    "Selected elements do not include any MEP Fabrication Pipework.", "Pipe BOM");
                 return Result.Cancelled;
             }
 
@@ -464,8 +465,8 @@ namespace ABMEP.Work
 
             if (parts == null || parts.Count == 0)
             {
-                TaskDialog.Show("Pipe BOM",
-                    "No MEP fabrication pipework was found for this scope.");
+                SsSavantMessageBox.Show(
+                    "No MEP fabrication pipework was found for this scope.", "Pipe BOM");
                 return Result.Cancelled;
             }
 
@@ -508,8 +509,8 @@ namespace ABMEP.Work
                 {
                     if (showCompletionDialog)
                     {
-                        TaskDialog.Show("Pipe BOM",
-                            "Failed to prepare S-Size (from Product Entry) and S-Material:\n" + ex.Message);
+                        SsSavantMessageBox.Show(
+                            "Failed to prepare S-Size (from Product Entry) and S-Material:\n" + ex.Message, "Pipe BOM");
                     }
 
                     message = ex.Message;
@@ -522,8 +523,8 @@ namespace ABMEP.Work
                 {
                     if (showCompletionDialog)
                     {
-                        TaskDialog.Show("Pipe BOM",
-                            "No valid pipe/fitting data found after filtering the selected parts.");
+                        SsSavantMessageBox.Show(
+                            "No valid pipe/fitting data found after filtering the selected parts.", "Pipe BOM");
                     }
 
                     message = "No valid pipe/fitting data after filtering.";
@@ -538,8 +539,8 @@ namespace ABMEP.Work
                 {
                     if (showCompletionDialog)
                     {
-                        TaskDialog.Show("Pipe BOM",
-                            "Failed to create PDF:\n" + ex.Message);
+                        SsSavantMessageBox.Show(
+                            "Failed to create PDF:\n" + ex.Message, "Pipe BOM");
                     }
 
                     message = ex.Message;
@@ -626,7 +627,7 @@ namespace ABMEP.Work
             RvtDocument doc,
             List<FabricationPart> parts)
         {
-            using (Transaction tx = new Transaction(doc, "Spooling Savant V3 (Exports) - Prepare Pipe BOM Parameters"))
+            using (Transaction tx = new Transaction(doc, "Spooling Savant - Prepare Pipe BOM Parameters"))
             {
                 tx.Start();
 
@@ -985,7 +986,7 @@ namespace ABMEP.Work
                 string savePath = ResolvePipeBomSavePath(_txtSaveAs.Text, _txtProject.Text);
                 if (string.IsNullOrWhiteSpace(savePath))
                 {
-                    TaskDialog.Show("Pipe BOM", "Could not resolve the PDF save path.");
+                    SsSavantMessageBox.Show("Could not resolve the PDF save path.", "Pipe BOM");
                     return;
                 }
 

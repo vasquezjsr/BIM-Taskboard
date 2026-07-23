@@ -9,8 +9,8 @@ using Autodesk.Revit.DB.Fabrication;
 namespace SpoolingSavantV3Exports.Workers.SpoolingManager.Services;
 
 /// <summary>
-/// Places the tag BODY (item-number pill) in a tight clear ring around its host snap.
-/// Prefers short leaders; rejects leaders that cross assembly silhouette or other leaders.
+/// Places the tag BODY (item-number pill) just clear of its host, then stops.
+/// Prefers short leaders; rejects leaders that cross other tag bodies/leaders.
 /// </summary>
 public static class SpoolTagOrganizer
 {
@@ -23,21 +23,49 @@ public static class SpoolTagOrganizer
 	public static bool DrawDebugHostRings = false;
 
 	/// <summary>Typical fabrication item-number pill size on paper (inches).</summary>
-	private const double DefaultBodyWidthInches = 0.60;
+	private const double DefaultBodyWidthInches = 0.48;
 
-	private const double DefaultBodyHeightInches = 0.24;
+	private const double DefaultBodyHeightInches = 0.20;
 
 	/// <summary>
-	/// Prefer short leaders (caller min/max), but expand this far before giving up.
-	/// Hard rule: never leave a tag body on the assembly silhouette.
+	/// Hard cap on leader length (paper inches). Middle ground — clear the body, don't flee.
 	/// </summary>
-	private const double AbsoluteMaxLeaderInches = 1.50;
+	private const double AbsoluteMaxLeaderInches = 1.15;
+
+	/// <summary>
+	/// View3D Ortho: OD + 1/2" (3/8" + 1/8") — must stay inside the crop or the blue box inflates.
+	/// </summary>
+	private const double AbsoluteMaxLeaderInchesView3D = 0.65;
 
 	/// <summary>Face-mesh samples only (centerline samples are kept in full).</summary>
 	private const int MaxFaceHitSamples = 280;
 
-	/// <summary>Paper inches — pill must stay this far off the solid samples/edges.</summary>
-	private const double SilhouetteClearanceInches = 0.06;
+	/// <summary>Paper inches — pill must stay this far off projected part bodies.</summary>
+	private const double SilhouetteClearanceInches = 0.14;
+
+	/// <summary>
+	/// Default View3D body clearance when caller does not pass a stronger minimum.
+	/// Callers requesting 1/2" override this via minimumDistanceInches.
+	/// </summary>
+	private const double SilhouetteClearanceInchesView3D = 0.50;
+
+	/// <summary>Paper inches — tag head centers must stay at least this far apart.</summary>
+	private const double MinTagCenterSeparationInches = 0.52;
+
+	/// <summary>View3D tag-tag spacing (paper inches).</summary>
+	private const double MinTagCenterSeparationInchesView3D = 0.28;
+
+	/// <summary>
+	/// Absolute last-resort leader ceiling (paper inches). Prefer AbsoluteMax; only used
+	/// so a tag is never left sitting on the assembly.
+	/// </summary>
+	private const double EmergencyMaxLeaderInches = 1.50;
+
+	/// <summary>View3D emergency — still inside a tight crop.</summary>
+	private const double EmergencyMaxLeaderInchesView3D = 0.72;
+
+	/// <summary>Hosts within this paper distance are one cluster and share a side fan.</summary>
+	private const double HostClusterDistanceInches = 1.75;
 
 	private static readonly string LogPath = Path.Combine(
 		Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
@@ -54,12 +82,12 @@ public static class SpoolTagOrganizer
 		View spoolView,
 		ICollection<ElementId> assemblyElementIds,
 		ICollection<ElementId> createdTagIds,
-		double minimumDistanceInches = 0.50,
-		double maximumDistanceInches = 0.75,
-		double tagClearanceInches = 0.0625,
-		double radialStepInches = 0.035,
+		double minimumDistanceInches = 0.20,
+		double maximumDistanceInches = 0.85,
+		double tagClearanceInches = 0.06,
+		double radialStepInches = 0.03,
 		double angleStepDegrees = 3.0,
-		double minLeaderSeparationInches = 0.04)
+		double minLeaderSeparationInches = 0.05)
 	{
 		if (doc == null)
 		{
@@ -117,9 +145,10 @@ public static class SpoolTagOrganizer
 			plane,
 			assemblyElementIds);
 
-		Log("geometry segments=" + assemblyGeometry.SegmentCount
-			+ " samples=" + assemblyGeometry.SampleCount
-			+ " partBoxes=" + assemblyGeometry.PartBoxCount);
+			Log("geometry segments=" + assemblyGeometry.SegmentCount
+				+ " samples=" + assemblyGeometry.SampleCount
+				+ " partBoxes=" + assemblyGeometry.PartBoxCount
+				+ " capsules=" + assemblyGeometry.PipeCapsuleCount);
 
 		HashSet<long> memberIds = new HashSet<long>(
 			assemblyElementIds.Select(id => id.Value));
@@ -141,26 +170,47 @@ public static class SpoolTagOrganizer
 			return Array.Empty<ElementId>();
 		}
 
-		// Each tag independently: push off its own host until the pill clears the solid,
-		// then only nudge if it lands on another tag. No shared columns / perimeter groups.
-		double minLeader = PaperToModelDistance(0.45, spoolView.Scale);
-		double maxLeader = PaperToModelDistance(
-			Math.Max(maximumDistanceInches, AbsoluteMaxLeaderInches), spoolView.Scale);
-		double radialStep = PaperToModelDistance(0.04, spoolView.Scale);
-		double silhouetteClear = PaperToModelDistance(SilhouetteClearanceInches, spoolView.Scale);
-		double bodyGap = Math.Max(tagClearance, PaperToModelDistance(0.05, spoolView.Scale));
+		bool isView3D = spoolView is View3D;
+		double absoluteMaxInches = isView3D ? AbsoluteMaxLeaderInchesView3D : AbsoluteMaxLeaderInches;
+		double emergencyMaxInches = isView3D ? EmergencyMaxLeaderInchesView3D : EmergencyMaxLeaderInches;
+		// minimumDistanceInches is the required gap from the ASSEMBLY BODY to the tag pill
+		// (e.g. 3/8"), not merely host-center to head.
+		double silhouetteInches = Math.Max(
+			isView3D ? SilhouetteClearanceInchesView3D : SilhouetteClearanceInches,
+			minimumDistanceInches);
+		double minHeadSepInches = isView3D ? MinTagCenterSeparationInchesView3D : MinTagCenterSeparationInches;
 
+		// Leader ring: start near the OD, stop at first clear seat (silhouetteClear = 3/8").
+		// Cap stays tight so we never flee along a pipe to "extreme away".
+		double minLeader = PaperToModelDistance(
+			Math.Max(0.12, minimumDistanceInches * 0.35), spoolView.Scale);
+		double maxInches = Math.Min(
+			absoluteMaxInches,
+			Math.Max(maximumDistanceInches, silhouetteInches + 0.28));
+		double maxLeader = PaperToModelDistance(maxInches, spoolView.Scale);
+		double radialStep = PaperToModelDistance(
+			Math.Max(0.025, radialStepInches), spoolView.Scale);
+		double silhouetteClear = PaperToModelDistance(silhouetteInches, spoolView.Scale);
+		double bodyGap = Math.Max(tagClearance, PaperToModelDistance(0.05, spoolView.Scale));
+		double leaderTipIgnore = PaperToModelDistance(0.10, spoolView.Scale);
+		double minHeadSeparation = PaperToModelDistance(minHeadSepInches, spoolView.Scale);
+		UV hullCenter = assemblyGeometry.GetUnionBounds().Center;
+
+		AssignClusterTargetAngles(
+			tags,
+			hullCenter,
+			PaperToModelDistance(HostClusterDistanceInches, spoolView.Scale));
+
+		// Place isolated tags first, then cluster edge seats, then middles into gaps.
 		tags = tags
-			.OrderBy(t => assemblyGeometry.BodyClearsSilhouette(
-				t.GetBodyAt(t.OriginalHeadPosition).Expand(tagClearance / 2.0),
-				silhouetteClear)
-				? 1
-				: 0)
-			.ThenBy(t => Distance(t.HostAnchor, t.OriginalHeadPosition))
+			.OrderBy(t => t.ClusterSize > 1 ? 1 : 0)
+			.ThenBy(t => t.PlaceOrder)
+			.ThenBy(t => t.TargetAngle)
 			.ToList();
 
 		List<ElementId> unresolvedTagIds = new List<ElementId>();
 		List<Rectangle2D> occupiedBodies = new List<Rectangle2D>();
+		List<UV> occupiedHeads = new List<UV>();
 		List<LeaderRay> placedLeaders = new List<LeaderRay>();
 		List<DebugRing> debugRings = new List<DebugRing>();
 		int moved = 0;
@@ -170,38 +220,56 @@ public static class SpoolTagOrganizer
 		{
 			Rectangle2D originalBody =
 				tag.GetBodyAt(tag.OriginalHeadPosition).Expand(tagClearance / 2.0);
-			bool alreadyClear = assemblyGeometry.BodyClearsSilhouette(originalBody, silhouetteClear)
-				&& !BodyHitsOccupied(originalBody, occupiedBodies)
-				&& !LeaderHitsOccupiedBodies(tag.HostAnchor, tag.OriginalHeadPosition, occupiedBodies, Tolerance)
-				&& !LeadersConflictAny(
-					tag.HostAnchor, tag.OriginalHeadPosition, placedLeaders, minLeaderSeparation);
 
-			Candidate seat = null;
-			if (alreadyClear)
+			// Never leave a seed sitting on the assembly — always search for a clear seat.
+			Candidate seat = FindClearSeatNearHost(
+				tag,
+				assemblyGeometry,
+				hullCenter,
+				occupiedBodies,
+				occupiedHeads,
+				placedLeaders,
+				minLeader,
+				maxLeader,
+				radialStep,
+				tagClearance,
+				silhouetteClear,
+				minLeaderSeparation,
+				minHeadSeparation,
+				leaderTipIgnore,
+				spoolView.Scale);
+
+			if (seat == null)
 			{
-				seat = new Candidate
-				{
-					HeadPosition = tag.OriginalHeadPosition,
-					LeaderLength = Distance(tag.HostAnchor, tag.OriginalHeadPosition),
-					Score = 0.0
-				};
-				unchanged++;
-				Log("LEAVE id=" + tag.Tag.Id.Value + " host=" + tag.HostElementId);
-			}
-			else
-			{
-				seat = FindClearSeatNearHost(
+				seat = ForceSeatOffHost(
 					tag,
 					assemblyGeometry,
-					occupiedBodies,
-					placedLeaders,
+					hullCenter,
+					occupiedHeads,
 					minLeader,
 					maxLeader,
 					radialStep,
 					tagClearance,
 					silhouetteClear,
-					minLeaderSeparation,
-					spoolView.Scale);
+					minHeadSeparation,
+					leaderTipIgnore);
+			}
+
+			if (seat == null)
+			{
+				// Never park on the assembly — emergency seat just clear of OD, even if longer.
+				seat = ForceSeatOffHost(
+					tag,
+					assemblyGeometry,
+					hullCenter,
+					occupiedHeads,
+					minLeader,
+					PaperToModelDistance(emergencyMaxInches, spoolView.Scale),
+					radialStep,
+					tagClearance,
+					silhouetteClear,
+					minHeadSeparation * 0.5,
+					leaderTipIgnore);
 			}
 
 			if (seat == null)
@@ -209,42 +277,81 @@ public static class SpoolTagOrganizer
 				Log("UNRESOLVED id=" + tag.Tag.Id.Value + " host=" + tag.HostElementId);
 				unresolvedTagIds.Add(tag.Tag.Id);
 				occupiedBodies.Add(originalBody);
+				occupiedHeads.Add(tag.OriginalHeadPosition);
 				placedLeaders.Add(new LeaderRay(tag.HostAnchor, tag.OriginalHeadPosition));
 				debugRings.Add(new DebugRing(
 					tag, tag.OriginalHeadPosition, maxLeader, keptOriginal: false, unresolved: true));
 				continue;
 			}
 
-			if (!alreadyClear)
+			bool keptOriginal = Distance(seat.HeadPosition, tag.OriginalHeadPosition) < Tolerance;
+			tag.Tag.TagHeadPosition = plane.ToModel(seat.HeadPosition, tag.Tag.TagHeadPosition);
+			if (!keptOriginal)
 			{
-				tag.Tag.TagHeadPosition = plane.ToModel(seat.HeadPosition, tag.Tag.TagHeadPosition);
 				moved++;
 				Log("MOVED id=" + tag.Tag.Id.Value
 					+ " host=" + tag.HostElementId
-					+ " leaderIn=" + (seat.LeaderLength * 12.0 / Math.Max(1, spoolView.Scale)).ToString("0.##"));
+					+ " leaderIn=" + (seat.LeaderLength * 12.0 / Math.Max(1, spoolView.Scale)).ToString("0.##")
+					+ " cluster=" + tag.ClusterSize);
+			}
+			else
+			{
+				unchanged++;
 			}
 
 			occupiedBodies.Add(tag.GetBodyAt(seat.HeadPosition).Expand(bodyGap));
+			occupiedHeads.Add(seat.HeadPosition);
 			placedLeaders.Add(new LeaderRay(tag.HostAnchor, seat.HeadPosition));
-			debugRings.Add(new DebugRing(tag, seat.HeadPosition, maxLeader, keptOriginal: alreadyClear));
+			debugRings.Add(new DebugRing(tag, seat.HeadPosition, maxLeader, keptOriginal: keptOriginal));
 		}
 
 		int repaired = NudgeOverlappingTagsNearHosts(
 			tags,
 			plane,
 			assemblyGeometry,
+			hullCenter,
 			minLeader,
 			maxLeader,
 			radialStep,
 			tagClearance,
 			silhouetteClear,
 			minLeaderSeparation,
+			minHeadSeparation,
+			leaderTipIgnore,
 			spoolView.Scale);
 		moved += repaired;
 
+		int pushed = PushTagsOffAssemblySilhouette(
+			tags,
+			plane,
+			assemblyGeometry,
+			hullCenter,
+			silhouetteClear,
+			maxLeader,
+			radialStep,
+			tagClearance);
+		moved += pushed;
+
+		int oletSeated = SeatOletTagsAlongBranch(
+			tags,
+			plane,
+			assemblyGeometry,
+			silhouetteClear,
+			maxLeader,
+			radialStep,
+			tagClearance);
+		moved += oletSeated;
+
 		if (moved > 0)
 		{
-			doc.Regenerate();
+			// View3D needs this so TagHeadPosition sticks; run once after all moves.
+			try
+			{
+				doc.Regenerate();
+			}
+			catch
+			{
+			}
 		}
 
 		if (DrawDebugHostRings)
@@ -265,13 +372,186 @@ public static class SpoolTagOrganizer
 	}
 
 	/// <summary>
+	/// Nearby hosts share one outward fan (left / out / right) so tags stay organized
+	/// without one claim blocking everyone else into a long cross-spool leader.
+	/// </summary>
+	private static void AssignClusterTargetAngles(
+		List<TagItem> tags,
+		UV hullCenter,
+		double clusterDistance)
+	{
+		if (tags == null || tags.Count == 0)
+		{
+			return;
+		}
+
+		foreach (TagItem tag in tags)
+		{
+			tag.OutwardAngle = Math.Atan2(
+				tag.HostAnchor.V - hullCenter.V,
+				tag.HostAnchor.U - hullCenter.U);
+			// Olets: seat along the branch stub, not along the host run.
+			tag.TargetAngle = tag.HasPreferredBranchAngle
+				? tag.PreferredBranchAngle
+				: tag.OutwardAngle;
+			tag.ClusterSize = 1;
+			tag.PlaceOrder = 0;
+		}
+
+		int n = tags.Count;
+		int[] parent = Enumerable.Range(0, n).ToArray();
+
+		int Find(int i)
+		{
+			while (parent[i] != i)
+			{
+				parent[i] = parent[parent[i]];
+				i = parent[i];
+			}
+
+			return i;
+		}
+
+		void Union(int a, int b)
+		{
+			int ra = Find(a);
+			int rb = Find(b);
+			if (ra != rb)
+			{
+				parent[rb] = ra;
+			}
+		}
+
+		for (int i = 0; i < n; i++)
+		{
+			for (int j = i + 1; j < n; j++)
+			{
+				if (Distance(tags[i].HostAnchor, tags[j].HostAnchor) <= clusterDistance)
+				{
+					Union(i, j);
+				}
+			}
+		}
+
+		var clusters = new Dictionary<int, List<int>>();
+		for (int i = 0; i < n; i++)
+		{
+			int root = Find(i);
+			if (!clusters.TryGetValue(root, out List<int> members))
+			{
+				members = new List<int>();
+				clusters[root] = members;
+			}
+
+			members.Add(i);
+		}
+
+		foreach (List<int> members in clusters.Values)
+		{
+			foreach (int index in members)
+			{
+				tags[index].ClusterSize = members.Count;
+			}
+
+			if (members.Count <= 1)
+			{
+				continue;
+			}
+
+			double meanOut = 0.0;
+			foreach (int index in members)
+			{
+				meanOut += tags[index].OutwardAngle;
+			}
+
+			meanOut /= members.Count;
+
+			// Sideways axis along the cluster (perpendicular to mean outward).
+			double sideU = -Math.Sin(meanOut);
+			double sideV = Math.Cos(meanOut);
+			members.Sort((a, b) =>
+			{
+				double pa = tags[a].HostAnchor.U * sideU + tags[a].HostAnchor.V * sideV;
+				double pb = tags[b].HostAnchor.U * sideU + tags[b].HostAnchor.V * sideV;
+				return pa.CompareTo(pb);
+			});
+
+			// Fan across ~32° per gap — left / out / right for elbow-top clusters.
+			double spreadDeg = Math.Min(85.0, Math.Max(32.0, (members.Count - 1) * 32.0));
+			double half = spreadDeg * 0.5;
+			for (int k = 0; k < members.Count; k++)
+			{
+				double t = members.Count == 1
+					? 0.5
+					: k / (double)(members.Count - 1);
+				double offsetDeg = -half + t * spreadDeg;
+				TagItem member = tags[members[k]];
+				// Keep olet tags on the branch takeoff — cluster fan would slam them onto the run.
+				if (!member.HasPreferredBranchAngle)
+				{
+					member.TargetAngle = meanOut + DegreesToRadians(offsetDeg);
+				}
+
+				// Edges first (0), then opposite edge, then middles — so the
+				// center tag can sit in the gap instead of being shoved aside.
+				int edgeRank = Math.Min(k, members.Count - 1 - k);
+				member.PlaceOrder = edgeRank;
+			}
+		}
+	}
+
+	private static bool IsMostlyOutward(UV host, UV hullCenter, UV head)
+	{
+		double outU = host.U - hullCenter.U;
+		double outV = host.V - hullCenter.V;
+		double outLen = Math.Sqrt(outU * outU + outV * outV);
+		if (outLen <= Tolerance)
+		{
+			return true;
+		}
+
+		double du = head.U - host.U;
+		double dv = head.V - host.V;
+		double dLen = Math.Sqrt(du * du + dv * dv);
+		if (dLen <= Tolerance)
+		{
+			return false;
+		}
+
+		return (du * outU + dv * outV) / (dLen * outLen) >= 0.15;
+	}
+
+	private static bool HeadHitsOccupied(
+		UV head,
+		IReadOnlyCollection<UV> occupiedHeads,
+		double minSeparation)
+	{
+		if (occupiedHeads == null)
+		{
+			return false;
+		}
+
+		foreach (UV other in occupiedHeads)
+		{
+			if (Distance(head, other) < minSeparation - Tolerance)
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/// <summary>
 	/// Push this one tag off its host along short radial rays until the pill clears the solid
-	/// and other placed pills. Independent — no shared alignment grid.
+	/// and other placed pills. Prefers the cluster fan angle (outward + sideways).
 	/// </summary>
 	private static Candidate FindClearSeatNearHost(
 		TagItem tag,
 		AssemblyGeometry2D assemblyGeometry,
+		UV hullCenter,
 		IReadOnlyCollection<Rectangle2D> occupiedBodies,
+		IReadOnlyCollection<UV> occupiedHeads,
 		IReadOnlyCollection<LeaderRay> placedLeaders,
 		double minLeader,
 		double maxLeader,
@@ -279,21 +559,86 @@ public static class SpoolTagOrganizer
 		double tagClearance,
 		double silhouetteClear,
 		double minLeaderSeparation,
+		double minHeadSeparation,
+		double leaderTipIgnore,
 		int viewScale)
 	{
-		UV host = tag.HostAnchor;
-		double prefU = tag.OriginalHeadPosition.U - host.U;
-		double prefV = tag.OriginalHeadPosition.V - host.V;
-		double prefLen = Math.Sqrt(prefU * prefU + prefV * prefV);
-		double baseAngle = prefLen > Tolerance
-			? Math.Atan2(prefV, prefU)
-			: 0.0;
+		Candidate best = TryFindClearSeatNearHost(
+			tag,
+			assemblyGeometry,
+			hullCenter,
+			occupiedBodies,
+			occupiedHeads,
+			placedLeaders,
+			minLeader,
+			maxLeader,
+			radialStep,
+			tagClearance,
+			silhouetteClear,
+			minLeaderSeparation,
+			minHeadSeparation,
+			leaderTipIgnore,
+			viewScale,
+			requireLeaderClearsGeometry: true);
 
-		// Prefer original direction, then fan left/right — not a global side of the assembly.
+		if (best != null)
+		{
+			return best;
+		}
+
+		return TryFindClearSeatNearHost(
+			tag,
+			assemblyGeometry,
+			hullCenter,
+			occupiedBodies,
+			occupiedHeads,
+			placedLeaders,
+			minLeader,
+			maxLeader,
+			radialStep,
+			tagClearance,
+			silhouetteClear,
+			minLeaderSeparation,
+			minHeadSeparation,
+			leaderTipIgnore,
+			viewScale,
+			requireLeaderClearsGeometry: false);
+	}
+
+	private static Candidate TryFindClearSeatNearHost(
+		TagItem tag,
+		AssemblyGeometry2D assemblyGeometry,
+		UV hullCenter,
+		IReadOnlyCollection<Rectangle2D> occupiedBodies,
+		IReadOnlyCollection<UV> occupiedHeads,
+		IReadOnlyCollection<LeaderRay> placedLeaders,
+		double minLeader,
+		double maxLeader,
+		double radialStep,
+		double tagClearance,
+		double silhouetteClear,
+		double minLeaderSeparation,
+		double minHeadSeparation,
+		double leaderTipIgnore,
+		int viewScale,
+		bool requireLeaderClearsGeometry)
+	{
+		UV host = tag.HostAnchor;
+		double baseAngle = tag.TargetAngle;
+
+		// Prefer outward / branch angles first; then small offsets. Along-pipe (±90° from
+		// outward when outward is sideways) still available, but scored last.
 		double[] angleOffsetsDeg =
 		{
-			0, 15, -15, 30, -30, 45, -45, 60, -60, 90, -90, 120, -120, 150, -150, 180
+			0, 10, -10, 20, -20, 30, -30, 40, -40, 55, -55, 70, -70, 90, -90,
+			110, -110, 135, -135, 160, -160, 180
 		};
+
+		double angleWeight = PaperToModelDistance(0.002, viewScale);
+		double inwardPenalty = PaperToModelDistance(0.35, viewScale);
+		double alongPipePenalty = PaperToModelDistance(0.55, viewScale);
+		// Conflict nudge only — do not stretch past first-clear + this.
+		double conflictNudge = PaperToModelDistance(0.12, viewScale);
 
 		Candidate best = null;
 		foreach (double offsetDeg in angleOffsetsDeg)
@@ -302,7 +647,26 @@ public static class SpoolTagOrganizer
 			double cos = Math.Cos(angle);
 			double sin = Math.Sin(angle);
 
-			for (double radius = minLeader; radius <= maxLeader + Tolerance; radius += radialStep)
+			double alongPipe = assemblyGeometry.RayAlignmentWithNearestPipe(host, cos, sin);
+			double hostClear = EstimateHostClearRadius(
+				tag,
+				assemblyGeometry,
+				cos,
+				sin,
+				tagClearance,
+				silhouetteClear,
+				minLeader,
+				maxLeader,
+				radialStep);
+			if (hostClear > maxLeader + Tolerance)
+			{
+				continue;
+			}
+
+			double startRadius = Math.Max(minLeader, Math.Min(hostClear, maxLeader));
+			double endRadius = Math.Min(maxLeader, startRadius + conflictNudge);
+
+			for (double radius = startRadius; radius <= endRadius + Tolerance; radius += radialStep)
 			{
 				UV head = new UV(host.U + cos * radius, host.V + sin * radius);
 				Rectangle2D body = tag.GetBodyAt(head).Expand(tagClearance / 2.0);
@@ -312,22 +676,29 @@ public static class SpoolTagOrganizer
 					continue;
 				}
 
-				if (BodyHitsOccupied(body, occupiedBodies))
+				// Stay on the first-clear ring — rotate angle instead of lengthening.
+				if (BodyHitsOccupied(body, occupiedBodies)
+					|| HeadHitsOccupied(head, occupiedHeads, minHeadSeparation)
+					|| LeaderHitsOccupiedBodies(host, head, occupiedBodies, Tolerance)
+					|| LeadersConflictAny(host, head, placedLeaders, minLeaderSeparation))
 				{
-					continue;
+					break;
 				}
 
-				if (LeaderHitsOccupiedBodies(host, head, occupiedBodies, Tolerance))
+				bool crosses = assemblyGeometry.LeaderCrossesGeometry(host, head, leaderTipIgnore);
+				if (requireLeaderClearsGeometry && crosses)
 				{
-					continue;
+					break;
 				}
 
-				if (LeadersConflictAny(host, head, placedLeaders, minLeaderSeparation))
-				{
-					continue;
-				}
+				double outward = OutwardAlignment(host, hullCenter, cos, sin);
+				// Short + clear + off the pipe axis (middle ground).
+				double score = radius * 3.0
+					+ Math.Abs(offsetDeg) * angleWeight
+					+ (outward < 0.0 ? inwardPenalty * (1.0 - outward) : 0.0)
+					+ Math.Abs(alongPipe) * alongPipePenalty
+					+ (crosses ? PaperToModelDistance(1.5, viewScale) : 0.0);
 
-				double score = radius + Math.Abs(offsetDeg) * PaperToModelDistance(0.002, viewScale);
 				if (best == null || score < best.Score)
 				{
 					best = new Candidate
@@ -338,17 +709,166 @@ public static class SpoolTagOrganizer
 					};
 				}
 
-				// First clear seat on this ray — keep leaders short.
 				break;
-			}
-
-			if (best != null && Math.Abs(offsetDeg) <= 30.0)
-			{
-				return best;
 			}
 		}
 
 		return best;
+	}
+
+	private static double OutwardAlignment(UV host, UV hullCenter, double cos, double sin)
+	{
+		double outU = host.U - hullCenter.U;
+		double outV = host.V - hullCenter.V;
+		double outLen = Math.Sqrt(outU * outU + outV * outV);
+		if (outLen <= Tolerance)
+		{
+			return 1.0;
+		}
+
+		return (cos * outU + sin * outV) / outLen;
+	}
+
+	/// <summary>
+	/// Shortest radius along a ray where the pill clears host/assembly body (+ pad).
+	/// Walks real silhouette (OD capsules / fitting AABBs) — not the fat iso AABB.
+	/// </summary>
+	private static double EstimateHostClearRadius(
+		TagItem tag,
+		AssemblyGeometry2D assemblyGeometry,
+		double cos,
+		double sin,
+		double tagClearance,
+		double silhouetteClear,
+		double minLeader,
+		double maxLeader,
+		double radialStep)
+	{
+		if (tag == null || assemblyGeometry == null)
+		{
+			return minLeader;
+		}
+
+		UV host = tag.HostAnchor;
+		double start = Math.Max(radialStep, minLeader * 0.5);
+		for (double radius = start; radius <= maxLeader + Tolerance; radius += radialStep)
+		{
+			UV head = new UV(host.U + cos * radius, host.V + sin * radius);
+			Rectangle2D body = tag.GetBodyAt(head).Expand(tagClearance / 2.0);
+			if (assemblyGeometry.BodyClearsSilhouette(body, silhouetteClear))
+			{
+				return radius;
+			}
+		}
+
+		return maxLeader;
+	}
+
+	/// <summary>
+	/// Last resort: push the pill off the solid along the cluster fan / outward ray.
+	/// Never returns a seat that still sits on assembly geometry.
+	/// </summary>
+	private static Candidate ForceSeatOffHost(
+		TagItem tag,
+		AssemblyGeometry2D assemblyGeometry,
+		UV hullCenter,
+		IReadOnlyCollection<UV> occupiedHeads,
+		double minLeader,
+		double maxLeader,
+		double radialStep,
+		double tagClearance,
+		double silhouetteClear,
+		double minHeadSeparation,
+		double leaderTipIgnore)
+	{
+		UV host = tag.HostAnchor;
+		double baseAngle = tag.TargetAngle;
+
+		double[] angleOffsetsDeg =
+		{
+			0, 15, -15, 30, -30, 45, -45, 60, -60, 75, -75, 90, -90,
+			105, -105, 120, -120, 135, -135, 150, -150, 165, -165, 180
+		};
+
+		// Prefer short, but allow a tiny bit more when crowded — never stretch to 1.5".
+		double extendedMax = Math.Max(maxLeader, maxLeader * 1.12);
+
+		Candidate bestClear = null;
+		foreach (double useMax in new[] { maxLeader, extendedMax })
+		{
+			foreach (double offsetDeg in angleOffsetsDeg)
+			{
+				double angle = baseAngle + DegreesToRadians(offsetDeg);
+				double cos = Math.Cos(angle);
+				double sin = Math.Sin(angle);
+				double outward = OutwardAlignment(host, hullCenter, cos, sin);
+
+				for (double radius = minLeader; radius <= useMax + Tolerance; radius += radialStep)
+				{
+					UV head = new UV(host.U + cos * radius, host.V + sin * radius);
+					Rectangle2D body = tag.GetBodyAt(head).Expand(tagClearance / 2.0);
+					if (!assemblyGeometry.BodyClearsSilhouette(body, silhouetteClear))
+					{
+						continue;
+					}
+
+					if (HeadHitsOccupied(head, occupiedHeads, minHeadSeparation * 0.85))
+					{
+						break;
+					}
+
+					bool crosses = assemblyGeometry.LeaderCrossesGeometry(host, head, leaderTipIgnore);
+					double score = radius
+						+ Math.Abs(offsetDeg) * 0.01
+						+ (outward < 0.0 ? 1.0 : 0.0)
+						+ (crosses ? 5.0 : 0.0)
+						+ (useMax > maxLeader + Tolerance ? 0.5 : 0.0);
+
+					if (bestClear == null || score < bestClear.Score)
+					{
+						bestClear = new Candidate
+						{
+							HeadPosition = head,
+							LeaderLength = radius,
+							Score = score
+						};
+					}
+
+					break;
+				}
+			}
+
+			if (bestClear != null)
+			{
+				return bestClear;
+			}
+		}
+
+		// Absolute last resort: march outward until the pill clears, ignoring other tags.
+		foreach (double offsetDeg in angleOffsetsDeg)
+		{
+			double angle = baseAngle + DegreesToRadians(offsetDeg);
+			double cos = Math.Cos(angle);
+			double sin = Math.Sin(angle);
+			for (double radius = minLeader; radius <= extendedMax * 1.15 + Tolerance; radius += radialStep)
+			{
+				UV head = new UV(host.U + cos * radius, host.V + sin * radius);
+				Rectangle2D body = tag.GetBodyAt(head).Expand(tagClearance / 2.0);
+				if (!assemblyGeometry.BodyClearsSilhouette(body, silhouetteClear))
+				{
+					continue;
+				}
+
+				return new Candidate
+				{
+					HeadPosition = head,
+					LeaderLength = radius,
+					Score = radius + 500.0
+				};
+			}
+		}
+
+		return null;
 	}
 
 	private static bool LeadersConflictAny(
@@ -373,16 +893,236 @@ public static class SpoolTagOrganizer
 		return false;
 	}
 
+	/// <summary>
+	/// Hard guarantee: every tag pill is at least silhouetteClear off the assembly body.
+	/// Pushes along host→head (or outward from hull) until clear or maxLeader.
+	/// </summary>
+	private static int PushTagsOffAssemblySilhouette(
+		List<TagItem> tags,
+		ViewPlane plane,
+		AssemblyGeometry2D assemblyGeometry,
+		UV hullCenter,
+		double silhouetteClear,
+		double maxLeader,
+		double radialStep,
+		double tagClearance)
+	{
+		if (tags == null || tags.Count == 0 || assemblyGeometry == null || plane == null)
+		{
+			return 0;
+		}
+
+		int pushed = 0;
+		foreach (TagItem tag in tags)
+		{
+			if (tag?.Tag == null)
+			{
+				continue;
+			}
+
+			UV head = plane.ToView(tag.Tag.TagHeadPosition);
+			Rectangle2D body = tag.GetBodyAt(head).Expand(tagClearance / 2.0);
+			if (assemblyGeometry.BodyClearsSilhouette(body, silhouetteClear))
+			{
+				continue;
+			}
+
+			UV host = tag.HostAnchor;
+			double du = head.U - host.U;
+			double dv = head.V - host.V;
+			double len = Math.Sqrt(du * du + dv * dv);
+			if (len < Tolerance)
+			{
+				du = host.U - hullCenter.U;
+				dv = host.V - hullCenter.V;
+				len = Math.Sqrt(du * du + dv * dv);
+			}
+
+			if (len < Tolerance)
+			{
+				du = 1.0;
+				dv = 0.0;
+				len = 1.0;
+			}
+
+			double cos = du / len;
+			double sin = dv / len;
+			UV bestHead = head;
+			bool found = false;
+			for (double radius = Math.Max(radialStep, len); radius <= maxLeader + Tolerance; radius += radialStep)
+			{
+				UV trial = new UV(host.U + cos * radius, host.V + sin * radius);
+				Rectangle2D trialBody = tag.GetBodyAt(trial).Expand(tagClearance / 2.0);
+				if (!assemblyGeometry.BodyClearsSilhouette(trialBody, silhouetteClear))
+				{
+					continue;
+				}
+
+				bestHead = trial;
+				found = true;
+				break;
+			}
+
+			if (!found)
+			{
+				// Last resort: park at maxLeader on this ray even if still tight.
+				bestHead = new UV(host.U + cos * maxLeader, host.V + sin * maxLeader);
+			}
+
+			if (Distance(bestHead, head) < Tolerance)
+			{
+				continue;
+			}
+
+			try
+			{
+				if (!tag.Tag.HasLeader)
+				{
+					tag.Tag.HasLeader = true;
+				}
+
+				tag.Tag.TagHeadPosition = plane.ToModel(bestHead, tag.Tag.TagHeadPosition);
+				pushed++;
+			}
+			catch
+			{
+			}
+		}
+
+		return pushed;
+	}
+
+	/// <summary>
+	/// Olets: lock the pill on the branch takeoff at silhouetteClear (3/8"), not on the stub
+	/// and not along the host run.
+	/// </summary>
+	private static int SeatOletTagsAlongBranch(
+		List<TagItem> tags,
+		ViewPlane plane,
+		AssemblyGeometry2D assemblyGeometry,
+		double silhouetteClear,
+		double maxLeader,
+		double radialStep,
+		double tagClearance)
+	{
+		if (tags == null || tags.Count == 0 || assemblyGeometry == null || plane == null)
+		{
+			return 0;
+		}
+
+		int seated = 0;
+		foreach (TagItem tag in tags)
+		{
+			if (tag?.Tag == null || !tag.IsOletHost)
+			{
+				continue;
+			}
+
+			double baseAngle = tag.HasPreferredBranchAngle
+				? tag.PreferredBranchAngle
+				: tag.TargetAngle;
+			// Stay on the facing axis — only tiny angle nudges for clearance.
+			double[] offsetsDeg = { 0, 8, -8, 15, -15, 22, -22 };
+			UV host = tag.HostAnchor;
+			UV bestHead = null;
+			double bestScore = double.PositiveInfinity;
+
+			foreach (double offsetDeg in offsetsDeg)
+			{
+				double angle = baseAngle + DegreesToRadians(offsetDeg);
+				double cos = Math.Cos(angle);
+				double sin = Math.Sin(angle);
+				double clearRadius = EstimateHostClearRadius(
+					tag,
+					assemblyGeometry,
+					cos,
+					sin,
+					tagClearance,
+					silhouetteClear,
+					radialStep,
+					maxLeader,
+					radialStep);
+				if (clearRadius > maxLeader + Tolerance)
+				{
+					continue;
+				}
+
+				UV head = new UV(host.U + cos * clearRadius, host.V + sin * clearRadius);
+				Rectangle2D body = tag.GetBodyAt(head).Expand(tagClearance / 2.0);
+				if (!assemblyGeometry.BodyClearsSilhouette(body, silhouetteClear))
+				{
+					continue;
+				}
+
+				// Facing direction wins — penalize any angle leave hard.
+				double score = Math.Abs(offsetDeg) * 10.0 + clearRadius * 0.25;
+				if (score < bestScore)
+				{
+					bestScore = score;
+					bestHead = head;
+				}
+			}
+
+			// Still nothing: park on the facing ray at maxLeader (facing > perfect clearance).
+			if (bestHead == null)
+			{
+				double cos = Math.Cos(baseAngle);
+				double sin = Math.Sin(baseAngle);
+				bestHead = new UV(host.U + cos * maxLeader, host.V + sin * maxLeader);
+			}
+
+			UV current = plane.ToView(tag.Tag.TagHeadPosition);
+			if (Distance(bestHead, current) < Tolerance)
+			{
+				continue;
+			}
+
+			try
+			{
+				if (!tag.Tag.HasLeader)
+				{
+					tag.Tag.HasLeader = true;
+				}
+
+				// Snap leader end to the tip opening so the leader is a continuation of the branch.
+				try
+				{
+					foreach (Reference reference in tag.Tag.GetTaggedReferences())
+					{
+						XYZ tipModel = plane.ToModel(host, tag.Tag.TagHeadPosition);
+						tag.Tag.SetLeaderEnd(reference, tipModel);
+						break;
+					}
+				}
+				catch
+				{
+				}
+
+				tag.Tag.TagHeadPosition = plane.ToModel(bestHead, tag.Tag.TagHeadPosition);
+				seated++;
+				Log("OLET-SEAT id=" + tag.Tag.Id.Value + " host=" + tag.HostElementId);
+			}
+			catch
+			{
+			}
+		}
+
+		return seated;
+	}
+
 	private static int NudgeOverlappingTagsNearHosts(
 		List<TagItem> tags,
 		ViewPlane plane,
 		AssemblyGeometry2D assemblyGeometry,
+		UV hullCenter,
 		double minLeader,
 		double maxLeader,
 		double radialStep,
 		double tagClearance,
 		double silhouetteClear,
 		double minLeaderSeparation,
+		double minHeadSeparation,
+		double leaderTipIgnore,
 		int viewScale)
 	{
 		if (tags == null || tags.Count < 2)
@@ -399,6 +1139,7 @@ public static class SpoolTagOrganizer
 				TagItem tag = tags[i];
 				UV head = plane.ToView(tag.Tag.TagHeadPosition);
 				List<Rectangle2D> others = new List<Rectangle2D>();
+				List<UV> otherHeads = new List<UV>();
 				List<LeaderRay> othersLeaders = new List<LeaderRay>();
 				for (int j = 0; j < tags.Count; j++)
 				{
@@ -409,14 +1150,18 @@ public static class SpoolTagOrganizer
 
 					UV otherHead = plane.ToView(tags[j].Tag.TagHeadPosition);
 					others.Add(tags[j].GetBodyAt(otherHead).Expand(tagClearance / 2.0));
+					otherHeads.Add(otherHead);
 					othersLeaders.Add(new LeaderRay(tags[j].HostAnchor, otherHead));
 				}
 
 				Rectangle2D body = tag.GetBodyAt(head).Expand(tagClearance / 2.0);
 				bool bad = !assemblyGeometry.BodyClearsSilhouette(body, silhouetteClear)
 					|| BodyHitsOccupied(body, others)
+					|| HeadHitsOccupied(head, otherHeads, minHeadSeparation)
 					|| LeaderHitsOccupiedBodies(tag.HostAnchor, head, others, Tolerance)
 					|| LeadersConflictAny(tag.HostAnchor, head, othersLeaders, minLeaderSeparation);
+				// Do not treat "leader leaves host OD" or soft outward bias as a repair trigger —
+				// that thrashed every tag for three passes while seats were already clear.
 				if (!bad)
 				{
 					continue;
@@ -425,7 +1170,9 @@ public static class SpoolTagOrganizer
 				Candidate fix = FindClearSeatNearHost(
 					tag,
 					assemblyGeometry,
+					hullCenter,
 					others,
+					otherHeads,
 					othersLeaders,
 					minLeader,
 					maxLeader,
@@ -433,6 +1180,8 @@ public static class SpoolTagOrganizer
 					tagClearance,
 					silhouetteClear,
 					minLeaderSeparation,
+					minHeadSeparation,
+					leaderTipIgnore,
 					viewScale);
 				if (fix == null)
 				{
@@ -1015,7 +1764,7 @@ public static class SpoolTagOrganizer
 
 	/// <summary>
 	/// Prefer the caller's max ring, then step outward (paper inches) until a valid seat
-	/// or AbsoluteMaxLeaderInches. Crowded 3D Ortho elbows routinely need ~1–1.5".
+	/// or the absolute max. View3D stays on a short ring so the sheet viewbox stays tight.
 	/// </summary>
 	private static Candidate FindBestCandidateWithExpandingRing(
 		TagItem tag,
@@ -1028,11 +1777,14 @@ public static class SpoolTagOrganizer
 		double radialStep,
 		double angleStepDegrees,
 		double minLeaderSeparation,
-		int viewScale)
+		int viewScale,
+		double absoluteMaxInches = AbsoluteMaxLeaderInches)
 	{
-		double absMax = PaperToModelDistance(AbsoluteMaxLeaderInches, viewScale);
-		// Few coarse rings only — dense expand hung Scale and Annotate at 48%.
-		double[] expandInches = { 1.00, 1.25, AbsoluteMaxLeaderInches };
+		double absMax = PaperToModelDistance(absoluteMaxInches, viewScale);
+		// View3D: do not expand into long escape rings — middle ground only.
+		double[] expandInches = absoluteMaxInches <= AbsoluteMaxLeaderInchesView3D + 1e-6
+			? Array.Empty<double>()
+			: new[] { 1.00, 1.25, AbsoluteMaxLeaderInches };
 		double expandRadial = Math.Max(radialStep, PaperToModelDistance(0.10, viewScale));
 		double expandAngle = Math.Max(10.0, angleStepDegrees);
 
@@ -1569,7 +2321,35 @@ public static class SpoolTagOrganizer
 			hostAnchor = leaderAnchor;
 		}
 
-		return new TagItem
+		FabricationPart fabHost = host as FabricationPart;
+		bool isOletHost = fabHost != null
+			&& FabricationPartClassification.IsOletPart(fabHost);
+
+		if (isOletHost
+			&& TryGetOletBranchTipAndFacing(
+				fabHost,
+				plane,
+				out UV tipUv,
+				out double branchAngle))
+		{
+			hostAnchor = tipUv;
+			TagItem oletItem = new TagItem
+			{
+				Tag = tag,
+				HostElementId = host.Id.Value,
+				OriginalHeadPosition = head,
+				HostBounds = hostBounds,
+				HostAnchor = hostAnchor,
+				BodyWidth = bodyW,
+				BodyHeight = bodyH,
+				IsOletHost = true,
+				HasPreferredBranchAngle = true,
+				PreferredBranchAngle = branchAngle
+			};
+			return oletItem;
+		}
+
+		TagItem item = new TagItem
 		{
 			Tag = tag,
 			HostElementId = host.Id.Value,
@@ -1577,8 +2357,191 @@ public static class SpoolTagOrganizer
 			HostBounds = hostBounds,
 			HostAnchor = hostAnchor,
 			BodyWidth = bodyW,
-			BodyHeight = bodyH
+			BodyHeight = bodyH,
+			IsOletHost = isOletHost
 		};
+
+		return item;
+	}
+
+	/// <summary>
+	/// Tip = branch opening; facing = tip BasisZ away from the longest host-run pipe.
+	/// </summary>
+	private static bool TryGetOletBranchTipAndFacing(
+		FabricationPart olet,
+		ViewPlane plane,
+		out UV tipUv,
+		out double facingAngle)
+	{
+		tipUv = null;
+		facingAngle = 0.0;
+		if (olet?.ConnectorManager == null || plane == null)
+		{
+			return false;
+		}
+
+		List<(Connector conn, double mateLen)> list = new List<(Connector, double)>();
+		foreach (Connector connector in olet.ConnectorManager.Connectors)
+		{
+			if (connector?.Origin == null)
+			{
+				continue;
+			}
+
+			FabricationPart mate = TryGetConnectedFabricationMate(olet, connector);
+			double mateLen = 0.0;
+			if (mate != null && IsOletHostRunPipeMate(mate))
+			{
+				mateLen = EstimateFabricationPipeLength(mate);
+			}
+
+			list.Add((connector, mateLen));
+		}
+
+		if (list.Count < 2)
+		{
+			return false;
+		}
+
+		Connector hostConn = list.OrderByDescending((x) => x.mateLen).First().conn;
+		Connector tipConn = list.First((x) => x.conn.Origin.DistanceTo(hostConn.Origin) > Tolerance).conn;
+		XYZ away = tipConn.Origin - hostConn.Origin;
+		XYZ tipZ = null;
+		try
+		{
+			tipZ = tipConn.CoordinateSystem.BasisZ;
+		}
+		catch
+		{
+		}
+
+		if (tipZ != null && tipZ.GetLength() > Tolerance)
+		{
+			tipZ = tipZ.Normalize();
+			if (away.GetLength() > Tolerance && tipZ.DotProduct(away) < 0.0)
+			{
+				tipZ = tipZ.Negate();
+			}
+
+			away = tipZ;
+		}
+
+		if (away.GetLength() < Tolerance)
+		{
+			return false;
+		}
+
+		UV tip = plane.ToView(tipConn.Origin);
+		UV tipPlus = plane.ToView(tipConn.Origin + away.Normalize().Multiply(0.25));
+		double du = tipPlus.U - tip.U;
+		double dv = tipPlus.V - tip.V;
+		if (Math.Sqrt(du * du + dv * dv) < Tolerance)
+		{
+			return false;
+		}
+
+		tipUv = tip;
+		facingAngle = Math.Atan2(dv, du);
+		return true;
+	}
+
+	private static double EstimateFabricationPipeLength(FabricationPart pipe)
+	{
+		if (pipe?.ConnectorManager == null)
+		{
+			return 0.0;
+		}
+
+		List<XYZ> origins = new List<XYZ>();
+		foreach (Connector connector in pipe.ConnectorManager.Connectors)
+		{
+			if (connector?.Origin != null)
+			{
+				origins.Add(connector.Origin);
+			}
+		}
+
+		double best = 0.0;
+		for (int i = 0; i < origins.Count; i++)
+		{
+			for (int j = i + 1; j < origins.Count; j++)
+			{
+				best = Math.Max(best, origins[i].DistanceTo(origins[j]));
+			}
+		}
+
+		return best;
+	}
+
+	private static bool TryGetOletBranchAngle(
+		FabricationPart olet,
+		ViewPlane plane,
+		Rectangle2D hostBounds,
+		out double angle)
+	{
+		return TryGetOletBranchTipAndFacing(olet, plane, out _, out angle);
+	}
+
+	private static FabricationPart TryGetConnectedFabricationMate(FabricationPart self, Connector connector)
+	{
+		if (self == null || connector == null)
+		{
+			return null;
+		}
+
+		try
+		{
+			if (!connector.IsConnected)
+			{
+				return null;
+			}
+
+			foreach (Connector other in connector.AllRefs)
+			{
+				if (other?.Owner is FabricationPart mate
+					&& ((Element)mate).Id != ((Element)self).Id)
+				{
+					return mate;
+				}
+			}
+		}
+		catch
+		{
+		}
+
+		return null;
+	}
+
+	private static bool IsOletHostRunPipeMate(FabricationPart mate)
+	{
+		if (mate == null || FabricationPartClassification.IsOletPart(mate))
+		{
+			return false;
+		}
+
+		if (FabricationPartClassification.IsStraightPipeRun(mate))
+		{
+			return true;
+		}
+
+		try
+		{
+			string corpus = string.Join(" ",
+				mate.Name ?? string.Empty,
+				FabricationPartClassification.GetParamString(mate, "Alias"),
+				FabricationPartClassification.GetParamString(mate, "Product Entry"),
+				FabricationPartClassification.GetParamString(mate, "Product Long Description")).ToUpperInvariant();
+			if (corpus.Contains("OLET") || corpus.Contains("FLANGE") || corpus.Contains("ELBOW") || corpus.Contains("TEE"))
+			{
+				return false;
+			}
+
+			return corpus.Contains("PIPE");
+		}
+		catch
+		{
+			return false;
+		}
 	}
 
 	private static Element GetTaggedElement(Document doc, IndependentTag tag)
@@ -1767,6 +2730,26 @@ public static class SpoolTagOrganizer
 
 		public double BodyHeight { get; set; }
 
+		/// <summary>Outward angle from assembly hull center through the host snap.</summary>
+		public double OutwardAngle { get; set; }
+
+		/// <summary>Cluster fan target angle used when searching for a seat.</summary>
+		public double TargetAngle { get; set; }
+
+		/// <summary>How many tags share this host neighborhood cluster.</summary>
+		public int ClusterSize { get; set; }
+
+		/// <summary>Lower places first — cluster edges before middles.</summary>
+		public int PlaceOrder { get; set; }
+
+		/// <summary>Host is a Thread-O-Let / weldolet / etc.</summary>
+		public bool IsOletHost { get; set; }
+
+		/// <summary>When set, TargetAngle prefers the olet branch takeoff direction.</summary>
+		public bool HasPreferredBranchAngle { get; set; }
+
+		public double PreferredBranchAngle { get; set; }
+
 		/// <summary>Item-number pill centered on the tag head (not leader-inclusive).</summary>
 		public Rectangle2D GetBodyAt(UV headPosition)
 		{
@@ -1800,20 +2783,39 @@ public static class SpoolTagOrganizer
 		public UV End { get; }
 	}
 
+	private sealed class Capsule2D
+	{
+		public Capsule2D(UV a, UV b, double radius)
+		{
+			A = a;
+			B = b;
+			Radius = radius;
+		}
+
+		public UV A { get; }
+
+		public UV B { get; }
+
+		public double Radius { get; }
+	}
+
 	private sealed class AssemblyGeometry2D
 	{
 		private readonly List<Segment2D> _segments;
 		private readonly List<UV> _samplePoints;
 		private readonly List<Rectangle2D> _partBoxes;
+		private readonly List<Capsule2D> _pipeCapsules;
 
 		private AssemblyGeometry2D(
 			List<Segment2D> segments,
 			List<UV> samplePoints,
-			List<Rectangle2D> partBoxes)
+			List<Rectangle2D> partBoxes,
+			List<Capsule2D> pipeCapsules)
 		{
 			_segments = segments;
 			_samplePoints = samplePoints;
 			_partBoxes = partBoxes;
+			_pipeCapsules = pipeCapsules ?? new List<Capsule2D>();
 		}
 
 		public int SegmentCount => _segments.Count;
@@ -1821,6 +2823,8 @@ public static class SpoolTagOrganizer
 		public int SampleCount => _samplePoints.Count;
 
 		public int PartBoxCount => _partBoxes.Count;
+
+		public int PipeCapsuleCount => _pipeCapsules.Count;
 
 		/// <summary>Axis-aligned silhouette envelope of the assembly in view UV.</summary>
 		public Rectangle2D GetUnionBounds()
@@ -1847,6 +2851,12 @@ public static class SpoolTagOrganizer
 			{
 				include(new UV(box.MinU, box.MinV));
 				include(new UV(box.MaxU, box.MaxV));
+			}
+
+			foreach (Capsule2D capsule in _pipeCapsules)
+			{
+				include(capsule.A);
+				include(capsule.B);
 			}
 
 			foreach (Segment2D segment in _segments)
@@ -1878,6 +2888,7 @@ public static class SpoolTagOrganizer
 			List<UV> solidSamples = new List<UV>();
 			List<UV> faceSamples = new List<UV>();
 			List<Rectangle2D> partBoxes = new List<Rectangle2D>();
+			List<Capsule2D> pipeCapsules = new List<Capsule2D>();
 
 			Options options = new Options
 			{
@@ -1887,6 +2898,10 @@ public static class SpoolTagOrganizer
 			};
 
 			double pad = PaperToModelDistance(0.03, view.Scale);
+			// Iso AABB of fittings is fat — keep boxes closer to the visible body.
+			double boxPad = PaperToModelDistance(view is View3D ? 0.04 : 0.10, view.Scale);
+			double capsulePad = PaperToModelDistance(0.06, view.Scale);
+			double fittingShrink = view is View3D ? 0.55 : 1.0;
 
 			foreach (ElementId id in assemblyElementIds)
 			{
@@ -1920,7 +2935,19 @@ public static class SpoolTagOrganizer
 				AddConnectorSamples(element, plane, solidSamples);
 				AddThickCenterlineSamples(element, plane, solidSamples);
 
-				Rectangle2D partBox = TryCreatePartBox(element, view, plane, pad, shrink: 0.40);
+				// Straight pipe runs: OD capsule only (fat iso AABB makes search hang / flee).
+				// Fittings / elbows / flanges / olets: projected AABB is the no-land zone.
+				if (TryAddStraightPipeCapsule(element, plane, capsulePad, pipeCapsules))
+				{
+					continue;
+				}
+
+				Rectangle2D partBox = TryCreatePartBox(
+					element,
+					view,
+					plane,
+					pad: boxPad,
+					shrink: fittingShrink);
 				if (partBox != null)
 				{
 					partBoxes.Add(partBox);
@@ -1929,7 +2956,7 @@ public static class SpoolTagOrganizer
 
 			List<UV> hitSamples = new List<UV>(solidSamples);
 			hitSamples.AddRange(DownsampleSamples(faceSamples, MaxFaceHitSamples));
-			return new AssemblyGeometry2D(segments, hitSamples, partBoxes);
+			return new AssemblyGeometry2D(segments, hitSamples, partBoxes, pipeCapsules);
 		}
 
 		private static List<UV> DownsampleSamples(List<UV> samples, int maxCount)
@@ -1970,8 +2997,9 @@ public static class SpoolTagOrganizer
 		}
 
 		/// <summary>
-		/// Pill is clear of the solid when it does not contain silhouette samples/edges
-		/// and stays at least <paramref name="clearPad"/> away from them.
+		/// Pill clears the assembly only when it is outside every member body.
+		/// Straight pipes use OD capsules along the real centerline; fittings use AABB.
+		/// Samples are a backup so shaded faces still reject seats.
 		/// </summary>
 		public bool BodyClearsSilhouette(Rectangle2D rectangle, double clearPad)
 		{
@@ -1981,6 +3009,31 @@ public static class SpoolTagOrganizer
 			}
 
 			double pad = Math.Max(0.0, clearPad);
+			UV head = rectangle.Center;
+
+			foreach (Capsule2D capsule in _pipeCapsules)
+			{
+				double radius = capsule.Radius + pad;
+				if (rectangle.DistanceToSegment(capsule.A, capsule.B) < radius - Tolerance)
+				{
+					return false;
+				}
+
+				if (Distance(head, ClosestPointOnSegment(capsule.A, capsule.B, head)) < radius - Tolerance)
+				{
+					return false;
+				}
+			}
+
+			foreach (Rectangle2D box in _partBoxes)
+			{
+				// Flanges / elbows / olets / tees: full projected box is the no-land zone.
+				Rectangle2D blocked = box.Expand(pad);
+				if (rectangle.Intersects(blocked) || blocked.Contains(head))
+				{
+					return false;
+				}
+			}
 
 			foreach (Segment2D segment in _segments)
 			{
@@ -1996,8 +3049,11 @@ public static class SpoolTagOrganizer
 				}
 			}
 
-			foreach (UV point in _samplePoints)
+			// Samples are a coarse backup only — full scans made Organize hang on View3D.
+			int sampleStride = Math.Max(1, _samplePoints.Count / 400);
+			for (int i = 0; i < _samplePoints.Count; i += sampleStride)
 			{
+				UV point = _samplePoints[i];
 				if (rectangle.Contains(point))
 				{
 					return false;
@@ -2011,6 +3067,170 @@ public static class SpoolTagOrganizer
 			}
 
 			return true;
+		}
+
+		/// <summary>
+		/// |dot| of the ray with the nearest pipe capsule axis (0 = perpendicular, 1 = along-pipe).
+		/// Along-pipe seats slide onto the OD or flee past the run end — avoid them.
+		/// </summary>
+		public double RayAlignmentWithNearestPipe(UV host, double cos, double sin)
+		{
+			if (_pipeCapsules == null || _pipeCapsules.Count == 0)
+			{
+				return 0.0;
+			}
+
+			double bestAlign = 0.0;
+			double bestDist = double.PositiveInfinity;
+			foreach (Capsule2D capsule in _pipeCapsules)
+			{
+				UV closest = ClosestPointOnSegment(capsule.A, capsule.B, host);
+				double dist = Distance(host, closest);
+				double du = capsule.B.U - capsule.A.U;
+				double dv = capsule.B.V - capsule.A.V;
+				double len = Math.Sqrt(du * du + dv * dv);
+				if (len < Tolerance)
+				{
+					continue;
+				}
+
+				double align = Math.Abs((cos * du + sin * dv) / len);
+				if (dist < bestDist - Tolerance
+					|| (Math.Abs(dist - bestDist) <= Tolerance && align > bestAlign))
+				{
+					bestDist = dist;
+					bestAlign = align;
+				}
+			}
+
+			return bestAlign;
+		}
+
+		/// <summary>
+		/// Straight fabrication pipe: capsule along the connector centerline at true OD.
+		/// Returns false for elbows/tees/olets/flanges so those use projected AABB instead.
+		/// </summary>
+		private static bool TryAddStraightPipeCapsule(
+			Element element,
+			ViewPlane plane,
+			double pad,
+			List<Capsule2D> capsules)
+		{
+			try
+			{
+				if (!(element is FabricationPart part) || part.ConnectorManager == null)
+				{
+					return false;
+				}
+
+				List<XYZ> origins = new List<XYZ>();
+				double radius = 0.0;
+				foreach (Connector connector in part.ConnectorManager.Connectors)
+				{
+					if (connector?.Origin == null)
+					{
+						continue;
+					}
+
+					origins.Add(connector.Origin);
+					try
+					{
+						if (connector.Radius > radius)
+						{
+							radius = connector.Radius;
+						}
+					}
+					catch
+					{
+					}
+				}
+
+				if (origins.Count < 2 || radius < Tolerance)
+				{
+					return false;
+				}
+
+				int bestI = 0;
+				int bestJ = 1;
+				double bestDist = 0.0;
+				for (int i = 0; i < origins.Count; i++)
+				{
+					for (int j = i + 1; j < origins.Count; j++)
+					{
+						double dist = origins[i].DistanceTo(origins[j]);
+						if (dist > bestDist)
+						{
+							bestDist = dist;
+							bestI = i;
+							bestJ = j;
+						}
+					}
+				}
+
+				// Short stubs / fittings — use AABB, not a capsule.
+				if (bestDist < 0.20)
+				{
+					return false;
+				}
+
+				XYZ a = origins[bestI];
+				XYZ b = origins[bestJ];
+				XYZ ab = b - a;
+				double abLen = ab.GetLength();
+				if (abLen < Tolerance)
+				{
+					return false;
+				}
+
+				XYZ dir = ab / abLen;
+				double lateralLimit = Math.Max(radius * 1.75, 1.0 / 48.0);
+				foreach (XYZ origin in origins)
+				{
+					XYZ ap = origin - a;
+					double along = ap.DotProduct(dir);
+					XYZ lateral = ap - dir.Multiply(along);
+					if (lateral.GetLength() > lateralLimit)
+					{
+						// Elbow / tee / branch — not a straight pipe run.
+						return false;
+					}
+				}
+
+				// OD + pad — connector radius under-reads shaded OD slightly, not 2.5×.
+				double capsuleRadius = radius * 1.35 + pad;
+				capsules.Add(new Capsule2D(
+					plane.ToView(a),
+					plane.ToView(b),
+					capsuleRadius));
+				return true;
+			}
+			catch
+			{
+				return false;
+			}
+		}
+
+		private static UV ClosestPointOnSegment(UV a, UV b, UV p)
+		{
+			double dx = b.U - a.U;
+			double dy = b.V - a.V;
+			double lenSq = dx * dx + dy * dy;
+			if (lenSq <= Tolerance)
+			{
+				return a;
+			}
+
+			double t = ((p.U - a.U) * dx + (p.V - a.V) * dy) / lenSq;
+			if (t < 0.0)
+			{
+				t = 0.0;
+			}
+			else if (t > 1.0)
+			{
+				t = 1.0;
+			}
+
+			return new UV(a.U + t * dx, a.V + t * dy);
 		}
 
 		/// <summary>Box+segment distance only — safe for hot candidate scoring.</summary>
@@ -2101,21 +3321,38 @@ public static class SpoolTagOrganizer
 					continue;
 				}
 
-				foreach (Rectangle2D box in _partBoxes)
+			foreach (Capsule2D capsule in _pipeCapsules)
+			{
+				UV hostOnCl = ClosestPointOnSegment(capsule.A, capsule.B, hostAnchor);
+				bool hostOnThisPipe = Distance(hostAnchor, hostOnCl) <= capsule.Radius + tipIgnore + Tolerance;
+				if (hostOnThisPipe)
 				{
-					if (!box.Contains(point))
-					{
-						continue;
-					}
+					// Leaving the tagged pipe OD is expected — not a "cross".
+					continue;
+				}
 
-					// Still inside the host part near the snap — expected for short radial leaders.
-					if (box.Contains(hostAnchor) && fromHost <= tipIgnore * 3.0 + Tolerance)
-					{
-						continue;
-					}
-
+				UV hit = ClosestPointOnSegment(capsule.A, capsule.B, point);
+				if (Distance(point, hit) <= capsule.Radius + Tolerance)
+				{
 					return true;
 				}
+			}
+
+			foreach (Rectangle2D box in _partBoxes)
+			{
+				if (!box.Contains(point))
+				{
+					continue;
+				}
+
+				// Still inside the host part near the snap — expected for short radial leaders.
+				if (box.Contains(hostAnchor) && fromHost <= tipIgnore * 3.0 + Tolerance)
+				{
+					continue;
+				}
+
+				return true;
+			}
 			}
 
 			foreach (Segment2D segment in _segments)
@@ -2246,9 +3483,7 @@ public static class SpoolTagOrganizer
 					return;
 				}
 
-				// Cover the shaded OD in ortho — under-sampling left pills sitting on the grey.
-				double band = Math.Max(radius * 1.20, 1.0 / 64.0);
-				double bandOuter = band * 1.35;
+				double band = Math.Max(radius * 1.35, 1.0 / 64.0);
 				for (int i = 0; i < origins.Count; i++)
 				{
 					for (int j = i + 1; j < origins.Count; j++)
@@ -2260,13 +3495,13 @@ public static class SpoolTagOrganizer
 							continue;
 						}
 
-						for (int k = 0; k <= 20; k++)
+						for (int k = 0; k <= 24; k++)
 						{
-							double t = k / 20.0;
+							double t = k / 24.0;
 							XYZ p = a + (b - a) * t;
 							UV uv = plane.ToView(p);
 							samplePoints.Add(uv);
-							foreach (double r in new[] { band * 0.55, band, bandOuter })
+							foreach (double r in new[] { band * 0.55, band * 0.85, band })
 							{
 								samplePoints.Add(new UV(uv.U + r, uv.V));
 								samplePoints.Add(new UV(uv.U - r, uv.V));

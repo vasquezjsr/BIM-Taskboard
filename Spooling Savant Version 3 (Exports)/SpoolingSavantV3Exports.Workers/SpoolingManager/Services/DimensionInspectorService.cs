@@ -13,7 +13,7 @@ internal static class DimensionInspectorService
 	private static readonly object ExportLock = new object();
 
 	private static string ExportFolder =>
-		Path.Combine(Path.GetTempPath(), "SpoolingSavantV3Exports-DimInspector");
+		Path.Combine(Path.GetTempPath(), "SpoolingSavantV2-DimInspector");
 
 	public static DimensionInspectorReport BuildReport(UIDocument uidoc, bool exportViewImage)
 	{

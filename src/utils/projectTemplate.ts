@@ -263,9 +263,11 @@ export function applyProjectLevelConfig(
   }
 
   nextGroups = nextGroups.filter((g) => g.projectId !== projectId || !removeGroupIds.has(g.id));
-  nextTasks = nextTasks.filter(
-    (t) => t.projectId !== projectId || !t.groupId || !removeGroupIds.has(t.groupId)
-  );
+  nextTasks = nextTasks.map((t) => {
+    if (t.projectId !== projectId) return t;
+    if (!t.groupId || !removeGroupIds.has(t.groupId)) return t;
+    return { ...t, groupId: null };
+  });
 
   const refreshedProjectGroups = nextGroups.filter((g) => g.projectId === projectId);
   const refreshedLevelNames = new Set(

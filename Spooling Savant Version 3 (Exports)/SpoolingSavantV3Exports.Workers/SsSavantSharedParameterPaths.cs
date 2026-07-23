@@ -4,7 +4,7 @@ using System.Reflection;
 
 namespace SpoolingSavantV3Exports.Workers
 {
-    /// <summary>On-disk shared parameter file for Spooling Savant V3 (Exports) parameters bound at document open.</summary>
+    /// <summary>On-disk shared parameter file for Spooling Savant parameters bound at document open.</summary>
     public static class SsSavantSharedParameterPaths
     {
         public static string BomSharedParameterFile

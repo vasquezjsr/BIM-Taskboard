@@ -13,9 +13,27 @@ public class OperationMessageWindow : Window
 	public OperationMessageWindow(string title, string message)
 	{
 		InitializeComponent();
-		base.Title = (string.IsNullOrWhiteSpace(title) ? "SS Manager V3" : title);
+		base.Title = (string.IsNullOrWhiteSpace(title) ? "Spooling Savant" : title);
 		txtMessage.Text = message ?? string.Empty;
 		Loaded += OnLoadedAdjustSize;
+		// Chromeless neon theme: rounded border needs a transparent window, and the
+		// missing title bar means the window must be draggable by its body.
+		base.WindowStyle = WindowStyle.None;
+		base.AllowsTransparency = true;
+		base.Background = Brushes.Transparent;
+		MouseLeftButtonDown += delegate(object sender, System.Windows.Input.MouseButtonEventArgs e)
+		{
+			if (e.ButtonState == System.Windows.Input.MouseButtonState.Pressed)
+			{
+				try
+				{
+					DragMove();
+				}
+				catch
+				{
+				}
+			}
+		};
 	}
 
 	private void OnLoadedAdjustSize(object sender, RoutedEventArgs e)
@@ -95,6 +113,11 @@ public class OperationMessageWindow : Window
 	{
 		Window source = SpoolingManagerXamlLoader.LoadWindow("SpoolingManager.Views.OperationMessageWindow.xaml");
 		SpoolingManagerXamlLoader.ApplyWindow(this, source);
+		if (Content is Border shell)
+		{
+			SpoolingSavantV3Exports.Workers.UI.SsSavantNeonChrome.ApplyShell(shell);
+		}
+		SpoolingSavantV3Exports.Workers.UI.SsSavantDialogForeground.Attach(this);
 		txtMessage = SpoolingManagerXamlLoader.Find<TextBlock>(this, "txtMessage");
 		SpoolingManagerXamlLoader.FindButtonByContent(this, "Close").Click += BtnOk_Click;
 	}

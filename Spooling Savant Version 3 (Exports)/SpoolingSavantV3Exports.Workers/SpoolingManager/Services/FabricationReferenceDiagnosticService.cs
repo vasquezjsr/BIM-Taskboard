@@ -660,7 +660,7 @@ internal static class FabricationReferenceDiagnosticService
 		{
 			Path.Combine(SpoolingManagerSettings.SettingsFolderPath, "TestingReports"),
 			Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Spooling-Savant-V3-Exports", "SpoolingManager", "TestingReports"),
-			Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "Spooling Savant V3 (Exports)", "TestingReports")
+			Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "Spooling Savant", "TestingReports")
 		};
 
 		foreach (string folder in folders)

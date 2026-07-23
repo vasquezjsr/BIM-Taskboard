@@ -6,7 +6,7 @@ using SpoolingSavantV3Exports.Workers.SpoolingManager.Models;
 namespace SpoolingSavantV3Exports.Workers.UI
 {
     /// <summary>
-    /// Global Spooling Savant V3 (Exports) UI theme persisted for all dialogs and panes.
+    /// Global Spooling Savant 3.0 UI theme persisted for all dialogs and panes.
     /// </summary>
     internal static class SsSavantAppearanceStore
     {
@@ -17,7 +17,7 @@ namespace SpoolingSavantV3Exports.Workers.UI
         internal static string SettingsFilePath =>
             Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "Spooling Savant V3 (Exports)",
+                "Spooling Savant 3.0",
                 "SsSavantAppearanceSettings.xml");
 
         internal static UiAppearanceSettings Current

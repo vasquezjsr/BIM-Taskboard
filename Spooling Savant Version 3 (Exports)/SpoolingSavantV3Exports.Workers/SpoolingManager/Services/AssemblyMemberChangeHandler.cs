@@ -69,5 +69,5 @@ public sealed class AssemblyMemberChangeHandler : IExternalEventHandler
 		}
 	}
 
-	public string GetName() => "Spooling Savant V3 (Exports): Sync assembly member";
+	public string GetName() => "Spooling Savant: Sync assembly member";
 }

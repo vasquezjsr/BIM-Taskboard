@@ -10,13 +10,14 @@ namespace SpoolingSavantV3Exports.Workers.SpoolingManager.Services;
 
 internal static class AssemblyMemberSyncService
 {
-	internal const string SyncTransactionName = "Spooling Savant V3 (Exports): Sync assembly member";
+	internal const string SyncTransactionName = "Spooling Savant: Sync assembly member";
 
 	internal static void SyncAfterMemberChange(Application app, Document doc, AssemblyInstance assembly)
 	{
 		if (app == null || doc == null || assembly == null)
 			return;
 
+		SpoolingManagerSettings.SetActiveProject(doc);
 		SpoolingManagerKind productKind = SpoolingManagerKind.Standard;
 		SpoolingManagerSettings settings = SpoolingManagerSettings.Load(productKind);
 		bool membersNeedProcessing = AssemblyHasMemberNeedingSync(doc, assembly);
@@ -186,7 +187,38 @@ internal static class AssemblyMemberSyncService
 			return string.IsNullOrWhiteSpace(CreateSpoolSheetsHandler.GetFabricationItemNumber(fabricationPart));
 		}
 
+		// Native pipework numbers live on S-Item Number, not Mark or Fabrication Item Number.
+		if (NativePipeSpoolSupport.IsNativePipeworkElement(element))
+		{
+			return string.IsNullOrWhiteSpace(GetNativeItemNumber(element));
+		}
+
 		return false;
+	}
+
+	private static string GetNativeItemNumber(Element element)
+	{
+		try
+		{
+			Parameter itemNumber = element?.LookupParameter(
+				SsSavantSharedParameterBootstrap.SItemNumberParameterName);
+			if (itemNumber == null)
+			{
+				return string.Empty;
+			}
+
+			string value = itemNumber.AsString();
+			if (string.IsNullOrWhiteSpace(value))
+			{
+				value = itemNumber.AsValueString();
+			}
+
+			return value?.Trim() ?? string.Empty;
+		}
+		catch
+		{
+			return string.Empty;
+		}
 	}
 
 	private static bool HasEmptyPackage(Element element)

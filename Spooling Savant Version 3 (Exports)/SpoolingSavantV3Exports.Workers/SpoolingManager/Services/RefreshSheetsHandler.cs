@@ -38,6 +38,7 @@ public class RefreshSheetsHandler : IExternalEventHandler
 		{
 			return;
 		}
+		SpoolingManagerSettings.SetActiveProject(val);
 		SpoolingManagerKind productKind = pendingRequest.ProductKind;
 		SpoolingManagerSettings spoolingManagerSettings = SpoolingManagerSettings.Load(productKind);
 		bool regularSheetBranch = CreateSpoolSheetsHandler.UsesRegularSheetBranch(spoolingManagerSettings, productKind);
@@ -52,7 +53,7 @@ public class RefreshSheetsHandler : IExternalEventHandler
 			val2 = CreateSpoolSheetsHandler.FindTagType(val, spoolingManagerSettings.TagTypeName);
 			if (val2 == null)
 			{
-				MessageBox.Show("Pipe/Fitting Tag NOT FOUND:\n" + spoolingManagerSettings.TagTypeName, toolWindowTitle);
+				Views.SsSavantMessageBox.Show("Pipe/Fitting Tag NOT FOUND:\n" + spoolingManagerSettings.TagTypeName, toolWindowTitle);
 				return;
 			}
 			if (!string.IsNullOrWhiteSpace(spoolingManagerSettings.HangerTagTypeName))
@@ -69,7 +70,7 @@ public class RefreshSheetsHandler : IExternalEventHandler
 			val2b = CreateSpoolSheetsHandler.FindTagType(val, spoolingManagerSettings.WeldTagTypeName);
 			if (val2b == null)
 			{
-				MessageBox.Show("Weld Tag Type NOT FOUND:\n" + spoolingManagerSettings.WeldTagTypeName, toolWindowTitle);
+				Views.SsSavantMessageBox.Show("Weld Tag Type NOT FOUND:\n" + spoolingManagerSettings.WeldTagTypeName, toolWindowTitle);
 				return;
 			}
 		}
@@ -78,7 +79,7 @@ public class RefreshSheetsHandler : IExternalEventHandler
 			val2c = CreateSpoolSheetsHandler.FindTagType(val, spoolingManagerSettings.AssemblyTagTypeName);
 			if (val2c == null)
 			{
-				MessageBox.Show("Continuation Tag Type NOT FOUND:\n" + spoolingManagerSettings.AssemblyTagTypeName, toolWindowTitle);
+				Views.SsSavantMessageBox.Show("Continuation Tag Type NOT FOUND:\n" + spoolingManagerSettings.AssemblyTagTypeName, toolWindowTitle);
 				return;
 			}
 		}
@@ -88,7 +89,7 @@ public class RefreshSheetsHandler : IExternalEventHandler
 			weldLogTextNoteType = CreateSpoolSheetsHandler.FindTextNoteType(val, spoolingManagerSettings.WeldLogTextNoteTypeName);
 			if (weldLogTextNoteType == null)
 			{
-				MessageBox.Show("Weld Log Text Type NOT FOUND:\n" + spoolingManagerSettings.WeldLogTextNoteTypeName, toolWindowTitle);
+				Views.SsSavantMessageBox.Show("Weld Log Text Type NOT FOUND:\n" + spoolingManagerSettings.WeldLogTextNoteTypeName, toolWindowTitle);
 				return;
 			}
 		}
@@ -100,7 +101,7 @@ public class RefreshSheetsHandler : IExternalEventHandler
 		int numWeldLogNotes = 0;
 		List<string> list = new List<string>();
 		Dictionary<ElementId, ViewSheet> dictionary = CreateSpoolSheetsHandler.FindSpoolSheetsForAssemblies(val, regularSheetBranch, pendingRequest.AssemblyIds);
-		Transaction val3 = new Transaction(val, "Spooling Savant V3 (Exports): Refresh Assemblies");
+		Transaction val3 = new Transaction(val, "Spooling Savant: Refresh Assemblies");
 		try
 		{
 			val3.Start();
@@ -142,10 +143,12 @@ public class RefreshSheetsHandler : IExternalEventHandler
 					{
 						list.Add(AssemblyDisplayName.Get(val4) + ": failed to add missing views. " + ex3.Message);
 					}
+					int settingsViewScale = CreateSpoolSheetsHandler.GetSpoolSheetViewScale(productKind, spoolingManagerSettings);
 					foreach (View item in CreateSpoolSheetsHandler.FindAssemblyViews(val, val4))
 					{
 						try
 						{
+							CreateSpoolSheetsHandler.TrySetSpoolViewScale(item, settingsViewScale);
 							CreateSpoolSheetsHandler.RestrictViewToAssemblyElements(val, val4, item);
 							CreateSpoolSheetsHandler.RequestRegenerate(val);
 							if (!CreateSpoolSheetsHandler.TryGetExistingViewSheetSettings(item, spoolingManagerSettings, out var placement, out var tagEnabled, out var rotation))

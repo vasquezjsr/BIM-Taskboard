@@ -9,7 +9,9 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Media.Effects;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using ComboBox = System.Windows.Controls.ComboBox;
 using TextBox = System.Windows.Controls.TextBox;
 using Grid = System.Windows.Controls.Grid;
@@ -80,6 +82,8 @@ public class AssemblySettingsWindow : Window
 	internal ComboBox cmbTitleBlock;
 
 	internal ComboBox cmbTagType;
+
+	internal TextBlock txtTagTypeLabel;
 
 	internal ComboBox cmbHangerTagType;
 
@@ -173,17 +177,29 @@ public class AssemblySettingsWindow : Window
 
 	internal System.Windows.Controls.TextBox txtItemNumberValveSuffix;
 
-	internal System.Windows.Controls.TextBox txtItemNumberDigits;
+	internal System.Windows.Controls.TextBox txtItemNumberStraightStart;
+
+	internal System.Windows.Controls.TextBox txtItemNumberFittingStart;
+
+	internal System.Windows.Controls.TextBox txtItemNumberValveStart;
 
 	internal CheckBox chkPlaceTrackingQr;
 
 	internal System.Windows.Controls.TextBox txtQrTrackingUrlBase;
 
-	internal System.Windows.Controls.Image imgLogoPreview;
-
-	internal TextBlock txtLogoPlaceholder;
-
 	internal TextBlock txtSettingsHeaderTitle;
+
+	internal TextBlock txtTabHeaderSheetSetup;
+
+	internal TextBlock txtTabHeaderSchedules;
+
+	internal TextBlock txtTabHeaderAnnotations;
+
+	internal TextBlock txtTabHeaderTigerStop;
+
+	internal TextBlock txtTabHeaderPcfFiles;
+
+	internal TextBlock txtTabHeaderBoardroom;
 
 	internal TextBlock txtSettingsHeaderSubtitle;
 
@@ -198,6 +214,10 @@ public class AssemblySettingsWindow : Window
 	internal TextBlock lblAutoDimAnnotations;
 
 	internal CheckBox chkAutoDimAnnotations;
+
+	internal TextBlock lblAutoDimFittingSelf;
+
+	internal CheckBox chkAutoDimFittingSelf;
 
 	internal Grid grdSpoolViews;
 
@@ -257,27 +277,196 @@ public class AssemblySettingsWindow : Window
 
 	internal Button btnPcfFieldDown;
 
+	internal Button btnImportSettings;
+
+	internal Button btnExportSettings;
+
+	private bool _documentOptionsLoaded;
+
+	private static string _revitOptionsCacheKey;
+
+	private static RevitOptionsSnapshot _revitOptionsCache;
+
 	public AssemblySettingsWindow(UIApplication uiapp, SpoolingManagerKind productKind = SpoolingManagerKind.Standard)
 	{
 		_uiapp = uiapp;
 		_productKind = productKind;
+		SpoolingManagerSettings.SetActiveProject(uiapp?.ActiveUIDocument?.Document);
 		if (((uiapp != null) ? uiapp.Application : null) != null)
 		{
 			InstallLayout.ApplyRevitVersionNumber(uiapp.Application.VersionNumber);
 		}
 		InitializeComponent();
+		ButtonClickSoundService.Attach(this, () => _settings?.ButtonClickSoundsEnabled ?? true);
+		if (tabMainSettings != null)
+		{
+			tabMainSettings.SelectionChanged += TabMainSettings_SelectionChanged;
+		}
 		ApplyProductChrome();
+		SsSavantNeonChrome.ApplyNeonDialogTitle(txtSettingsHeaderTitle, useScriptFont: true);
+		// Tab chip borders exist only after the template is applied.
+		Dispatcher.BeginInvoke(new Action(UpdateActiveTabTitleNeon), DispatcherPriority.Loaded);
 		ApplyLayoutSubDialogToolTip();
 		LoadStaticOptions();
-		LoadRevitOptions();
-		LoadSettings();
 		ApplyAutoDimColumnForProduct();
 		ConfigureViewScaleRow();
+		// Paint the chromeless window first; Revit collectors + settings bind after first frame.
+		ContentRendered += OnSettingsContentRendered;
+	}
+
+	private void OnSettingsContentRendered(object sender, EventArgs e)
+	{
+		ContentRendered -= OnSettingsContentRendered;
+		if (_documentOptionsLoaded)
+		{
+			return;
+		}
+		_documentOptionsLoaded = true;
+		LoadRevitOptions();
+		LoadSettings();
 	}
 
 	private void ConfigureViewScaleRow()
 	{
 		ApplyViewScaleRow(_productKind != SpoolingManagerKind.AutoDimensionLab);
+	}
+
+	private void TabMainSettings_SelectionChanged(object sender, SelectionChangedEventArgs e)
+	{
+		// SelectionChanged bubbles up from combo boxes and lists inside the tabs;
+		// only play the page flip for the tab strip itself.
+		if (!ReferenceEquals(e.OriginalSource, tabMainSettings))
+		{
+			return;
+		}
+		if (_settings?.ButtonClickSoundsEnabled ?? true)
+		{
+			ButtonClickSoundService.PlayPageFlip();
+		}
+		UpdateActiveTabTitleNeon();
+		// Re-apply after layout so TabBorder from the control template is available.
+		Dispatcher.BeginInvoke(new Action(UpdateActiveTabTitleNeon), DispatcherPriority.Loaded);
+	}
+
+	/// <summary>
+	/// Neon-lights the selected tab strip label and draws a blue neon border around
+	/// that tab chip; other tabs stay plain.
+	/// </summary>
+	private void UpdateActiveTabTitleNeon()
+	{
+		TextBlock[] headers =
+		{
+			txtTabHeaderSheetSetup,
+			txtTabHeaderSchedules,
+			txtTabHeaderAnnotations,
+			txtTabHeaderTigerStop,
+			txtTabHeaderPcfFiles,
+			txtTabHeaderBoardroom
+		};
+		int selected = tabMainSettings?.SelectedIndex ?? 0;
+		for (int i = 0; i < headers.Length; i++)
+		{
+			TextBlock header = headers[i];
+			if (header == null)
+			{
+				continue;
+			}
+
+			TabItem tabItem = FindParentTabItem(header);
+			Border tabChip = FindNamedDescendant<Border>(tabItem, "TabBorder");
+			bool isSelected = i == selected;
+
+			if (isSelected)
+			{
+				SsSavantNeonChrome.ApplyNeonDialogTitle(header, useScriptFont: false);
+				header.FontWeight = FontWeights.SemiBold;
+				ApplyTabChipNeon(tabChip, lit: true);
+			}
+			else
+			{
+				header.Effect = null;
+				header.FontWeight = FontWeights.Normal;
+				header.SetResourceReference(TextBlock.ForegroundProperty, "SsSavantForegroundPrimary");
+				header.Opacity = 1.0;
+				ApplyTabChipNeon(tabChip, lit: false);
+			}
+		}
+	}
+
+	private static void ApplyTabChipNeon(Border tabChip, bool lit)
+	{
+		if (tabChip == null)
+		{
+			return;
+		}
+
+		if (lit && SsSavantNeonChrome.IsNeonEnabled)
+		{
+			tabChip.BorderBrush = new SolidColorBrush(SsSavantNeonChrome.DarkBorderColor);
+			tabChip.BorderThickness = new Thickness(2);
+			tabChip.CornerRadius = new CornerRadius(8);
+			tabChip.Effect = new DropShadowEffect
+			{
+				Color = SsSavantNeonChrome.DarkBorderColor,
+				BlurRadius = 12,
+				ShadowDepth = 0,
+				Opacity = 0.75
+			};
+		}
+		else
+		{
+			tabChip.Effect = null;
+			if (tabChip.TemplatedParent is TabItem item && item.IsSelected)
+			{
+				tabChip.SetResourceReference(Border.BorderBrushProperty, "SsSavantListBorder");
+				tabChip.BorderThickness = new Thickness(1, 1, 1, 0);
+				tabChip.CornerRadius = new CornerRadius(8, 8, 0, 0);
+			}
+			else
+			{
+				tabChip.BorderBrush = System.Windows.Media.Brushes.Transparent;
+				tabChip.BorderThickness = new Thickness(1);
+				tabChip.CornerRadius = new CornerRadius(8);
+			}
+		}
+	}
+
+	private static TabItem FindParentTabItem(DependencyObject start)
+	{
+		DependencyObject current = start;
+		while (current != null)
+		{
+			if (current is TabItem tabItem)
+			{
+				return tabItem;
+			}
+			current = VisualTreeHelper.GetParent(current);
+		}
+		return null;
+	}
+
+	private static T FindNamedDescendant<T>(DependencyObject root, string name) where T : FrameworkElement
+	{
+		if (root == null || string.IsNullOrEmpty(name))
+		{
+			return null;
+		}
+
+		int count = VisualTreeHelper.GetChildrenCount(root);
+		for (int i = 0; i < count; i++)
+		{
+			DependencyObject child = VisualTreeHelper.GetChild(root, i);
+			if (child is T match && string.Equals(match.Name, name, StringComparison.Ordinal))
+			{
+				return match;
+			}
+			T nested = FindNamedDescendant<T>(child, name);
+			if (nested != null)
+			{
+				return nested;
+			}
+		}
+		return null;
 	}
 
 	private void ApplyLayoutSubDialogToolTip()
@@ -341,6 +530,14 @@ public class AssemblySettingsWindow : Window
 		{
 			chkAutoDimAnnotations.Visibility = dimSettingsVisibility;
 		}
+		if (lblAutoDimFittingSelf != null)
+		{
+			lblAutoDimFittingSelf.Visibility = dimSettingsVisibility;
+		}
+		if (chkAutoDimFittingSelf != null)
+		{
+			chkAutoDimFittingSelf.Visibility = dimSettingsVisibility;
+		}
 	}
 
 	private void ApplyProductChrome()
@@ -384,117 +581,6 @@ public class AssemblySettingsWindow : Window
 					Tag = num
 				});
 			}
-		}
-	}
-
-	internal static BitmapSource DecodeLogoBitmap(string imagePath)
-	{
-		if (string.IsNullOrWhiteSpace(imagePath))
-		{
-			return null;
-		}
-		string fullPath = Path.GetFullPath(imagePath.Trim());
-		if (!File.Exists(fullPath))
-		{
-			return null;
-		}
-		BitmapSource bitmapSource = TryDecodeLogoBitmapWpf(fullPath);
-		if (bitmapSource != null)
-		{
-			return bitmapSource;
-		}
-		return TryDecodeLogoViaSystemDrawing(fullPath);
-	}
-
-	private static BitmapSource TryDecodeLogoBitmapWpf(string fullPath)
-	{
-		try
-		{
-			BitmapImage bitmapImage = new BitmapImage();
-			using (FileStream streamSource = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
-			{
-				bitmapImage.BeginInit();
-				bitmapImage.CacheOption = BitmapCacheOption.OnLoad;
-				bitmapImage.CreateOptions = BitmapCreateOptions.IgnoreImageCache;
-				bitmapImage.StreamSource = streamSource;
-				bitmapImage.EndInit();
-			}
-			bitmapImage.Freeze();
-			return bitmapImage;
-		}
-		catch
-		{
-			return null;
-		}
-	}
-
-	private static BitmapSource TryDecodeLogoViaSystemDrawing(string fullPath)
-	{
-		try
-		{
-			using Bitmap bitmap = new Bitmap(fullPath);
-			using MemoryStream memoryStream = new MemoryStream();
-			bitmap.Save(memoryStream, ImageFormat.Png);
-			memoryStream.Position = 0L;
-			BitmapFrame bitmapFrame = new PngBitmapDecoder(memoryStream, BitmapCreateOptions.IgnoreImageCache, BitmapCacheOption.OnLoad).Frames[0];
-			bitmapFrame.Freeze();
-			return bitmapFrame;
-		}
-		catch
-		{
-			return null;
-		}
-	}
-
-	public static bool BrowseAndSaveLogo(Window owner, SpoolingManagerKind productKind)
-	{
-		try
-		{
-			OpenFileDialog openFileDialog = new OpenFileDialog
-			{
-				Title = "Choose Logo Image",
-				Filter = "Image Files|*.png;*.jpg;*.jpeg;*.bmp",
-				CheckFileExists = true,
-				Multiselect = false
-			};
-			if (((owner != null) ? openFileDialog.ShowDialog(owner) : openFileDialog.ShowDialog()) != true)
-			{
-				return false;
-			}
-			string fileName = openFileDialog.FileName;
-			string settingsFolderPath = SpoolingManagerSettings.SettingsFolderPath;
-			Directory.CreateDirectory(settingsFolderPath);
-			string extension = Path.GetExtension(fileName);
-			string text;
-			switch (productKind)
-			{
-			case SpoolingManagerKind.Mmc:
-			case SpoolingManagerKind.MmcTesting:
-				text = "MmcLogoImage";
-				break;
-			case SpoolingManagerKind.AutoDimensionLab:
-				text = "AutoDimLabLogoImage";
-				break;
-			default:
-				text = "LogoImage";
-				break;
-			}
-			string text2 = Path.Combine(settingsFolderPath, text + extension);
-			File.Copy(fileName, text2, overwrite: true);
-			string fullPath = Path.GetFullPath(text2);
-			SpoolingManagerSettings spoolingManagerSettings = SpoolingManagerSettings.Load(productKind);
-			spoolingManagerSettings.LogoImagePath = fullPath;
-			spoolingManagerSettings.Save(productKind);
-			if (DecodeLogoBitmap(fullPath) == null)
-			{
-				MessageBox.Show(owner, "The logo file was saved, but it could not be previewed here. Try a standard PNG or JPG (RGB). If this persists, open the image in an editor and re-save as PNG.", "Spooling Savant V3 (Exports)", MessageBoxButton.OK, MessageBoxImage.Exclamation);
-			}
-			return true;
-		}
-		catch (Exception ex)
-		{
-			MessageBox.Show(owner, "Failed to choose the logo image.\n\n" + ex.Message, "Spooling Savant V3 (Exports)", MessageBoxButton.OK, MessageBoxImage.Hand);
-			return false;
 		}
 	}
 
@@ -581,17 +667,177 @@ public class AssemblySettingsWindow : Window
 
 	private void LoadRevitOptions()
 	{
-		if (_uiapp != null && _uiapp.ActiveUIDocument != null)
+		if (_uiapp == null || _uiapp.ActiveUIDocument == null)
 		{
-			Document document = _uiapp.ActiveUIDocument.Document;
-			LoadTitleBlocks(document);
-			LoadTagTypes(document);
-			LoadAssemblyTagTypes(document);
-			LoadViewportTypes(document);
-			LoadSchedules(document);
-			LoadTextNoteTypes(document);
-			LoadViewTemplates(document);
-			LoadLinearDimensionTypes(document);
+			return;
+		}
+
+		Document document = _uiapp.ActiveUIDocument.Document;
+		string cacheKey = BuildRevitOptionsCacheKey(document);
+		if (_revitOptionsCache != null
+			&& string.Equals(_revitOptionsCacheKey, cacheKey, StringComparison.Ordinal)
+			&& ApplyRevitOptionsSnapshot(_revitOptionsCache))
+		{
+			return;
+		}
+
+		LoadTitleBlocks(document);
+		LoadTagTypes(document);
+		LoadAssemblyTagTypes(document);
+		LoadViewportTypes(document);
+		LoadSchedules(document);
+		LoadTextNoteTypes(document);
+		LoadViewTemplates(document);
+		LoadLinearDimensionTypes(document);
+
+		_revitOptionsCacheKey = cacheKey;
+		_revitOptionsCache = CaptureRevitOptionsSnapshot();
+	}
+
+	private static string BuildRevitOptionsCacheKey(Document doc)
+	{
+		if (doc == null)
+		{
+			return string.Empty;
+		}
+		string path = string.Empty;
+		try
+		{
+			path = doc.PathName ?? string.Empty;
+		}
+		catch
+		{
+		}
+		return path + "|" + (doc.Title ?? string.Empty);
+	}
+
+	private sealed class RevitOptionsSnapshot
+	{
+		public List<string> TitleBlocks = new List<string>();
+		public List<string> TagTypes = new List<string>();
+		public List<string> HangerTagTypes = new List<string>();
+		public List<string> DuctTagTypes = new List<string>();
+		public List<string> WeldTagTypes = new List<string>();
+		public List<string> AssemblyTagTypes = new List<string>();
+		public List<string> ViewportTypes = new List<string>();
+		public List<string> ScheduleNames = new List<string>();
+		public List<string> TextNoteTypes = new List<string>();
+		public List<string> ViewTemplates = new List<string>();
+		public List<string> LinearDimensionTypes = new List<string>();
+		public string TagTypeLabel;
+	}
+
+	private RevitOptionsSnapshot CaptureRevitOptionsSnapshot()
+	{
+		return new RevitOptionsSnapshot
+		{
+			TitleBlocks = CaptureComboItems(cmbTitleBlock),
+			TagTypes = CaptureComboItems(cmbTagType),
+			HangerTagTypes = CaptureComboItems(cmbHangerTagType),
+			DuctTagTypes = CaptureComboItems(cmbDuctTagType),
+			WeldTagTypes = CaptureComboItems(cmbWeldTagType),
+			AssemblyTagTypes = CaptureComboItems(cmbAssemblyTagType),
+			ViewportTypes = CaptureComboItems(cmbViewportType),
+			ScheduleNames = new List<string>(_availableScheduleNames),
+			TextNoteTypes = CaptureComboItems(cmbWeldLogTextType),
+			ViewTemplates = CaptureComboItems(cmb3DTemplate).FindAll((string s) => !string.IsNullOrWhiteSpace(s)),
+			LinearDimensionTypes = CaptureComboItems(cmbAutoDimensionType),
+			TagTypeLabel = txtTagTypeLabel?.Text
+		};
+	}
+
+	private static List<string> CaptureComboItems(ComboBox combo)
+	{
+		List<string> list = new List<string>();
+		if (combo == null)
+		{
+			return list;
+		}
+		foreach (object item in combo.Items)
+		{
+			if (item != null)
+			{
+				list.Add(item.ToString());
+			}
+		}
+		return list;
+	}
+
+	private bool ApplyRevitOptionsSnapshot(RevitOptionsSnapshot snapshot)
+	{
+		if (snapshot == null)
+		{
+			return false;
+		}
+		FillCombo(cmbTitleBlock, snapshot.TitleBlocks);
+		FillCombo(cmbTagType, snapshot.TagTypes);
+		FillCombo(cmbHangerTagType, snapshot.HangerTagTypes);
+		FillCombo(cmbDuctTagType, snapshot.DuctTagTypes);
+		FillCombo(cmbWeldTagType, snapshot.WeldTagTypes);
+		FillCombo(cmbAssemblyTagType, snapshot.AssemblyTagTypes);
+		FillCombo(cmbViewportType, snapshot.ViewportTypes);
+		_availableScheduleNames.Clear();
+		if (snapshot.ScheduleNames != null)
+		{
+			_availableScheduleNames.AddRange(snapshot.ScheduleNames);
+		}
+		FillCombo(cmbWeldLogTextType, snapshot.TextNoteTypes);
+		FillCombo(cmbAutoDimensionType, snapshot.LinearDimensionTypes);
+		ApplyViewTemplateSnapshot(snapshot.ViewTemplates);
+		if (txtTagTypeLabel != null && !string.IsNullOrWhiteSpace(snapshot.TagTypeLabel))
+		{
+			txtTagTypeLabel.Text = snapshot.TagTypeLabel;
+		}
+		return true;
+	}
+
+	private static void FillCombo(ComboBox combo, List<string> items)
+	{
+		if (combo == null)
+		{
+			return;
+		}
+		combo.Items.Clear();
+		if (items == null)
+		{
+			return;
+		}
+		foreach (string item in items)
+		{
+			combo.Items.Add(item);
+		}
+	}
+
+	private void ApplyViewTemplateSnapshot(List<string> templates)
+	{
+		ComboBox[] templateCombos =
+		{
+			cmb3DTemplate,
+			cmbBackTemplate,
+			cmbFrontTemplate,
+			cmbLeftTemplate,
+			cmbRightTemplate,
+			cmbTopTemplate
+		};
+		foreach (ComboBox combo in templateCombos)
+		{
+			if (combo == null)
+			{
+				continue;
+			}
+			combo.Items.Clear();
+			combo.Items.Add(string.Empty);
+			if (templates == null)
+			{
+				continue;
+			}
+			foreach (string item in templates)
+			{
+				if (!string.IsNullOrWhiteSpace(item))
+				{
+					combo.Items.Add(item);
+				}
+			}
 		}
 	}
 
@@ -689,6 +935,7 @@ public class AssemblySettingsWindow : Window
 		List<FamilySymbol> pipeTags = new List<FamilySymbol>();
 		List<FamilySymbol> hangerTags = new List<FamilySymbol>();
 		List<FamilySymbol> ductTags = new List<FamilySymbol>();
+		bool nativeMode = SpoolingManagerSettings.Load(_productKind).UseNativePipework;
 		foreach (FamilySymbol item in ((IEnumerable)new FilteredElementCollector(doc).OfClass(typeof(FamilySymbol))).Cast<FamilySymbol>())
 		{
 			long key = GetStableElementIdKey(((Element)item).Id);
@@ -696,15 +943,22 @@ public class AssemblySettingsWindow : Window
 			{
 				continue;
 			}
-			if (IsIncludedFabricationPipeworkTagType(item) && pipeKeys.Add(key))
+			if (nativeMode)
+			{
+				if (IsIncludedNativePipeTagType(item) && pipeKeys.Add(key))
+				{
+					pipeTags.Add(item);
+				}
+			}
+			else if (IsIncludedFabricationPipeworkTagType(item) && pipeKeys.Add(key))
 			{
 				pipeTags.Add(item);
 			}
-			if (IsIncludedFabricationHangerTagType(item) && hangerKeys.Add(key))
+			if (!nativeMode && IsIncludedFabricationHangerTagType(item) && hangerKeys.Add(key))
 			{
 				hangerTags.Add(item);
 			}
-			if (IsIncludedFabricationDuctworkTagType(item) && ductKeys.Add(key))
+			if (!nativeMode && IsIncludedFabricationDuctworkTagType(item) && ductKeys.Add(key))
 			{
 				ductTags.Add(item);
 			}
@@ -712,7 +966,10 @@ public class AssemblySettingsWindow : Window
 		foreach (string item2 in FormatTagTypeDisplayNames(pipeTags))
 		{
 			cmbTagType.Items.Add(item2);
-			cmbWeldTagType.Items.Add(item2);
+			if (!nativeMode)
+			{
+				cmbWeldTagType.Items.Add(item2);
+			}
 		}
 		foreach (string item2 in FormatTagTypeDisplayNames(hangerTags))
 		{
@@ -722,6 +979,28 @@ public class AssemblySettingsWindow : Window
 		{
 			cmbDuctTagType.Items.Add(item2);
 		}
+
+		if (txtTagTypeLabel != null)
+		{
+			txtTagTypeLabel.Text = nativeMode
+				? "Pipe / Fitting / Accessory Tag"
+				: "Pipe/Fitting Tag";
+		}
+	}
+
+	private static bool IsIncludedNativePipeTagType(FamilySymbol symbol)
+	{
+		if (symbol == null)
+		{
+			return false;
+		}
+
+		if (NativePipeSpoolSupport.CategoryMatchesNativePipeTags(((Element)symbol).Category))
+		{
+			return true;
+		}
+
+		return NativePipeSpoolSupport.CategoryMatchesNativePipeTags(GetFamilyCategoryForSymbol(symbol));
 	}
 
 	private static List<string> FormatTagTypeDisplayNames(IEnumerable<FamilySymbol> symbols)
@@ -1317,7 +1596,6 @@ public class AssemblySettingsWindow : Window
 	private void LoadSettings()
 	{
 		_settings = SpoolingManagerSettings.Load(_productKind);
-		LoadLogoPreview(_settings.LogoImagePath);
 		cmbTitleBlock.Text = _settings.TitleBlockName ?? string.Empty;
 		cmbTagType.Text = _settings.TagTypeName ?? string.Empty;
 		cmbHangerTagType.Text = _settings.HangerTagTypeName ?? string.Empty;
@@ -1358,10 +1636,18 @@ public class AssemblySettingsWindow : Window
 		{
 			txtItemNumberValveSuffix.Text = _settings.ItemNumberValveSuffix ?? "-V";
 		}
-		if (txtItemNumberDigits != null)
+		_settings.NormalizeItemNumberStarts();
+		if (txtItemNumberStraightStart != null)
 		{
-			int digits = _settings.ItemNumberDigits < 1 ? 3 : _settings.ItemNumberDigits;
-			txtItemNumberDigits.Text = digits.ToString(CultureInfo.InvariantCulture);
+			txtItemNumberStraightStart.Text = _settings.ItemNumberStraightStart ?? "001";
+		}
+		if (txtItemNumberFittingStart != null)
+		{
+			txtItemNumberFittingStart.Text = _settings.ItemNumberFittingStart ?? "001";
+		}
+		if (txtItemNumberValveStart != null)
+		{
+			txtItemNumberValveStart.Text = _settings.ItemNumberValveStart ?? "001";
 		}
 		if (chkPlaceTrackingQr != null)
 		{
@@ -1417,7 +1703,10 @@ public class AssemblySettingsWindow : Window
 		if (txtBoardroomApiBaseUrl != null)
 		{
 			txtBoardroomApiBaseUrl.Text = BoardroomApiClient.NormalizeBaseUrl(_settings.BoardroomApiBaseUrl);
-			RefreshBoardroomApiStatus();
+			if (txtBoardroomApiStatus != null)
+			{
+				txtBoardroomApiStatus.Text = "Click Test to check the Boardroom API connection.";
+			}
 		}
 		LoadExportColumnList(lstTigerStopColumns, cmbTigerStopColumnAdd, PlotPackageExportColumns.ParseTigerStopColumns(_settings.TigerStopColumns), PlotPackageExportColumns.TigerStopAll);
 		LoadExportColumnList(lstPcfFields, cmbPcfFieldAdd, PlotPackageExportColumns.ParsePcfFields(_settings.PcfFields), PlotPackageExportColumns.PcfAll);
@@ -1470,6 +1759,10 @@ public class AssemblySettingsWindow : Window
 		if (chkAutoDimAnnotations != null)
 		{
 			chkAutoDimAnnotations.IsChecked = _settings.AutoDimAnnotations;
+		}
+		if (chkAutoDimFittingSelf != null)
+		{
+			chkAutoDimFittingSelf.IsChecked = _settings.NativeFittingSelfDimensionsEnabled;
 		}
 		ResetValidationVisuals();
 	}
@@ -1534,15 +1827,6 @@ public class AssemblySettingsWindow : Window
 		AddScheduleRow();
 	}
 
-	private void BtnBrowseLogo_Click(object sender, RoutedEventArgs e)
-	{
-		if (BrowseAndSaveLogo(this, _productKind))
-		{
-			_settings = SpoolingManagerSettings.Load(_productKind);
-			LoadLogoPreview(_settings.LogoImagePath);
-		}
-	}
-
 	private void BtnBrowsePipingSpecCatalog_Click(object sender, RoutedEventArgs e)
 	{
 		try
@@ -1594,7 +1878,7 @@ public class AssemblySettingsWindow : Window
 		}
 		catch (Exception ex)
 		{
-			MessageBox.Show(this, "Could not set the catalog file.\n\n" + ex.Message, "Spooling Savant V3 (Exports)", MessageBoxButton.OK, MessageBoxImage.Exclamation);
+			SsSavantMessageBox.Show(this, "Could not set the catalog file.\n\n" + ex.Message, "Spooling Savant", MessageBoxButton.OK, MessageBoxImage.Exclamation);
 		}
 	}
 
@@ -1636,10 +1920,10 @@ public class AssemblySettingsWindow : Window
 
 		if (showMessageBox)
 		{
-			MessageBox.Show(
+			SsSavantMessageBox.Show(
 				this,
 				message,
-				"Spooling Savant V3 (Exports)",
+				"Spooling Savant",
 				MessageBoxButton.OK,
 				ok ? MessageBoxImage.Information : MessageBoxImage.Exclamation);
 		}
@@ -1647,20 +1931,60 @@ public class AssemblySettingsWindow : Window
 
 	private void BtnLayoutSettings_Click(object sender, RoutedEventArgs e)
 	{
-		SpoolSheetLayoutSettingsWindow spoolSheetLayoutSettingsWindow = new SpoolSheetLayoutSettingsWindow(_uiapp, _settings, _productKind);
-		spoolSheetLayoutSettingsWindow.Owner = this;
-		spoolSheetLayoutSettingsWindow.ShowDialog();
+		SetLayoutSettingsButtonLit(true);
+		try
+		{
+			SpoolSheetLayoutSettingsWindow spoolSheetLayoutSettingsWindow = new SpoolSheetLayoutSettingsWindow(_uiapp, _settings, _productKind);
+			SsSavantDialogForeground.Attach(spoolSheetLayoutSettingsWindow, _uiapp);
+			spoolSheetLayoutSettingsWindow.Owner = this;
+			spoolSheetLayoutSettingsWindow.ShowDialog();
+		}
+		finally
+		{
+			SetLayoutSettingsButtonLit(false);
+		}
 	}
 
-	private void LoadLogoPreview(string imagePath)
+	private void SetLayoutSettingsButtonLit(bool lit)
 	{
-		imgLogoPreview.Source = null;
-		txtLogoPlaceholder.Visibility = Visibility.Visible;
-		BitmapSource bitmapSource = DecodeLogoBitmap(imagePath);
-		if (bitmapSource != null)
+		if (btnLayoutSettings == null)
 		{
-			imgLogoPreview.Source = bitmapSource;
-			txtLogoPlaceholder.Visibility = Visibility.Collapsed;
+			return;
+		}
+
+		if (lit && SsSavantNeonChrome.IsNeonEnabled)
+		{
+			btnLayoutSettings.BorderBrush = new SolidColorBrush(SsSavantNeonChrome.DarkBorderColor);
+			btnLayoutSettings.BorderThickness = new Thickness(2);
+			btnLayoutSettings.Effect = new DropShadowEffect
+			{
+				Color = SsSavantNeonChrome.DarkBorderColor,
+				BlurRadius = 14,
+				ShadowDepth = 0,
+				Opacity = 0.85
+			};
+			if (btnLayoutSettings.Content is TextBlock icon)
+			{
+				icon.Foreground = new SolidColorBrush(SsSavantNeonChrome.NeonModeColor);
+				icon.Effect = new DropShadowEffect
+				{
+					Color = SsSavantNeonChrome.NeonModeGlow,
+					BlurRadius = 12,
+					ShadowDepth = 0,
+					Opacity = 0.9
+				};
+			}
+		}
+		else
+		{
+			btnLayoutSettings.ClearValue(System.Windows.Controls.Control.BorderBrushProperty);
+			btnLayoutSettings.ClearValue(System.Windows.Controls.Control.BorderThicknessProperty);
+			btnLayoutSettings.Effect = null;
+			if (btnLayoutSettings.Content is TextBlock icon)
+			{
+				icon.Effect = null;
+				icon.SetResourceReference(TextBlock.ForegroundProperty, "SsSavantForegroundPrimary");
+			}
 		}
 	}
 
@@ -1674,6 +1998,84 @@ public class AssemblySettingsWindow : Window
 		_settings.Save(_productKind);
 		base.DialogResult = true;
 		Close();
+	}
+
+	private void BtnExportSettings_Click(object sender, RoutedEventArgs e)
+	{
+		ApplySettingsFromUi();
+		const string transferFolder = @"C:\Temp\Spooling Savant Settings";
+		Directory.CreateDirectory(transferFolder);
+		SaveFileDialog dialog = new SaveFileDialog
+		{
+			Title = "Export Spooling Savant Settings",
+			Filter = SpoolingManagerSettingsTransferService.ExportFilter,
+			FileName = SpoolingManagerSettingsTransferService.BuildDefaultExportFileName(_productKind),
+			InitialDirectory = transferFolder,
+			DefaultExt = ".xml",
+			AddExtension = true,
+			OverwritePrompt = true
+		};
+		if (dialog.ShowDialog(this) != true)
+		{
+			return;
+		}
+		if (!SpoolingManagerSettingsTransferService.TryExport(
+			_settings, _productKind, dialog.FileName, out string errorMessage))
+		{
+			SsSavantMessageBox.Show(
+				this,
+				"Settings could not be exported.\n\n" + errorMessage,
+				"Spooling Savant",
+				MessageBoxButton.OK,
+				MessageBoxImage.Error);
+			return;
+		}
+		SsSavantMessageBox.Show(
+			this,
+			"Settings exported successfully.",
+			"Spooling Savant",
+			MessageBoxButton.OK,
+			MessageBoxImage.Information);
+	}
+
+	private void BtnImportSettings_Click(object sender, RoutedEventArgs e)
+	{
+		const string transferFolder = @"C:\Temp\Spooling Savant Settings";
+		Directory.CreateDirectory(transferFolder);
+		OpenFileDialog dialog = new OpenFileDialog
+		{
+			Title = "Import Spooling Savant Settings",
+			Filter = SpoolingManagerSettingsTransferService.ExportFilter,
+			InitialDirectory = transferFolder,
+			FileName = "Settings.xml",
+			DefaultExt = ".xml",
+			CheckFileExists = true,
+			Multiselect = false
+		};
+		if (dialog.ShowDialog(this) != true)
+		{
+			return;
+		}
+		if (!SpoolingManagerSettingsTransferService.TryImport(
+			dialog.FileName, _productKind, out SpoolingManagerSettings imported, out string errorMessage))
+		{
+			SsSavantMessageBox.Show(
+				this,
+				"Settings could not be imported.\n\n" + errorMessage,
+				"Spooling Savant",
+				MessageBoxButton.OK,
+				MessageBoxImage.Error);
+			return;
+		}
+		_settings = imported;
+		_settings.Save(_productKind);
+		LoadSettings();
+		SsSavantMessageBox.Show(
+			this,
+			"Settings imported and saved for this project.",
+			"Spooling Savant",
+			MessageBoxButton.OK,
+			MessageBoxImage.Information);
 	}
 
 	private void ApplySettingsFromUi()
@@ -1697,16 +2099,16 @@ public class AssemblySettingsWindow : Window
 		_settings.ItemNumberFittingSuffix = (txtItemNumberFittingSuffix?.Text ?? "-F").Trim();
 		_settings.ItemNumberValvePrefix = (txtItemNumberValvePrefix?.Text ?? "P-").Trim();
 		_settings.ItemNumberValveSuffix = (txtItemNumberValveSuffix?.Text ?? "-V").Trim();
-		if (!int.TryParse((txtItemNumberDigits?.Text ?? "3").Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int itemDigits)
-			|| itemDigits < 1)
-		{
-			itemDigits = 3;
-		}
-		else if (itemDigits > 8)
-		{
-			itemDigits = 8;
-		}
-		_settings.ItemNumberDigits = itemDigits;
+		_settings.ItemNumberStraightStart = ItemNumberSequenceFormatter.NormalizeStartToken(
+			txtItemNumberStraightStart?.Text,
+			"001");
+		_settings.ItemNumberFittingStart = ItemNumberSequenceFormatter.NormalizeStartToken(
+			txtItemNumberFittingStart?.Text,
+			"001");
+		_settings.ItemNumberValveStart = ItemNumberSequenceFormatter.NormalizeStartToken(
+			txtItemNumberValveStart?.Text,
+			"001");
+		_settings.NormalizeItemNumberStarts();
 		_settings.PlaceTrackingQrOnSpoolSheets = chkPlaceTrackingQr?.IsChecked == true;
 		_settings.QrTrackingUrlBase = (txtQrTrackingUrlBase?.Text ?? string.Empty).Trim();
 		_settings.ViewportTypeName = cmbViewportType.Text ?? string.Empty;
@@ -1787,6 +2189,10 @@ public class AssemblySettingsWindow : Window
 		{
 			_settings.AutoDimAnnotations = chkAutoDimAnnotations.IsChecked == true;
 		}
+		if (chkAutoDimFittingSelf != null)
+		{
+			_settings.NativeFittingSelfDimensionsEnabled = chkAutoDimFittingSelf.IsChecked == true;
+		}
 	}
 
 	private bool ValidateRequiredSelections()
@@ -1850,7 +2256,7 @@ public class AssemblySettingsWindow : Window
 			{
 				tabMainSettings.SelectedIndex = 0;
 			}
-			MessageBox.Show(this, "Please double check that all necessary options are selected.", "Spooling Savant V3 (Exports)", MessageBoxButton.OK, MessageBoxImage.Exclamation);
+			SsSavantMessageBox.Show(this, "Please double check that all necessary options are selected.", "Spooling Savant", MessageBoxButton.OK, MessageBoxImage.Exclamation);
 		}
 		return flag;
 	}
@@ -1947,7 +2353,7 @@ public class AssemblySettingsWindow : Window
 	{
 		Window source = SpoolingManagerXamlLoader.LoadWindow("SpoolingManager.Views.AssemblySettingsWindow.xaml");
 		SpoolingManagerXamlLoader.ApplyWindow(this, source, _productKind);
-		SpoolingManagerXamlLoader.ApplyNamedStyle(this, "btnBrowseLogo", "VgSquareButton");
+		SsSavantNeonChrome.ApplyChromelessDialog(this, allowResize: true);
 		SpoolingManagerXamlLoader.ApplyNamedStyle(this, "btnLayoutSettings", "VgSquareButton");
 		SpoolingManagerXamlLoader.ApplyNamedStyle(this, "tabMainSettings", "VgRoundedTabControl");
 		tabMainSettings = SpoolingManagerXamlLoader.Find<TabControl>(this, "tabMainSettings");
@@ -1987,6 +2393,16 @@ public class AssemblySettingsWindow : Window
 		btnPcfFieldRemove = SpoolingManagerXamlLoader.Find<Button>(this, "btnPcfFieldRemove");
 		btnPcfFieldUp = SpoolingManagerXamlLoader.Find<Button>(this, "btnPcfFieldUp");
 		btnPcfFieldDown = SpoolingManagerXamlLoader.Find<Button>(this, "btnPcfFieldDown");
+		btnImportSettings = SpoolingManagerXamlLoader.Find<Button>(this, "btnImportSettings");
+		if (btnImportSettings != null)
+		{
+			btnImportSettings.Click += BtnImportSettings_Click;
+		}
+		btnExportSettings = SpoolingManagerXamlLoader.Find<Button>(this, "btnExportSettings");
+		if (btnExportSettings != null)
+		{
+			btnExportSettings.Click += BtnExportSettings_Click;
+		}
 		WireExportColumnEditors();
 		cmb3DDirection = SpoolingManagerXamlLoader.Find<ComboBox>(this, "cmb3DDirection");
 		cmb3DPlacement = SpoolingManagerXamlLoader.Find<ComboBox>(this, "cmb3DPlacement");
@@ -2002,6 +2418,7 @@ public class AssemblySettingsWindow : Window
 		cmbTopPlacement = SpoolingManagerXamlLoader.Find<ComboBox>(this, "cmbTopPlacement");
 		cmbTitleBlock = SpoolingManagerXamlLoader.Find<ComboBox>(this, "cmbTitleBlock");
 		cmbTagType = SpoolingManagerXamlLoader.Find<ComboBox>(this, "cmbTagType");
+		txtTagTypeLabel = SpoolingManagerXamlLoader.Find<TextBlock>(this, "txtTagTypeLabel");
 		cmbHangerTagType = SpoolingManagerXamlLoader.Find<ComboBox>(this, "cmbHangerTagType");
 		cmbDuctTagType = SpoolingManagerXamlLoader.Find<ComboBox>(this, "cmbDuctTagType");
 		cmbWeldTagType = SpoolingManagerXamlLoader.Find<ComboBox>(this, "cmbWeldTagType");
@@ -2050,24 +2467,32 @@ public class AssemblySettingsWindow : Window
 		txtItemNumberFittingSuffix = SpoolingManagerXamlLoader.Find<System.Windows.Controls.TextBox>(this, "txtItemNumberFittingSuffix");
 		txtItemNumberValvePrefix = SpoolingManagerXamlLoader.Find<System.Windows.Controls.TextBox>(this, "txtItemNumberValvePrefix");
 		txtItemNumberValveSuffix = SpoolingManagerXamlLoader.Find<System.Windows.Controls.TextBox>(this, "txtItemNumberValveSuffix");
-		txtItemNumberDigits = SpoolingManagerXamlLoader.Find<System.Windows.Controls.TextBox>(this, "txtItemNumberDigits");
+		txtItemNumberStraightStart = SpoolingManagerXamlLoader.Find<System.Windows.Controls.TextBox>(this, "txtItemNumberStraightStart");
+		txtItemNumberFittingStart = SpoolingManagerXamlLoader.Find<System.Windows.Controls.TextBox>(this, "txtItemNumberFittingStart");
+		txtItemNumberValveStart = SpoolingManagerXamlLoader.Find<System.Windows.Controls.TextBox>(this, "txtItemNumberValveStart");
 		chkPlaceTrackingQr = SpoolingManagerXamlLoader.Find<CheckBox>(this, "chkPlaceTrackingQr");
 		txtQrTrackingUrlBase = SpoolingManagerXamlLoader.Find<System.Windows.Controls.TextBox>(this, "txtQrTrackingUrlBase");
-		imgLogoPreview = SpoolingManagerXamlLoader.Find<System.Windows.Controls.Image>(this, "imgLogoPreview");
-		txtLogoPlaceholder = SpoolingManagerXamlLoader.Find<TextBlock>(this, "txtLogoPlaceholder");
 		txtSettingsHeaderTitle = SpoolingManagerXamlLoader.Find<TextBlock>(this, "txtSettingsHeaderTitle");
 		txtSettingsHeaderSubtitle = SpoolingManagerXamlLoader.Find<TextBlock>(this, "txtSettingsHeaderSubtitle");
+		txtTabHeaderSheetSetup = SpoolingManagerXamlLoader.Find<TextBlock>(this, "txtTabHeaderSheetSetup");
+		txtTabHeaderSchedules = SpoolingManagerXamlLoader.Find<TextBlock>(this, "txtTabHeaderSchedules");
+		txtTabHeaderAnnotations = SpoolingManagerXamlLoader.Find<TextBlock>(this, "txtTabHeaderAnnotations");
+		txtTabHeaderTigerStop = SpoolingManagerXamlLoader.Find<TextBlock>(this, "txtTabHeaderTigerStop");
+		txtTabHeaderPcfFiles = SpoolingManagerXamlLoader.Find<TextBlock>(this, "txtTabHeaderPcfFiles");
+		txtTabHeaderBoardroom = SpoolingManagerXamlLoader.Find<TextBlock>(this, "txtTabHeaderBoardroom");
+		SsSavantNeonChrome.ApplyNeonDialogTitle(txtSettingsHeaderTitle, useScriptFont: true);
 		lblViewScale = SpoolingManagerXamlLoader.Find<TextBlock>(this, "lblViewScale");
 		cmbViewScale = SpoolingManagerXamlLoader.Find<ComboBox>(this, "cmbViewScale");
 		lblAutoDimensionType = SpoolingManagerXamlLoader.Find<TextBlock>(this, "lblAutoDimensionType");
 		cmbAutoDimensionType = SpoolingManagerXamlLoader.Find<ComboBox>(this, "cmbAutoDimensionType");
 		lblAutoDimAnnotations = SpoolingManagerXamlLoader.Find<TextBlock>(this, "lblAutoDimAnnotations");
 		chkAutoDimAnnotations = SpoolingManagerXamlLoader.Find<CheckBox>(this, "chkAutoDimAnnotations");
+		lblAutoDimFittingSelf = SpoolingManagerXamlLoader.Find<TextBlock>(this, "lblAutoDimFittingSelf");
+		chkAutoDimFittingSelf = SpoolingManagerXamlLoader.Find<CheckBox>(this, "chkAutoDimFittingSelf");
 		grdSpoolViews = SpoolingManagerXamlLoader.Find<Grid>(this, "grdSpoolViews");
 		txtViewsAutoDimHeader = SpoolingManagerXamlLoader.Find<TextBlock>(this, "txtViewsAutoDimHeader");
 		btnLayoutSettings = SpoolingManagerXamlLoader.Find<Button>(this, "btnLayoutSettings");
 		txtLayoutSettingsPrompt = SpoolingManagerXamlLoader.Find<TextBlock>(this, "txtLayoutSettingsPrompt");
-		SpoolingManagerXamlLoader.Find<Button>(this, "btnBrowseLogo").Click += BtnBrowseLogo_Click;
 		btnLayoutSettings.Click += BtnLayoutSettings_Click;
 		SpoolingManagerXamlLoader.FindButtonByContent(this, "Cancel").Click += BtnCancel_Click;
 		SpoolingManagerXamlLoader.FindButtonByContent(this, "Save").Click += BtnSave_Click;
