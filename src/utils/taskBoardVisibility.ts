@@ -3,8 +3,11 @@ import {
   DEFAULT_DELIVERABLES_TASK_STATUSES,
   DEFAULT_RFI_TASK_STATUSES,
   DEFAULT_TASK_STATUSES,
+  getBoardTaskStatuses,
   getStatusColor,
+  isCompleteStatus,
   normalizeTaskStatuses,
+  statusBoardForTask,
   statusLabel,
   type BoardTaskStatusesMap,
   type ProjectBoardTaskStatusesMap,
@@ -14,7 +17,11 @@ import {
   expandTaskBoardVisibleStatusIds,
 } from './statusConsolidation';
 
-export const TASK_BOARD_DEFAULT_HIDDEN_STATUS_IDS = new Set(['not-started', 'not-ready']);
+export const TASK_BOARD_DEFAULT_HIDDEN_STATUS_IDS = new Set([
+  'not-started',
+  'not-ready',
+  'complete',
+]);
 
 const STATUS_ORDER = [
   ...DEFAULT_TASK_STATUSES.map((status) => status.id),
@@ -25,6 +32,36 @@ const STATUS_ORDER = [
 function statusSortIndex(statusId: string): number {
   const index = STATUS_ORDER.indexOf(statusId);
   return index === -1 ? STATUS_ORDER.length : index;
+}
+
+/** Complete (and any countsAsComplete status) never appear on the Team Task Board. */
+export function isTaskBoardCompleteStatus(
+  statusId: string,
+  boardTaskStatuses: BoardTaskStatusesMap = {},
+  projectBoardTaskStatuses?: ProjectBoardTaskStatusesMap,
+  tasks: Task[] = []
+): boolean {
+  if (statusId === 'complete') return true;
+
+  for (const list of Object.values(boardTaskStatuses)) {
+    if (isCompleteStatus(statusId, normalizeTaskStatuses(list))) return true;
+  }
+  for (const projectStatuses of Object.values(projectBoardTaskStatuses ?? {})) {
+    for (const list of Object.values(projectStatuses ?? {})) {
+      if (isCompleteStatus(statusId, normalizeTaskStatuses(list))) return true;
+    }
+  }
+  for (const task of tasks) {
+    if (task.status !== statusId) continue;
+    const statuses = getBoardTaskStatuses(
+      statusBoardForTask(task),
+      boardTaskStatuses,
+      task.projectId,
+      projectBoardTaskStatuses
+    );
+    if (isCompleteStatus(statusId, statuses)) return true;
+  }
+  return isCompleteStatus(statusId, DEFAULT_TASK_STATUSES);
 }
 
 export function collectTaskBoardStatusOptions(
@@ -75,10 +112,18 @@ export function collectTaskBoardStatusOptions(
   );
 }
 
+function isCompleteOption(status: TaskStatusDefinition): boolean {
+  return Boolean(status.countsAsComplete) || status.id === 'complete';
+}
+
 export function buildDefaultTaskBoardVisibleStatuses(options: TaskStatusDefinition[]): string[] {
   return options
     .map((status) => status.id)
-    .filter((statusId) => !TASK_BOARD_DEFAULT_HIDDEN_STATUS_IDS.has(statusId));
+    .filter(
+      (statusId) =>
+        !TASK_BOARD_DEFAULT_HIDDEN_STATUS_IDS.has(statusId) &&
+        !options.find((status) => status.id === statusId)?.countsAsComplete
+    );
 }
 
 export function normalizeTaskBoardVisibleStatuses(
@@ -86,12 +131,21 @@ export function normalizeTaskBoardVisibleStatuses(
   options: TaskStatusDefinition[]
 ): string[] {
   const optionIds = new Set(options.map((status) => status.id));
+  const stripComplete = (ids: string[]) =>
+    ids.filter((statusId) => {
+      if (!optionIds.has(statusId)) return false;
+      if (TASK_BOARD_DEFAULT_HIDDEN_STATUS_IDS.has(statusId)) return false;
+      const option = options.find((status) => status.id === statusId);
+      if (option && isCompleteOption(option)) return false;
+      return true;
+    });
+
   if (!stored?.length) {
-    return buildDefaultTaskBoardVisibleStatuses(options);
+    return stripComplete(buildDefaultTaskBoardVisibleStatuses(options));
   }
 
-  const visible = stored.filter((statusId) => optionIds.has(statusId));
-  return visible.length ? visible : buildDefaultTaskBoardVisibleStatuses(options);
+  const visible = stripComplete(stored.filter((statusId) => optionIds.has(statusId)));
+  return visible.length ? visible : stripComplete(buildDefaultTaskBoardVisibleStatuses(options));
 }
 
 export function isTaskVisibleOnTaskBoard(
@@ -101,6 +155,20 @@ export function isTaskVisibleOnTaskBoard(
   projectBoardTaskStatuses?: ProjectBoardTaskStatusesMap,
   tasks?: Task[]
 ): boolean {
+  const boards = boardTaskStatuses ?? {};
+  const projectBoards = projectBoardTaskStatuses ?? {};
+  const allTasks = tasks ?? [];
+
+  // Hard rule: completed work leaves the Team Task Board immediately.
+  const statuses = getBoardTaskStatuses(
+    statusBoardForTask(task),
+    boards,
+    task.projectId,
+    projectBoards
+  );
+  if (isCompleteStatus(task.status, statuses)) return false;
+  if (isTaskBoardCompleteStatus(task.status, boards, projectBoards, allTasks)) return false;
+
   if (visibleStatusIds.has(task.status)) return true;
   if (!boardTaskStatuses || !projectBoardTaskStatuses || !tasks) return false;
 
@@ -110,7 +178,12 @@ export function isTaskVisibleOnTaskBoard(
     projectBoardTaskStatuses,
     tasks
   );
-  return expanded.has(task.status);
+  if (expanded.has(task.status)) {
+    // Expanded aliases can reintroduce complete — block those too.
+    if (isCompleteStatus(task.status, statuses)) return false;
+    return true;
+  }
+  return false;
 }
 
 export function taskBoardVisibleStatusSet(visibleStatusIds: string[]): Set<string> {

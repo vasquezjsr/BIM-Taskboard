@@ -49,7 +49,6 @@ import type {
 } from '../types';
 
 import {
-  MAIN_SECTION_BOARDS,
   DEFAULT_SUB_BOARD_TAB_ORDER,
   normalizeSubBoardTabOrder,
   isCustomBoardId,
@@ -58,8 +57,8 @@ import {
   getProjectSubBoardOrder,
 } from '../types';
 
-import { defaultSectionName, collectDescendantGroupIds, restoreAssignedTaskBoardTypes, assignUngroupedSectionTasks, dedupeProjectSections, enrichTaskUpdatesWithBranchGroup, repairOrphanedTaskGroups, repairGroupTiers, reassignOrphanedBranchTasksToLevels, migrateTaskDurationsToLevelGroups, repairTasksOnWrongBoardSection } from '../utils/groupRows';
-import { DEFAULT_EMPLOYEES, JOE_VASQUEZ_ID, LEGACY_NAME_TO_ID, normalizeEmployeesWithRemap, TAYLOR_MORGAN_ID, isOwnerEmployee, isProtectedRosterEmployee } from '../data/employees';
+import { defaultSectionName, collectDescendantGroupIds, restoreAssignedTaskBoardTypes, assignUngroupedSectionTasks, dedupeProjectSections, enrichTaskUpdatesWithBranchGroup, repairOrphanedTaskGroups, repairGroupTiers, reassignOrphanedBranchTasksToLevels, migrateTaskDurationsToLevelGroups, repairTasksOnWrongBoardSection, getSectionForBoard } from '../utils/groupRows';
+import { DEFAULT_EMPLOYEES, JOE_VASQUEZ_ID, LEGACY_NAME_TO_ID, normalizeEmployeesWithRemap, TAYLOR_MORGAN_ID, isOwnerEmployee, isProtectedRosterEmployee, applySeedRoleDisplayNames } from '../data/employees';
 import { createDefaultDashboardAssignments } from '../data/dashboards';
 import {
   createSeededDashboardAssignments,
@@ -71,7 +70,13 @@ import { buildBimOrgRoster, createBimOrgChartReportsTo } from '../data/bimOrgCha
 import { applyDefaultProjectTeams, ensureDefaultProjectTeams } from '../data/projectTeams';
 import { defaultProjectFields, normalizeProject, type ProjectSettingsUpdate } from '../types';
 import { cloneProjectFromTemplate, type NewProjectOptions } from '../utils/projectTemplate';
-import { canAccessOrgChart, canEditBudgetHours, canManageColumns, canViewActivityLog, canViewDashboard, canViewEmployeeTime, canViewOwnerDashboard, canViewSpoolingDashboard, canViewTimeTracking, canViewVisibilityDashboard, canViewWeldLogDashboard } from '../utils/permissions';
+import {
+  mapMondayStatusToBoardroom,
+  type MondayImportEnsuredGroup,
+  type MondayImportItem,
+  type MondayImportSummary,
+} from '../utils/mondayBoardImport';
+import { canAccessOrgChart, canDeleteTimeEntry, canEditBudgetHours, canManageColumns, canViewActivityLog, canViewDashboard, canViewEmployeeTime, canViewOwnerDashboard, canViewSpoolingDashboard, canViewTimeTracking, canViewVisibilityDashboard, canViewWeldLogDashboard } from '../utils/permissions';
 import {
   DEFAULT_JOB_LEVEL_NAV_VISIBILITY,
   NAV_COLUMN_PERMISSION,
@@ -101,7 +106,14 @@ import {
   softDeleteTaskTrees,
   stripColumnFromState,
 } from './activityLogHelpers';
-import { backfillTaskNumbers, nextTaskNumberForProject } from '../utils/taskNumbers';
+import { backfillTaskNumbers, formatTaskNumber, nextTaskNumberForProject } from '../utils/taskNumbers';
+import {
+  allocateJobCode,
+  extractJobCodeFromText,
+  migrateJobCodesAndTaskNumbers,
+  normalizeClientRecord,
+  resolveClientCode,
+} from '../utils/jobCodes';
 import {
   buildSpoolingExportCustomFields,
   filterFilesForSPackages,
@@ -127,11 +139,13 @@ import {
   clearSsv3ExportFromSpoolingTask,
   syncAssemblyTradeMaterialFromPackageRoots,
 } from '../utils/promoteSsv3ToFab';
+import { cascadeFabPackageStatusToAssemblies } from '../utils/fabPackageCascade';
 import {
   applyDetailersReadyForSpoolingHandoff,
   applyDetailersSpoolingMirrorCleanup,
   applySpoolingReturnToDetailingHandoff,
   collectDescendantTaskIds,
+  repairDetailersOriginMirrorOnShopPackages,
   repairDetailersSpoolingMirror,
 } from '../utils/detailersSpoolingHandoff';
 import { normalizeTimeEntry, prepareTimeEntryPayload } from '../utils/timeEntry';
@@ -274,6 +288,12 @@ import { buildEmptyProjectBoards, resetTemplateToEmptyBoards, isTemplateProject 
 import { applyTemplatePmBoardChecklist } from '../utils/applyPmBoardChecklist';
 import { applyTemplateBoardSamples } from '../utils/applyTemplateBoardSamples';
 import { applyWorkflowDueDateColumns } from '../utils/applyWorkflowDueDateColumns';
+import {
+  cascadeWorkflowDueDatesFromDetailingPatch,
+  DEFAULT_WORKFLOW_DUE_DATE_OFFSETS,
+  normalizeWorkflowDueDateOffsets,
+  type WorkflowDueDateOffsets,
+} from '../utils/workflowDueDateCascade';
 import { applyTemplateMaterialColumn } from '../data/templateMaterialColumn';
 import {
   appendPremadeColumnToBoardState,
@@ -314,6 +334,7 @@ import { defaultStatusForBoard } from '../utils/taskStatus';
 import { durableStoreStorage, installDurableStoreFlushHooks } from '../utils/durableStoreStorage';
 import { ensureDemoPortfolio } from '../utils/ensureDemoPortfolio';
 import { normalizeTaskAssignees, taskHasAssignee } from '../utils/taskAssignees';
+import { taskMyWorkDueDate } from '../utils/myWorkTasks';
 import {
   applyAutoAssigneesToTask,
   applyDeliverablesAutoAssignTeams,
@@ -406,6 +427,9 @@ interface AppState {
 
   /** Per-board spreadsheet column definitions */
   boardSheetColumns: BoardSheetColumnsMap;
+
+  /** Days after each prior stage when Detailing Due Date auto-fills Spooling / Fab / Shipping. */
+  workflowDueDateOffsets: WorkflowDueDateOffsets;
 
   /** Per-board spreadsheet column display order */
   boardSheetColumnOrder: BoardSheetColumnOrderMap;
@@ -542,13 +566,25 @@ interface AppState {
 
   addClient: (name: string) => void;
 
-  updateClient: (id: string, updates: Partial<Pick<Client, 'name'>>) => void;
+  updateClient: (id: string, updates: Partial<Pick<Client, 'name' | 'code'>>) => void;
 
   removeClient: (id: string) => void;
 
   addProject: (clientId: string, name: string, options?: NewProjectOptions) => void;
 
   addProjectFromTemplate: (clientId: string, name: string, options: NewProjectOptions) => void;
+
+  /**
+   * Create a project from a parsed Monday.com board export.
+   * Monday groups → Detailers parent groups; items → Detailers tasks (subitems nested).
+   */
+  importMondayBoard: (options: {
+    clientId: string;
+    projectName: string;
+    items: MondayImportItem[];
+    ensuredGroups?: MondayImportEnsuredGroup[];
+    warnings?: string[];
+  }) => MondayImportSummary | null;
 
   removeProject: (id: string) => void;
 
@@ -686,6 +722,8 @@ interface AppState {
 
       dueDate?: string | null;
 
+      customFields?: Task['customFields'];
+
     }
 
   ) => void;
@@ -757,6 +795,8 @@ interface AppState {
       >
     >
   ) => void;
+
+  setWorkflowDueDateOffsets: (offsets: Partial<WorkflowDueDateOffsets>) => void;
 
   reorderBoardSheetColumns: (boardType: ProjectBoardType, columnOrder: string[]) => void;
 
@@ -953,10 +993,12 @@ function createInitialPortfolio() {
 
 
 function mergePersistedState(p: Partial<AppState>, current: AppState): AppState {
-  const { employees, tasks } = normalizeEmployeesWithRemap(
+  const { employees: remappedEmployees, tasks } = normalizeEmployeesWithRemap(
     p.employees ?? current.employees,
     p.tasks ?? current.tasks
   );
+  // Always re-apply role-title names (fab/field/BIM/ops included); Joe stays real name.
+  const employees = applySeedRoleDisplayNames(remappedEmployees);
   // Keep every persisted client/project/task. Never run pruneToClientTemplateOnly here —
   // that wiped Demo Mechanical (and all shop progress) on every refresh/rehydrate.
   let clients = p.clients?.length ? p.clients : current.clients;
@@ -1216,6 +1258,9 @@ function mergePersistedState(p: Partial<AppState>, current: AppState): AppState 
     boardTaskStatuses: syncedStatusColors.boardTaskStatuses,
     projectBoardTaskStatuses: syncedStatusColors.projectBoardTaskStatuses,
     boardSheetColumns,
+    workflowDueDateOffsets: normalizeWorkflowDueDateOffsets(
+      p.workflowDueDateOffsets ?? current.workflowDueDateOffsets
+    ),
     boardSheetColumnOrder: boardSheetColumnOrder,
     mainOverviewSectionColumnOrder,
     mainOverviewSectionSheetColumns,
@@ -1332,7 +1377,8 @@ function ensureMainSections(
 
   const existingTypes = new Set(existing.map((g) => g.sectionBoardType));
 
-  const missing = MAIN_SECTION_BOARDS.filter((t) => !existingTypes.has(t));
+  // Include Fab / Shipping / Field so Main Overview can show shop packages.
+  const missing = DEFAULT_SUB_BOARD_TAB_ORDER.filter((t) => !existingTypes.has(t));
 
   if (missing.length === 0) return groups;
 
@@ -1556,7 +1602,8 @@ function enrichTaskUpdates(
   boardTaskStatuses: BoardTaskStatusesMap,
   projectBoardTaskStatuses: ProjectBoardTaskStatusesMap,
   employees: Employee[] = [],
-  employeeJobTitles: import('../utils/employeeJobs').EmployeeJobTitleDef[] = []
+  employeeJobTitles: import('../utils/employeeJobs').EmployeeJobTitleDef[] = [],
+  workflowDueDateOffsets: WorkflowDueDateOffsets = DEFAULT_WORKFLOW_DUE_DATE_OFFSETS
 ): Partial<Task> {
   // Treat customFields / durationFields as patches so one-column edits never wipe siblings.
   let patched: Partial<Task> = { ...updates };
@@ -1565,6 +1612,17 @@ function enrichTaskUpdates(
       ...(task.customFields ?? {}),
       ...updates.customFields,
     };
+    const cascaded = cascadeWorkflowDueDatesFromDetailingPatch(
+      updates.customFields,
+      workflowDueDateOffsets,
+      task.customFields
+    );
+    if (cascaded) {
+      patched.customFields = {
+        ...patched.customFields,
+        ...cascaded,
+      };
+    }
   }
   if (updates.durationFields) {
     const next = { ...(task.durationFields ?? {}) };
@@ -1611,7 +1669,8 @@ function cascadeReadyForSpoolingToAssemblies(
   boardTaskStatuses: BoardTaskStatusesMap,
   projectBoardTaskStatuses: ProjectBoardTaskStatusesMap,
   employees: Employee[] = [],
-  employeeJobTitles: import('../utils/employeeJobs').EmployeeJobTitleDef[] = []
+  employeeJobTitles: import('../utils/employeeJobs').EmployeeJobTitleDef[] = [],
+  workflowDueDateOffsets: WorkflowDueDateOffsets = DEFAULT_WORKFLOW_DUE_DATE_OFFSETS
 ): Task[] {
   const rootIds = new Set<string>();
   for (const id of parentIds) {
@@ -1638,7 +1697,8 @@ function cascadeReadyForSpoolingToAssemblies(
       boardTaskStatuses,
       projectBoardTaskStatuses,
       employees,
-      employeeJobTitles
+      employeeJobTitles,
+      workflowDueDateOffsets
     );
     return { ...task, ...enriched };
   });
@@ -1733,7 +1793,9 @@ function resolvePersistedNavigation(
 > {
   const rawMainTab = source.activeMainTab as MainTab | 'permissions' | undefined;
   const activeMainTab: MainTab =
-    rawMainTab === 'task-board'
+    rawMainTab === 'my-work'
+      ? 'my-work'
+      : rawMainTab === 'task-board'
       ? 'task-board'
       : rawMainTab === 'time-tracking'
         ? 'time-tracking'
@@ -2021,6 +2083,7 @@ function createRecoveryPersistedState(persisted: unknown, employees: Employee[])
     boardTaskStatuses: createDefaultBoardTaskStatuses(),
     projectBoardTaskStatuses: {},
     boardSheetColumns: createDefaultBoardSheetColumns(),
+    workflowDueDateOffsets: { ...DEFAULT_WORKFLOW_DUE_DATE_OFFSETS },
     boardSheetColumnOrder: createDefaultBoardSheetColumnOrder(),
     mainOverviewSectionColumnOrder: {},
     mainOverviewSectionSheetColumns: {},
@@ -2115,6 +2178,8 @@ function runStoreMigration(persisted: unknown, version: number) {
 
             boardSheetColumns: createDefaultBoardSheetColumns(),
 
+            workflowDueDateOffsets: { ...DEFAULT_WORKFLOW_DUE_DATE_OFFSETS },
+
             boardSheetColumnOrder: createDefaultBoardSheetColumnOrder(),
 
             taskAttachments: [],
@@ -2151,7 +2216,7 @@ function runStoreMigration(persisted: unknown, version: number) {
 
 
 
-        let clients = state.clients ?? createSeedClients();
+        let clients = (state.clients ?? createSeedClients()).map(normalizeClientRecord);
 
         let projects = (state.projects ?? createSeedProjects(clients)).map(normalizeProject);
 
@@ -3008,7 +3073,7 @@ function runStoreMigration(persisted: unknown, version: number) {
           (state.activityLog as ActivityLogEntry[] | undefined) ?? [];
 
         if (version < 118) {
-          // Re-seed missing BIM leadership (e.g. Priya Shah) after accidental roster deletes.
+          // Re-seed missing BIM leadership (e.g. BIM Manager) after accidental roster deletes.
           employees = buildBimOrgRoster(employees);
           const seedReports = createBimOrgChartReportsTo();
           employeeReportsTo = {
@@ -3041,7 +3106,7 @@ function runStoreMigration(persisted: unknown, version: number) {
         }
 
         if (version < 119) {
-          // Force-restore seed leadership if deleted after v118 (Priya Shah / Derek Coleman).
+          // Force-restore seed leadership if deleted after v118 (BIM Manager / Operations Manager).
           const seedIds = ['emp-bim-mgr-1', 'emp-ops-mgr-1'] as const;
           let nextArchive = [...deletedEmployeeArchive];
           const nextPermissions: EmployeePermissionsMap = { ...employeePermissions };
@@ -3276,6 +3341,21 @@ function runStoreMigration(persisted: unknown, version: number) {
           tasks = syncAssemblyTradeMaterialFromPackageRoots(tasks);
         }
 
+        if (version < 133) {
+          const migrated = migrateJobCodesAndTaskNumbers(clients, projects, tasks);
+          clients = migrated.clients;
+          projects = migrated.projects;
+          tasks = migrated.tasks;
+        }
+
+        if (version < 137) {
+          // Fab/Shipping/Field packages keep their Detailers origin copy visible.
+          tasks = repairDetailersOriginMirrorOnShopPackages(tasks);
+          for (const project of projects) {
+            taskGroups = ensureMainSections(taskGroups, project.clientId, project.id);
+          }
+        }
+
         if (version < 110) {
           const nextPermissions: EmployeePermissionsMap = { ...employeePermissions };
           for (const employee of employees) {
@@ -3488,6 +3568,9 @@ function runStoreMigration(persisted: unknown, version: number) {
             migrationCurrentUserId = JOE_VASQUEZ_ID;
           }
         }
+
+        // Role-title demo names for seeded roster (Joe Vasquez keeps real name).
+        employees = applySeedRoleDisplayNames(employees);
 
         const currentUserId = migrationCurrentUserId;
 
@@ -3724,6 +3807,8 @@ export const useStore = create<AppState>()(
         projectBoardTaskStatuses: {},
 
         boardSheetColumns: createDefaultBoardSheetColumns(),
+
+        workflowDueDateOffsets: { ...DEFAULT_WORKFLOW_DUE_DATE_OFFSETS },
 
         boardSheetColumnOrder: createDefaultBoardSheetColumnOrder(),
 
@@ -4092,32 +4177,39 @@ export const useStore = create<AppState>()(
         setFieldFocusProjectId: (projectId) => set({ fieldFocusProjectId: projectId }),
 
         addClient: (name) => {
-
-          const client: Client = { id: uuid(), name };
+          const trimmed = name.trim();
+          if (!trimmed) return;
+          const client: Client = {
+            id: uuid(),
+            name: trimmed,
+            code: resolveClientCode({ name: trimmed, code: null }),
+          };
 
           set((s) => ({
-
             clients: [...s.clients, client],
-
             activeClientId: client.id,
-
             activeProjectId: null,
-
           }));
-
         },
-
-
 
         updateClient: (id, updates) => {
           set((s) => ({
             clients: s.clients.map((client) => {
               if (client.id !== id) return client;
-              const next = { ...client, ...updates };
+              const next: Client = { ...client, ...updates };
               if (updates.name !== undefined) {
                 const trimmed = updates.name.trim();
                 if (!trimmed) return client;
                 next.name = trimmed;
+                if (!next.code?.trim()) {
+                  next.code = resolveClientCode({ name: trimmed, code: null });
+                }
+              }
+              if (updates.code !== undefined) {
+                const code = updates.code?.trim();
+                next.code = code
+                  ? code.replace(/[^A-Za-z0-9]/g, '').toUpperCase()
+                  : resolveClientCode({ name: next.name, code: null });
               }
               return next;
             }),
@@ -4197,6 +4289,16 @@ export const useStore = create<AppState>()(
           const activeLevels = options?.activeLevels ?? [];
 
           set((s) => {
+            const client = s.clients.find((c) => c.id === clientId);
+            if (!client) return s;
+            const clients = s.clients.map((c) =>
+              c.id === clientId && !c.code?.trim()
+                ? { ...c, code: resolveClientCode({ name: c.name, code: null }) }
+                : c
+            );
+            const clientForCode = clients.find((c) => c.id === clientId)!;
+            const jobCode = allocateJobCode(clientForCode, s.projects);
+
             const projectId = uuid();
             const project: Project = normalizeProject({
               id: projectId,
@@ -4205,6 +4307,7 @@ export const useStore = create<AppState>()(
               ...defaultProjectFields(),
               buildingLevels: [...buildingLevels],
               activeLevels: [...activeLevels],
+              jobCode,
             });
 
             let taskGroups = [...s.taskGroups];
@@ -4229,6 +4332,7 @@ export const useStore = create<AppState>()(
             }
 
             return {
+              clients,
               projects: [...s.projects, project],
               taskGroups,
               tasks,
@@ -4268,6 +4372,15 @@ export const useStore = create<AppState>()(
             }
 
             const template = projects.find((p) => p.isTemplate);
+            clients = clients.map((c) =>
+              c.id === clientId && !c.code?.trim()
+                ? { ...c, code: resolveClientCode({ name: c.name, code: null }) }
+                : c
+            );
+            const clientForCode = clients.find((c) => c.id === clientId);
+            if (!clientForCode) return s;
+            const jobCode = allocateJobCode(clientForCode, projects);
+
             if (!template) {
               const projectId = uuid();
               const project: Project = normalizeProject({
@@ -4277,6 +4390,7 @@ export const useStore = create<AppState>()(
                 ...defaultProjectFields(),
                 buildingLevels: [...options.buildingLevels],
                 activeLevels: [...options.activeLevels],
+                jobCode,
               });
               let nextGroups = [...taskGroups];
               let nextTasks = [...tasks];
@@ -4325,7 +4439,14 @@ export const useStore = create<AppState>()(
             return {
               ...s,
               clients,
-              projects: [...projects, cloned.project],
+              projects: [
+                ...projects,
+                normalizeProject({
+                  ...cloned.project,
+                  jobCode,
+                  nextTaskNumber: 1,
+                }),
+              ],
               taskGroups: [...taskGroups, ...cloned.taskGroups],
               tasks: [...tasks, ...cloned.tasks],
               customBoards: [...s.customBoards, ...cloned.customBoards],
@@ -4333,6 +4454,224 @@ export const useStore = create<AppState>()(
               activeBoardType: 'main' as ProjectBoardType,
             };
           });
+        },
+
+        importMondayBoard: ({ clientId, projectName, items, ensuredGroups = [], warnings = [] }) => {
+          const trimmed = projectName.trim();
+          if (!trimmed || !clientId || (items.length === 0 && ensuredGroups.length === 0)) {
+            return null;
+          }
+
+          let summary: MondayImportSummary | null = null;
+
+          set((s) => {
+            const client = s.clients.find((c) => c.id === clientId);
+            if (!client) return s;
+            const clients = s.clients.map((c) =>
+              c.id === clientId && !c.code?.trim()
+                ? { ...c, code: resolveClientCode({ name: c.name, code: null }) }
+                : c
+            );
+            const clientForCode = clients.find((c) => c.id === clientId)!;
+            const fromName = extractJobCodeFromText(trimmed);
+            const jobCode = fromName ?? allocateJobCode(clientForCode, s.projects);
+            // If import title carried a job code, adopt its client abbreviation when missing.
+            const inferredClientCode = fromName?.split('-')[0];
+            const clientsWithCode =
+              inferredClientCode && !clientForCode.code?.trim()
+                ? clients.map((c) =>
+                    c.id === clientId ? { ...c, code: inferredClientCode.toUpperCase() } : c
+                  )
+                : clients;
+
+            const projectId = uuid();
+            const project = normalizeProject({
+              id: projectId,
+              name: trimmed,
+              clientId,
+              ...defaultProjectFields(),
+              buildingLevels: [],
+              activeLevels: [],
+              jobCode,
+            });
+
+            let taskGroups = [...s.taskGroups, ...createMainSections(clientId, projectId)];
+            taskGroups = repairGroupTiers(taskGroups);
+
+            const sectionIdByBoard = new Map<ProjectBoardType, string>();
+            const missingBoards: string[] = [];
+            const boardTypesNeeded = new Set<ProjectBoardType>([
+              ...items.map((item) => item.boardType),
+              ...ensuredGroups.map((g) => g.boardType),
+            ]);
+            for (const boardType of boardTypesNeeded) {
+              const section = getSectionForBoard(taskGroups, clientId, projectId, boardType);
+              if (section) {
+                sectionIdByBoard.set(boardType, section.id);
+              } else {
+                missingBoards.push(boardType);
+              }
+            }
+
+            const importable = items.filter((item) => sectionIdByBoard.has(item.boardType));
+            const extraWarnings = [
+              ...warnings,
+              ...missingBoards.map(
+                (board) => `Skipped items for "${board}" (no matching Boardroom section).`
+              ),
+            ];
+
+            // Parent groups: ensured empty groups first, then from items
+            const groupKey = (boardType: ProjectBoardType, groupName: string) =>
+              `${boardType}\0${groupName}`;
+            const groupIdByKey = new Map<string, string>();
+            const newGroups: TaskGroup[] = [];
+
+            const addGroup = (boardType: ProjectBoardType, groupName: string) => {
+              const key = groupKey(boardType, groupName);
+              if (groupIdByKey.has(key)) return;
+              const sectionId = sectionIdByBoard.get(boardType);
+              if (!sectionId) return;
+              const id = uuid();
+              groupIdByKey.set(key, id);
+              newGroups.push({
+                id,
+                name: groupName,
+                clientId,
+                projectId,
+                boardType: 'main',
+                tier: 'parent',
+                parentId: sectionId,
+                sectionBoardType: null,
+                sortOrder: newGroups.length,
+              });
+            };
+
+            for (const group of ensuredGroups) {
+              if (!sectionIdByBoard.has(group.boardType)) continue;
+              addGroup(group.boardType, group.name);
+            }
+            for (const item of importable) {
+              addGroup(item.boardType, item.groupName);
+            }
+            taskGroups = repairGroupTiers([...taskGroups, ...newGroups]);
+
+            const employeeByName = new Map(
+              s.employees.map((employee) => [employee.name.trim().toLowerCase(), employee.id])
+            );
+            const resolveAssignees = (names: string[]) =>
+              names
+                .map((name) => employeeByName.get(name.trim().toLowerCase()))
+                .filter((id): id is string => Boolean(id));
+
+            const now = new Date().toISOString();
+            const newTasks: Task[] = [];
+            let priority = 0;
+            let nextTaskSeq = project.nextTaskNumber ?? 1;
+
+            const allocateTaskNumber = () => {
+              const taskNumber = formatTaskNumber(project, nextTaskSeq);
+              nextTaskSeq += 1;
+              return taskNumber;
+            };
+
+            const findParentId = (
+              boardType: ProjectBoardType,
+              groupName: string,
+              parentTitle: string
+            ): string | null => {
+              for (let i = newTasks.length - 1; i >= 0; i--) {
+                const task = newTasks[i]!;
+                if (
+                  task.title === parentTitle &&
+                  task.boardType === boardType &&
+                  (groupIdByKey.get(groupKey(boardType, groupName)) ?? null) === task.groupId
+                ) {
+                  return task.id;
+                }
+              }
+              return null;
+            };
+
+            for (const item of importable) {
+              const id = uuid();
+              const status = mapMondayStatusToBoardroom(item.statusLabel);
+              const parentTaskId = item.parentTitle
+                ? findParentId(item.boardType, item.groupName, item.parentTitle)
+                : null;
+              newTasks.push(
+                normalizeTaskFields({
+                  id,
+                  taskNumber: allocateTaskNumber(),
+                  title: item.title,
+                  description: item.description,
+                  status,
+                  assigneeIds: resolveAssignees(item.personNames),
+                  clientId,
+                  projectId,
+                  boardType: item.boardType,
+                  groupId: groupIdByKey.get(groupKey(item.boardType, item.groupName)) ?? null,
+                  parentTaskId,
+                  priority: priority++,
+                  dueDate: item.dueDate,
+                  customFields: {
+                    bbMondayStatus: item.statusLabel || '',
+                    bbMondayGroup: item.groupName,
+                    bbMondayBoard: item.sourceBoardName,
+                    ...Object.fromEntries(
+                      Object.entries(item.extraFields).map(([key, value]) => [
+                        `bbMonday:${key}`,
+                        value,
+                      ])
+                    ),
+                    ...(item.parentTitle ? { bbMondayParent: item.parentTitle } : {}),
+                  },
+                  createdAt: now,
+                })
+              );
+            }
+
+            const actorId = resolveActivityActorId(s.currentUserId, s.viewAsOriginalUserId);
+            const activityLog = logActivity(
+              s.activityLog,
+              {
+                actorId,
+                action: 'created',
+                entityType: 'project',
+                entityId: projectId,
+                summary: `Imported Excel project "${trimmed}" (${newTasks.length} tasks)`,
+                details: {
+                  groups: newGroups.length,
+                  tasks: newTasks.length,
+                  source: 'excel-import',
+                },
+              },
+              uuid
+            );
+
+            const firstBoard =
+              (importable[0]?.boardType as ProjectBoardType | undefined) ?? 'detailers';
+
+            summary = {
+              projectId,
+              projectName: trimmed,
+              groupCount: newGroups.length,
+              taskCount: newTasks.length,
+              warnings: extraWarnings,
+            };
+
+            return {
+              clients: clientsWithCode,
+              projects: [...s.projects, { ...project, nextTaskNumber: nextTaskSeq }],
+              taskGroups,
+              tasks: [...s.tasks, ...newTasks],
+              activeProjectId: projectId,
+              activeBoardType: firstBoard,
+              activityLog,
+            };
+          });
+
+          return summary;
         },
 
         removeProject: (id) => {
@@ -5314,10 +5653,11 @@ export const useStore = create<AppState>()(
           const entry = state.timeEntries.find((item) => item.id === id);
           if (
             !entry ||
-            !canViewEmployeeTime(
+            !canDeleteTimeEntry(
               state.currentUserId,
               entry.employeeId,
               state.employees,
+              state.employeePermissions,
               state.employeeReportsTo
             )
           ) {
@@ -5813,7 +6153,8 @@ export const useStore = create<AppState>()(
                 s.boardTaskStatuses,
                 s.projectBoardTaskStatuses,
                 s.employees,
-                s.employeeJobTitles
+                s.employeeJobTitles,
+                s.workflowDueDateOffsets
               );
               const next = { ...t, ...enriched };
               if (updates.status && updates.status !== t.status) {
@@ -5883,7 +6224,17 @@ export const useStore = create<AppState>()(
                 s.boardTaskStatuses,
                 s.projectBoardTaskStatuses,
                 s.employees,
-                s.employeeJobTitles
+                s.employeeJobTitles,
+                s.workflowDueDateOffsets
+              );
+            }
+
+            if (updates.status) {
+              tasks = cascadeFabPackageStatusToAssemblies(
+                tasks,
+                [id],
+                updates.status,
+                s.dashboardAssignments
               );
             }
 
@@ -6089,7 +6440,8 @@ export const useStore = create<AppState>()(
                 s.boardTaskStatuses,
                 s.projectBoardTaskStatuses,
                 s.employees,
-                s.employeeJobTitles
+                s.employeeJobTitles,
+                s.workflowDueDateOffsets
               );
               return { ...t, ...enriched };
             });
@@ -6103,7 +6455,17 @@ export const useStore = create<AppState>()(
                 s.boardTaskStatuses,
                 s.projectBoardTaskStatuses,
                 s.employees,
-                s.employeeJobTitles
+                s.employeeJobTitles,
+                s.workflowDueDateOffsets
+              );
+            }
+
+            if (updates.status) {
+              tasks = cascadeFabPackageStatusToAssemblies(
+                tasks,
+                idSet,
+                updates.status,
+                s.dashboardAssignments
               );
             }
 
@@ -6244,7 +6606,8 @@ export const useStore = create<AppState>()(
                 s.boardTaskStatuses,
                 s.projectBoardTaskStatuses,
                 s.employees,
-                s.employeeJobTitles
+                s.employeeJobTitles,
+                s.workflowDueDateOffsets
               );
               return { ...t, ...enriched };
             });
@@ -6261,8 +6624,22 @@ export const useStore = create<AppState>()(
                 s.boardTaskStatuses,
                 s.projectBoardTaskStatuses,
                 s.employees,
-                s.employeeJobTitles
+                s.employeeJobTitles,
+                s.workflowDueDateOffsets
               );
+            }
+
+            for (const id of idSet) {
+              const previous = previousById.get(id);
+              const updated = tasks.find((t) => t.id === id);
+              if (previous && updated && previous.status !== updated.status) {
+                tasks = cascadeFabPackageStatusToAssemblies(
+                  tasks,
+                  [id],
+                  updated.status,
+                  s.dashboardAssignments
+                );
+              }
             }
 
             for (const id of idSet) {
@@ -6659,7 +7036,8 @@ export const useStore = create<AppState>()(
                   s.boardTaskStatuses,
                   s.projectBoardTaskStatuses,
                   s.employees,
-                  s.employeeJobTitles
+                  s.employeeJobTitles,
+                  s.workflowDueDateOffsets
                 );
                 return { ...t, ...enriched };
               }),
@@ -7100,6 +7478,15 @@ export const useStore = create<AppState>()(
               boardSheetColumns: nextBoardSheetColumns,
             };
           });
+        },
+
+        setWorkflowDueDateOffsets: (offsets) => {
+          set((s) => ({
+            workflowDueDateOffsets: normalizeWorkflowDueDateOffsets({
+              ...s.workflowDueDateOffsets,
+              ...offsets,
+            }),
+          }));
         },
 
         reorderBoardSheetColumns: (boardType, columnOrder) => {
@@ -8179,7 +8566,7 @@ export const useStore = create<AppState>()(
 
       name: 'bim-task-board-storage',
 
-      version: 132,
+      version: 137,
 
       migrate: (persisted, version) => {
         try {
@@ -8218,6 +8605,8 @@ export const useStore = create<AppState>()(
         projectBoardTaskStatuses: state.projectBoardTaskStatuses,
 
         boardSheetColumns: state.boardSheetColumns,
+
+        workflowDueDateOffsets: state.workflowDueDateOffsets,
 
         boardSheetColumnOrder: state.boardSheetColumnOrder,
 
@@ -8344,21 +8733,15 @@ export function saveNavigationForReload(): void {
 }
 
 export function sortEmployeeTasks(tasks: Task[]): Task[] {
-
   return [...tasks].sort((a, b) => {
-
     if (a.priority !== b.priority) return a.priority - b.priority;
-
-    if (a.dueDate && b.dueDate) return a.dueDate.localeCompare(b.dueDate);
-
-    if (a.dueDate) return -1;
-
-    if (b.dueDate) return 1;
-
+    const dueA = taskMyWorkDueDate(a);
+    const dueB = taskMyWorkDueDate(b);
+    if (dueA && dueB) return dueA.localeCompare(dueB);
+    if (dueA) return -1;
+    if (dueB) return 1;
     return a.createdAt.localeCompare(b.createdAt);
-
   });
-
 }
 
 

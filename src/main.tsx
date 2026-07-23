@@ -4,12 +4,11 @@ import App from './App';
 import { useStore } from './store/useStore';
 import { startBoardroomApiBridge } from './boardroomApiBridge';
 import { pushDevStoreSyncIfNewer } from './utils/devStoreSyncStorage';
+import { installCtrlScrollZoom } from './utils/appZoom';
 import './styles/global.css';
 
-/** Match Electron default zoom when running in the browser dev server. */
-if (!window.electronAPI) {
-  document.documentElement.style.zoom = '0.8';
-}
+/** Ctrl/Cmd + scroll (and Ctrl+/- / Ctrl+0) — persists zoom for accessibility. */
+installCtrlScrollZoom();
 
 class AppErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state = { error: null as Error | null };

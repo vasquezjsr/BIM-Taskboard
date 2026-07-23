@@ -1,9 +1,9 @@
 import type { ProjectBoardType, Task, TaskGroup } from '../types';
 
-/** Marks a Spooling-board task that should still appear on Detailers. */
+/** Marks a task that originated on Detailers and should stay visible there. */
 export const DETAILERS_MIRROR_FIELD = 'bbMirrorDetailers';
 
-/** Detailers level/trade group to keep using while the task lives on Spooling. */
+/** Detailers level/trade group to keep using while the task lives on Spooling/Fab/etc. */
 export const DETAILERS_MIRROR_GROUP_FIELD = 'bbDetailersGroupId';
 
 /** Spooling-phase statuses Detailers should still see for process tracking. */
@@ -18,11 +18,25 @@ export const DETAILERS_MIRROR_SPOOLING_STATUSES = new Set([
   'on-hold',
 ]);
 
+/**
+ * Task originated on Detailers and must remain visible there while work continues
+ * on Spooling / Fab / Shipping / Field (same row, dual visibility — not a clone).
+ */
 export function isDetailersMirroredSpoolingTask(task: Task | null | undefined): boolean {
-  if (!task) return false;
-  if (task.boardType !== 'spooling') return false;
+  if (!task || task.parentTaskId) return false;
   if (task.customFields?.[DETAILERS_MIRROR_FIELD] !== '1') return false;
-  return DETAILERS_MIRROR_SPOOLING_STATUSES.has(task.status);
+  if (task.boardType === 'spooling') {
+    return DETAILERS_MIRROR_SPOOLING_STATUSES.has(task.status);
+  }
+  // Keep the Detailers original visible after promote / ship / field handoff.
+  if (
+    task.boardType === 'fab' ||
+    task.boardType === 'shipping' ||
+    task.boardType === 'field'
+  ) {
+    return Boolean(detailersMirrorGroupId(task) || task.groupId);
+  }
+  return false;
 }
 
 /**
@@ -179,7 +193,8 @@ export function applyDetailersSpoolingMirrorCleanup(
       ? (task.boardType as ProjectBoardType)
       : null);
 
-  // Downstream shop boards own the package after Ready for Fab — clear mirror only.
+  // Downstream shop boards own the package after Ready for Fab — keep the
+  // Detailers origin mirror so the original stays visible on Detailers.
   if (
     nextBoard === 'fab' ||
     nextBoard === 'shipping' ||
@@ -188,9 +203,17 @@ export function applyDetailersSpoolingMirrorCleanup(
     task.boardType === 'shipping' ||
     task.boardType === 'field'
   ) {
+    const keepFields: Record<string, string | null> = {
+      ...(task.customFields ?? {}),
+      ...(updates.customFields ?? {}),
+      [DETAILERS_MIRROR_FIELD]: '1',
+    };
+    if (detailersGroupId) {
+      keepFields[DETAILERS_MIRROR_GROUP_FIELD] = detailersGroupId;
+    }
     return {
       ...updates,
-      customFields: nextFields,
+      customFields: keepFields,
     };
   }
 
@@ -218,8 +241,8 @@ export function clearDetailersSpoolingMirrorFields(
 
 /**
  * Drop only the live mirror flag while keeping `bbDetailersGroupId` sticky.
- * Used when promoting Spooling → Fab so Fab statuses don't yank to Detailers,
- * but demote/back-to-Spooling can restore dual visibility.
+ * Prefer keeping the live mirror for Fab origin visibility; this helper remains
+ * for callers that intentionally clear the live flag.
  */
 export function clearDetailersMirrorFlagKeepGroup(
   customFields: Record<string, string | null> | null | undefined
@@ -230,6 +253,35 @@ export function clearDetailersMirrorFlagKeepGroup(
   }
   delete next[DETAILERS_MIRROR_FIELD];
   return next;
+}
+
+/**
+ * Re-stamp Detailers origin mirror on Fab/Shipping/Field packages that still
+ * have a sticky Detailers group but lost `bbMirrorDetailers` (pre-fix promotes).
+ */
+export function repairDetailersOriginMirrorOnShopPackages(tasks: Task[]): Task[] {
+  return tasks.map((task) => {
+    if (task.parentTaskId) return task;
+    if (
+      task.boardType !== 'fab' &&
+      task.boardType !== 'shipping' &&
+      task.boardType !== 'field'
+    ) {
+      return task;
+    }
+    if (task.customFields?.[DETAILERS_MIRROR_FIELD] === '1') return task;
+    const sticky = stickyDetailersGroupId(task);
+    if (!sticky) return task;
+    return {
+      ...task,
+      groupId: task.groupId ?? sticky,
+      customFields: {
+        ...(task.customFields ?? {}),
+        [DETAILERS_MIRROR_FIELD]: '1',
+        [DETAILERS_MIRROR_GROUP_FIELD]: sticky,
+      },
+    };
+  });
 }
 
 /** Sticky Detailers group from mirror fields, or current group while mirrored/on Detailers. */

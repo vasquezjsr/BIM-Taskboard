@@ -84,10 +84,16 @@ export function TimeTrackingCalendar({
   useEffect(() => {
     if (!entryContextMenu) return;
     const close = () => setEntryContextMenu(null);
-    window.addEventListener('click', close);
-    window.addEventListener('scroll', close, true);
+    // Defer listeners so the click that opens the menu (and the Delete click) aren't swallowed.
+    const timer = window.setTimeout(() => {
+      window.addEventListener('click', close);
+      window.addEventListener('contextmenu', close);
+      window.addEventListener('scroll', close, true);
+    }, 0);
     return () => {
+      window.clearTimeout(timer);
       window.removeEventListener('click', close);
+      window.removeEventListener('contextmenu', close);
       window.removeEventListener('scroll', close, true);
     };
   }, [entryContextMenu]);
@@ -96,6 +102,15 @@ export function TimeTrackingCalendar({
     e.preventDefault();
     e.stopPropagation();
     setEntryContextMenu({ entry, x: e.clientX, y: e.clientY });
+  };
+
+  const handleDeleteFromMenu = (e: ReactMouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!entryContextMenu) return;
+    const entryId = entryContextMenu.entry.id;
+    setEntryContextMenu(null);
+    onDeleteEntry(entryId);
   };
 
   const renderDayCell = (iso: string, inMonth = true) => {
@@ -312,14 +327,13 @@ export function TimeTrackingCalendar({
           y={entryContextMenu.y}
           className={styles.contextMenu}
           onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
         >
           <button
             type="button"
             className={styles.contextMenuDelete}
-            onClick={() => {
-              onDeleteEntry(entryContextMenu.entry.id);
-              setEntryContextMenu(null);
-            }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={handleDeleteFromMenu}
           >
             Delete entry
           </button>

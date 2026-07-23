@@ -1,0 +1,16 @@
+.badge {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 2000;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm, 8px);
+  border: 1px solid var(--border, rgba(148, 163, 184, 0.35));
+  background: var(--bg-secondary, #1a1d27);
+  color: var(--text-primary, #e2e8f0);
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}

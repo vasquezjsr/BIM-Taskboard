@@ -31,7 +31,10 @@ export function TaskBoardSettings({ onClose }: TaskBoardSettingsProps) {
   );
 
   const toggleStatus = (statusId: string) => {
-    const label = statusOptions.find((status) => status.id === statusId)?.label;
+    const option = statusOptions.find((status) => status.id === statusId);
+    if (option && (option.countsAsComplete || option.id === 'complete')) return;
+
+    const label = option?.label;
     const equivalentIds = label
       ? findAllStatusIdsForLabel(label, boardTaskStatuses, projectBoardTaskStatuses, tasks)
       : [statusId];
@@ -48,7 +51,11 @@ export function TaskBoardSettings({ onClose }: TaskBoardSettingsProps) {
   };
 
   const showAll = () => {
-    setTaskBoardVisibleStatuses(statusOptions.map((status) => status.id));
+    setTaskBoardVisibleStatuses(
+      statusOptions
+        .filter((status) => !status.countsAsComplete && status.id !== 'complete')
+        .map((status) => status.id)
+    );
   };
 
   const showDefault = () => {
@@ -67,6 +74,7 @@ export function TaskBoardSettings({ onClose }: TaskBoardSettingsProps) {
             <h2>Task Board Settings</h2>
             <p className={modalStyles.intro}>
               Choose which statuses appear on the Detailers and Support Specialist boards.
+              Complete tasks never show here (they stay on Main Overview / project boards).
               Unchecked statuses stay on project spreadsheets but won&apos;t show here.
             </p>
           </div>
@@ -95,17 +103,26 @@ export function TaskBoardSettings({ onClose }: TaskBoardSettingsProps) {
               projectBoardTaskStatuses,
               tasks
             );
-            const checked = equivalentIds.some((id) => visibleSet.has(id));
+            const isComplete =
+              Boolean(status.countsAsComplete) || status.id === 'complete';
+            const checked = !isComplete && equivalentIds.some((id) => visibleSet.has(id));
             return (
               <li key={status.id}>
                 <label className={styles.item}>
                   <input
                     type="checkbox"
                     checked={checked}
-                    onChange={() => toggleStatus(status.id)}
+                    disabled={isComplete}
+                    onChange={() => {
+                      if (isComplete) return;
+                      toggleStatus(status.id);
+                    }}
                   />
                   <span className={styles.swatch} style={{ backgroundColor: status.color }} />
-                  <span className={styles.label}>{status.label}</span>
+                  <span className={styles.label}>
+                    {status.label}
+                    {isComplete ? ' (hidden on task board)' : ''}
+                  </span>
                 </label>
               </li>
             );

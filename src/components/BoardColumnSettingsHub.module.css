@@ -106,3 +106,26 @@
   padding-top: 12px;
   border-top: 1px solid var(--border);
 }
+
+.offsetList {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 8px;
+}
+
+.offsetInputRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.offsetInputRow input {
+  width: 96px;
+}
+
+.offsetUnit {
+  font-size: 13px;
+  color: var(--text-muted);
+}

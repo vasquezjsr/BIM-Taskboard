@@ -1,5 +1,6 @@
 import type { Project, Task } from '../types';
 
+/** Task # = `{jobNumber}-{####}` e.g. BKI-26-006-0001 */
 export function formatTaskNumber(project: Project, sequence: number): string {
   const code = project.jobCode?.trim() || 'TASK';
   return `${code}-${String(sequence).padStart(4, '0')}`;

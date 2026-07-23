@@ -5,7 +5,10 @@ import {
   PointerSensor,
   useSensor,
   useSensors,
+  pointerWithin,
+  rectIntersection,
   closestCorners,
+  type CollisionDetection,
   type DragEndEvent,
   type DragStartEvent,
 } from '@dnd-kit/core';
@@ -26,6 +29,15 @@ const BOARD_TABS: { id: EmployeeBoardTab; label: string }[] = [
   { id: 'detailers', label: 'Detailers' },
   { id: 'support-specialists', label: 'Support Specialists' },
 ];
+
+/** Prefer the column under the pointer so empty person columns are easy drop targets. */
+const taskBoardCollision: CollisionDetection = (args) => {
+  const pointerHits = pointerWithin(args);
+  if (pointerHits.length > 0) return pointerHits;
+  const rectHits = rectIntersection(args);
+  if (rectHits.length > 0) return rectHits;
+  return closestCorners(args);
+};
 
 function hasAssignee(task: Task): boolean {
   return hasTaskAssignees(task);
@@ -76,15 +88,6 @@ export function EmployeeView() {
     [taskBoardVisibleStatuses]
   );
 
-  const taskIsVisible = (task: Task) =>
-    isTaskVisibleOnTaskBoard(
-      task,
-      visibleStatusIds,
-      boardTaskStatuses,
-      projectBoardTaskStatuses,
-      tasks
-    );
-
   const isDetailers = activeEmployeeBoard === 'detailers';
   const activeRole: EmployeeRole = isDetailers ? 'detailer' : 'support-specialist';
   const roleEmployees = useMemo(
@@ -98,8 +101,19 @@ export function EmployeeView() {
 
   /** Unassigned work waiting to be claimed */
   const poolTasks = useMemo(
-    () => tasks.filter((task) => !hasAssignee(task) && taskIsVisible(task)),
-    [tasks, visibleStatusIds]
+    () =>
+      tasks.filter(
+        (task) =>
+          !hasAssignee(task) &&
+          isTaskVisibleOnTaskBoard(
+            task,
+            visibleStatusIds,
+            boardTaskStatuses,
+            projectBoardTaskStatuses,
+            tasks
+          )
+      ),
+    [tasks, visibleStatusIds, boardTaskStatuses, projectBoardTaskStatuses]
   );
 
   /** Only tasks with a valid assignee on this team board and a visible status */
@@ -109,13 +123,19 @@ export function EmployeeView() {
         (task) =>
           hasAssignee(task) &&
           task.assigneeIds.some((id) => roleEmployeeIds.has(id)) &&
-          taskIsVisible(task)
+          isTaskVisibleOnTaskBoard(
+            task,
+            visibleStatusIds,
+            boardTaskStatuses,
+            projectBoardTaskStatuses,
+            tasks
+          )
       ),
-    [tasks, roleEmployeeIds, visibleStatusIds]
+    [tasks, roleEmployeeIds, visibleStatusIds, boardTaskStatuses, projectBoardTaskStatuses]
   );
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
   );
 
   const handleDragStart = (event: DragStartEvent) => {
@@ -124,53 +144,60 @@ export function EmployeeView() {
     if (task) setActiveTask(task);
   };
 
+  const assignToEmployee = (taskId: string, employee: Employee, overTaskId?: string) => {
+    const columnTasks = sortEmployeeTasks(
+      tasksForEmployee(teamAssignedTasks, employee, activeRole).filter((task) => task.id !== taskId)
+    );
+    const dragged = tasks.find((task) => task.id === taskId);
+    if (dragged && overTaskId) {
+      const overIndex = columnTasks.findIndex((task) => task.id === overTaskId);
+      if (overIndex >= 0) columnTasks.splice(overIndex, 0, dragged);
+      else columnTasks.push(dragged);
+    } else if (dragged) {
+      columnTasks.push(dragged);
+    }
+
+    moveTask(taskId, {
+      assigneeIds: [employee.id],
+      assigneesLocked: true,
+      priority: Math.max(
+        0,
+        columnTasks.findIndex((task) => task.id === taskId)
+      ),
+    });
+    reorderEmployeeTasks(
+      employee.id,
+      columnTasks.map((task) => task.id)
+    );
+  };
+
   const handleDragEnd = (event: DragEndEvent) => {
     setActiveTask(null);
     if (!allowAssignTasks) return;
     const { active, over } = event;
     if (!over) return;
 
-    const taskId = active.id as string;
-    const overId = over.id as string;
+    const taskId = String(active.id);
+    const overId = String(over.id);
+    if (taskId === overId) return;
 
     if (isUnassignedDropTarget(overId, poolTasks)) {
       moveTask(taskId, { assigneeIds: [], assigneesLocked: true });
       return;
     }
 
-    const targetEmployee = employees.find((e) => e.id === overId);
-    if (targetEmployee && targetEmployee.role === activeRole) {
-      const employeeTasks = sortEmployeeTasks(
-        tasksForEmployee(teamAssignedTasks, targetEmployee, activeRole).filter(
-          (task) => task.id !== taskId
-        )
-      );
-      moveTask(taskId, {
-        assigneeIds: [targetEmployee.id],
-        priority: employeeTasks.length,
-      });
+    const targetEmployee = roleEmployees.find((employee) => employee.id === overId);
+    if (targetEmployee) {
+      assignToEmployee(taskId, targetEmployee);
       return;
     }
 
-    const overTask = tasks.find((t) => t.id === overId);
-    if (overTask && hasAssignee(overTask)) {
-      const assignee = employees.find((e) => taskHasAssignee(overTask, e.id) && e.role === activeRole);
-      if (!assignee) return;
+    const overTask = tasks.find((task) => task.id === overId);
+    if (!overTask || !hasAssignee(overTask)) return;
 
-      const employeeTasks = sortEmployeeTasks(
-        tasksForEmployee(teamAssignedTasks, assignee, activeRole).filter(
-          (task) => task.id !== taskId
-        )
-      );
-      const overIndex = employeeTasks.findIndex((task) => task.id === overId);
-      const dragged = tasks.find((task) => task.id === taskId);
-      if (dragged) employeeTasks.splice(overIndex, 0, dragged);
-      moveTask(taskId, { assigneeIds: [assignee.id] });
-      reorderEmployeeTasks(
-        assignee.id,
-        employeeTasks.map((t) => t.id)
-      );
-    }
+    const assignee = roleEmployees.find((employee) => taskHasAssignee(overTask, employee.id));
+    if (!assignee) return;
+    assignToEmployee(taskId, assignee, overId);
   };
 
   const variant = isDetailers ? 'detailer' : 'support';
@@ -208,9 +235,10 @@ export function EmployeeView() {
 
       <DndContext
         sensors={sensors}
-        collisionDetection={closestCorners}
+        collisionDetection={taskBoardCollision}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
+        onDragCancel={() => setActiveTask(null)}
       >
         <div className={`${styles.board} ${boardClass}`}>
           <EmployeeColumn
@@ -220,6 +248,7 @@ export function EmployeeView() {
             tasks={poolTasks}
             isPool
             variant={variant}
+            draggable={allowAssignTasks}
           />
 
           {roleEmployees.map((emp) => (
@@ -230,6 +259,7 @@ export function EmployeeView() {
               subtitle={isDetailers ? 'Detailer' : 'Support Specialist'}
               tasks={sortEmployeeTasks(tasksForEmployee(teamAssignedTasks, emp, activeRole))}
               variant={variant}
+              draggable={allowAssignTasks}
             />
           ))}
 
@@ -242,7 +272,7 @@ export function EmployeeView() {
             </div>
           )}
         </div>
-        <DragOverlay>
+        <DragOverlay dropAnimation={null}>
           {activeTask ? <TaskCard task={activeTask} isDragging hideDescription /> : null}
         </DragOverlay>
       </DndContext>

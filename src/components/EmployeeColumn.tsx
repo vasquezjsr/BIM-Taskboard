@@ -11,6 +11,7 @@ interface EmployeeColumnProps {
   tasks: Task[];
   isPool?: boolean;
   variant: 'detailer' | 'support';
+  draggable?: boolean;
 }
 
 export function EmployeeColumn({
@@ -20,6 +21,7 @@ export function EmployeeColumn({
   tasks,
   isPool = false,
   variant,
+  draggable = true,
 }: EmployeeColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id });
 
@@ -39,10 +41,14 @@ export function EmployeeColumn({
         className={`${styles.body} ${isOver ? styles.over : ''}`}
       >
         <SortableContext items={tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
-          {tasks.map((task, index) => (
+          {tasks.map((task) => (
             <div key={task.id} className={styles.taskWrapper}>
-              {!isPool && <span className={styles.order}>{index + 1}</span>}
-              <TaskCard task={task} hideAssignee={!isPool} hideDescription />
+              <TaskCard
+                task={task}
+                hideAssignee={!isPool}
+                hideDescription
+                draggable={draggable}
+              />
             </div>
           ))}
         </SortableContext>

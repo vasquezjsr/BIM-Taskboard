@@ -15,9 +15,11 @@ const FLAT_BOARD_HIDDEN_COLUMNS: Record<FlatBoardType, readonly string[]> = {
   rfi: ['assignee', 'due', 'duration'],
 };
 
-/** Per-board fixed columns that should not appear (persisted orders are filtered too). */
+/** Per-board fixed/custom columns that should not appear (persisted orders are filtered too). */
 const BOARD_HIDDEN_COLUMNS: Partial<Record<ProjectBoardType, readonly string[]>> = {
   ...FLAT_BOARD_HIDDEN_COLUMNS,
+  // Spooling owns Spooling Due Date onward — Detailing Due Date stays on Detailers / Main.
+  spooling: ['col-detailing-due-date'],
 };
 
 export function getHiddenColumnsForBoard(boardType: ProjectBoardType): Set<string> {
@@ -442,7 +444,8 @@ export function defaultBoardColumnOrder(
   }
   order.push('status', 'assignee');
   if (boardType && boardUsesWorkflowDueDates(boardType)) {
-    order.push(...WORKFLOW_DUE_DATE_COLUMN_IDS);
+    const hidden = getHiddenColumnsForBoard(boardType);
+    order.push(...WORKFLOW_DUE_DATE_COLUMN_IDS.filter((id) => !hidden.has(id)));
   } else {
     order.push('due');
   }

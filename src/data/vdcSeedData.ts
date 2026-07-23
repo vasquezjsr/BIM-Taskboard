@@ -6,6 +6,7 @@ import { defaultSectionName, isGroupUnderSection, looksLikeLevelGroupName, looks
 import { defaultStatusForBoard } from '../utils/taskStatus';
 import type { ProjectBoardTaskStatusesMap } from '../utils/taskStatuses';
 import { applyDefaultProjectTeams, ensureDefaultProjectTeams } from './projectTeams';
+import { deriveClientCode } from '../utils/jobCodes';
 import {
   createTemplateProjectMetadata,
   buildEmptyProjectBoards,
@@ -481,7 +482,11 @@ export function getProjectConfig(projectName: string): ProjectSeedConfig | undef
 }
 
 export function createSeedClients(): Client[] {
-  return SEED_CLIENT_NAMES.map((name) => ({ id: uuid(), name }));
+  return SEED_CLIENT_NAMES.map((name) => ({
+    id: uuid(),
+    name,
+    code: deriveClientCode(name),
+  }));
 }
 
 export function createSeedProjects(clients: Client[]): Project[] {

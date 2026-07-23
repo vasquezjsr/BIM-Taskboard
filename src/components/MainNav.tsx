@@ -1,9 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useStore } from '../store/useStore';
 import type { MainTab, Employee, DashboardType, OrgCategory } from '../types';
-import { canAccessOrgChart, canViewActivityLog, canViewOwnerDashboard, canViewSpoolingDashboard, canViewTimeTracking, canViewVisibilityDashboard, canViewWeldLogDashboard, visibleDashboards } from '../utils/permissions';
+import {
+  canAccessOrgChart,
+  canViewActivityLog,
+  canViewOwnerDashboard,
+  canViewSpoolingDashboard,
+  canViewTimeTracking,
+  canViewVisibilityDashboard,
+  canViewWeldLogDashboard,
+  visibleDashboards,
+} from '../utils/permissions';
+import { isFabShopFloorWorker } from '../utils/fabWorkstationAccess';
 import { DASHBOARD_META } from '../data/dashboards';
 import type { EmployeePermissionsMap } from '../utils/orgChart';
+import type { DashboardAssignments } from '../types';
 import styles from './MainNav.module.css';
 
 const dashboardTabId = (dashboard: DashboardType): MainTab => `${dashboard}-dashboard`;
@@ -17,8 +28,20 @@ function buildNavTabs(
   currentUserId: string | null,
   employees: Employee[],
   employeePermissions: EmployeePermissionsMap,
-  visibilityDashboardJobLevels: OrgCategory[]
+  visibilityDashboardJobLevels: OrgCategory[],
+  dashboardAssignments: DashboardAssignments | null | undefined
 ): { id: MainTab; label: string }[] {
+  // Fab floor workers: Shop Dashboard + Time Tracking only.
+  if (isFabShopFloorWorker(currentUserId, dashboardAssignments, employees)) {
+    const tabs: { id: MainTab; label: string }[] = [
+      { id: 'fab-dashboard', label: DASHBOARD_META.fab.label },
+    ];
+    if (canViewTimeTracking(currentUserId, employees, employeePermissions)) {
+      tabs.push({ id: 'time-tracking', label: 'Time Tracking' });
+    }
+    return tabs;
+  }
+
   const tabs: { id: MainTab; label: string }[] = [];
   const dashboards = visibleDashboards(currentUserId, employees, employeePermissions);
 
@@ -31,6 +54,7 @@ function buildNavTabs(
   }
 
   tabs.push({ id: 'clients', label: 'Clients' });
+  tabs.push({ id: 'my-work', label: 'My Work' });
   tabs.push({ id: 'task-board', label: 'Task Board' });
 
   if (canViewSpoolingDashboard(currentUserId, employees, employeePermissions)) {
@@ -82,13 +106,22 @@ export function MainNav() {
   const employees = useStore((s) => s.employees);
   const employeePermissions = useStore((s) => s.employeePermissions);
   const visibilityDashboardJobLevels = useStore((s) => s.visibilityDashboardJobLevels);
+  const dashboardAssignments = useStore((s) => s.dashboardAssignments);
 
   const tabs = buildNavTabs(
     currentUserId,
     employees,
     employeePermissions,
-    visibilityDashboardJobLevels
+    visibilityDashboardJobLevels,
+    dashboardAssignments
   );
+
+  // Keep fab floor workers on allowed tabs only.
+  useEffect(() => {
+    if (!tabs.some((tab) => tab.id === activeMainTab) && tabs[0]) {
+      setActiveMainTab(tabs[0].id);
+    }
+  }, [tabs, activeMainTab, setActiveMainTab]);
 
   const scrollerRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);

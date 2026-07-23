@@ -7,6 +7,7 @@ import {
   isSsv3PackageTask,
   parseSsv3Files,
   displayBoardroomExportFileName,
+  fabPackageMainDueDate,
   SSV3_FIELD,
   type BoardroomPackageFileRef,
 } from '../utils/boardroomPackageImport';
@@ -23,6 +24,7 @@ import {
   getPackageDeptLeadId,
   getPackageWorkerId,
   getPrimaryFabRole,
+  isFabShopFloorWorker,
   isWarehouseStatusOption,
   isQueueActiveStatus,
   listFabDeptLeads,
@@ -82,12 +84,17 @@ function joinPath(folder: string, fileName: string): string {
   return `${base}${sep}${relative}`;
 }
 
-function formatScanTime(iso: string | null): string {
-  if (!iso) return 'Never';
+function formatDueDateLabel(isoDate: string | null | undefined): string {
+  const raw = (isoDate ?? '').trim().slice(0, 10);
+  if (!raw) return '—';
   try {
-    return new Date(iso).toLocaleString();
+    return new Date(`${raw}T00:00:00`).toLocaleDateString('en-US', {
+      month: 'numeric',
+      day: 'numeric',
+      year: 'numeric',
+    });
   } catch {
-    return iso;
+    return raw;
   }
 }
 
@@ -247,14 +254,25 @@ export function FabWorkstationView() {
   const awaitingFabricationWorkstation =
     shopSection === 'fabrication' && !selectedWorkstationId;
 
-  const handleShopSectionChange = useCallback((section: ShopDashboardSection) => {
-    setShopSection(section);
-    if (section !== 'fabrication') {
-      setSelectedWorkstationId(null);
-    }
-    setSelectedPackageId(null);
-    setViewer(null);
-  }, []);
+  const floorWorker = isFabShopFloorWorker(
+    currentUserId,
+    dashboardAssignments,
+    employees
+  );
+
+  const handleShopSectionChange = useCallback(
+    (section: ShopDashboardSection) => {
+      setShopSection(section);
+      if (section === 'fabrication' && floorWorker && currentUserId) {
+        setSelectedWorkstationId(currentUserId);
+      } else if (section !== 'fabrication') {
+        setSelectedWorkstationId(null);
+      }
+      setSelectedPackageId(null);
+      setViewer(null);
+    },
+    [floorWorker, currentUserId]
+  );
 
   const handleWorkstationSelect = useCallback((employeeId: string) => {
     setShopSection('fabrication');
@@ -262,6 +280,13 @@ export function FabWorkstationView() {
     setSelectedPackageId(null);
     setViewer(null);
   }, []);
+
+  // Fab floor workers land directly on their own workstation (no picker).
+  useEffect(() => {
+    if (!currentUserId || !floorWorker) return;
+    setShopSection('fabrication');
+    setSelectedWorkstationId(currentUserId);
+  }, [currentUserId, floorWorker]);
 
   const beginPaneResize = useCallback(
     (pane: 'packages' | 'detail', event: ReactPointerEvent<HTMLButtonElement>) => {
@@ -356,9 +381,27 @@ export function FabWorkstationView() {
       const children = tasks.filter(
         (task) => isSsv3AssemblyTask(task) && task.parentTaskId === pkg.id
       );
-      return packageVisibleToUser(pkg, children, focusUserId, fabMode);
+      return packageVisibleToUser(
+        pkg,
+        children,
+        focusUserId,
+        fabMode,
+        dashboardAssignments,
+        employees
+      );
     });
-  }, [allPackageTasks, tasks, focusUserId, fabMode]);
+  }, [allPackageTasks, tasks, focusUserId, fabMode, dashboardAssignments, employees]);
+
+  /** Repair packages stuck at package-level In Fab with assemblies still Queued. */
+  const repairedInFabPackagesRef = useRef(new Set<string>());
+  useEffect(() => {
+    for (const pkg of allPackageTasks) {
+      if (!isFabInFabStatus(pkg.status)) continue;
+      if (repairedInFabPackagesRef.current.has(pkg.id)) continue;
+      repairedInFabPackagesRef.current.add(pkg.id);
+      updateTask(pkg.id, { status: pkg.status });
+    }
+  }, [allPackageTasks, updateTask]);
 
   const assemblyCompletion = useCallback(
     (packageId: string) => {
@@ -931,12 +974,17 @@ export function FabWorkstationView() {
     return weldRows;
   }, [showWeldLog, selectedAssembly, weldRows]);
 
+  /** Floor workers may browse the queue but cannot change anything there. */
+  const queueViewOnly = fabMode === 'queue' && floorWorker;
+
   const canTapFillWeldLog =
     fabMode !== 'queue' &&
     Boolean(currentUser) &&
     canEditWeldLog(currentUserId, employees, employeePermissions);
-  const allowFabStatusEdit = canEditFabStatus(currentUserId, employees, employeePermissions);
-  const allowFabCollab = canEditFabCollab(currentUserId, employees, employeePermissions);
+  const allowFabStatusEdit =
+    !queueViewOnly && canEditFabStatus(currentUserId, employees, employeePermissions);
+  const allowFabCollab =
+    !queueViewOnly && canEditFabCollab(currentUserId, employees, employeePermissions);
 
   useEffect(() => {
     if (!allowFabStatusEdit) return;
@@ -1041,7 +1089,9 @@ export function FabWorkstationView() {
   const pageSubtitle = awaitingFabricationWorkstation
     ? 'Select a workstation below to open that person’s assigned packages'
     : fabMode === 'queue'
-      ? 'Shop Super queue — review packages and assign Dept Leads'
+      ? queueViewOnly
+        ? 'View only — packages waiting in queue until they move In Fab'
+        : 'Shop Super queue — review packages and assign Dept Leads'
       : fabMode === 'warehouse'
         ? 'Pull material from the package Bill of Materials — clock in, attach photos, comment, then mark Material Pulled'
         : 'Fabrication Dashboard — assigned packages and assemblies for this workstation';
@@ -1253,9 +1303,7 @@ export function FabWorkstationView() {
                 <h3 className={styles.detailTitle}>{selectedPackage.title}</h3>
                 <p className={styles.detailMeta}>
                   {projectLabel(selectedPackage.projectId)}
-                  {selectedPackage.customFields?.[SSV3_FIELD.exportedAt]
-                    ? ` · exported ${formatScanTime(selectedPackage.customFields[SSV3_FIELD.exportedAt])}`
-                    : null}
+                  {` · Due ${formatDueDateLabel(fabPackageMainDueDate(tasks, selectedPackage))}`}
                 </p>
                 {allowWorkerAssign ? (
                   <label className={styles.packageWorkerField}>

@@ -1,4 +1,9 @@
 import type { Project, Task, TaskAttachment } from '../types';
+import { WORKFLOW_DUE_DATE_MARKER_COLUMN_ID } from '../data/workflowDueDateColumns';
+import {
+  FABRICATION_DUE_DATE_COLUMN_ID,
+  SPOOLING_DUE_DATE_COLUMN_ID,
+} from './workflowDueDateCascade';
 
 export const SSV3_KIND_PACKAGE = 'package';
 export const SSV3_KIND_ASSEMBLY = 'assembly';
@@ -209,6 +214,44 @@ export function isSsv3TrackedPackageTask(task: Task): boolean {
 
 export function isSsv3AssemblyTask(task: Task): boolean {
   return task.customFields?.[SSV3_FIELD.kind] === SSV3_KIND_ASSEMBLY;
+}
+
+/** Walk to the top-level package / main task (assemblies and nested packages). */
+export function resolveSsv3PackageRoot(tasks: Task[], task: Task): Task {
+  const byId = new Map(tasks.map((entry) => [entry.id, entry]));
+  let current = task;
+  const seen = new Set<string>();
+  while (current.parentTaskId && !seen.has(current.id)) {
+    seen.add(current.id);
+    const parent = byId.get(current.parentTaskId);
+    if (!parent) break;
+    current = parent;
+  }
+  return current;
+}
+
+function customFieldDateValue(
+  task: Task,
+  columnId: string
+): string | null {
+  const raw = task.customFields?.[columnId];
+  if (raw == null) return null;
+  const text = String(raw).trim().slice(0, 10);
+  return text || null;
+}
+
+/**
+ * Due date shown on Shop dashboards — always from the package main task,
+ * preferring Fabrication Due Date.
+ */
+export function fabPackageMainDueDate(tasks: Task[], packageTask: Task): string | null {
+  const main = resolveSsv3PackageRoot(tasks, packageTask);
+  return (
+    customFieldDateValue(main, FABRICATION_DUE_DATE_COLUMN_ID) ??
+    customFieldDateValue(main, SPOOLING_DUE_DATE_COLUMN_ID) ??
+    customFieldDateValue(main, WORKFLOW_DUE_DATE_MARKER_COLUMN_ID) ??
+    (main.dueDate ? String(main.dueDate).trim().slice(0, 10) || null : null)
+  );
 }
 
 export function spoolingTaskHasSsv3Export(task: Task): boolean {

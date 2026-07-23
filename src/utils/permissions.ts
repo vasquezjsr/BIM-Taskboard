@@ -120,6 +120,23 @@ export const canViewSpoolingDashboard = permissionHelper('view-spooling-dashboar
 export const canEditFabCollab = permissionHelper('edit-fab-collab');
 export const canLogTime = permissionHelper('log-time');
 export const canDeleteTime = permissionHelper('delete-time');
+
+/** Delete own entries anytime you can view them; delete others only with delete-time. */
+export function canDeleteTimeEntry(
+  viewerId: string | null,
+  entryEmployeeId: string,
+  employees: Employee[],
+  employeePermissions: EmployeePermissionsMap = {},
+  employeeReportsTo: EmployeeReportsToMap = {}
+): boolean {
+  if (
+    !canViewEmployeeTime(viewerId, entryEmployeeId, employees, employeeReportsTo)
+  ) {
+    return false;
+  }
+  if (viewerId === entryEmployeeId) return true;
+  return canDeleteTime(viewerId, employees, employeePermissions);
+}
 export const canEditClientsProjects = permissionHelper('edit-clients-projects');
 export const canEditTasks = permissionHelper('edit-tasks');
 export const canAssignTasks = permissionHelper('assign-tasks');

@@ -4,9 +4,9 @@ import type { NewProjectOptions } from './projectTemplate';
 const DEMO_CLIENT_NAME = 'Demo Mechanical';
 
 const DEMO_PROJECTS = [
-  { name: 'Office Tower Phase 1', jobCode: '25-1001' },
-  { name: 'Hospital Wing B', jobCode: '25-1002' },
-  { name: 'Campus Utility Upgrade', jobCode: '25-1003' },
+  { name: 'Office Tower Phase 1', jobCode: 'DEMO-26-001' },
+  { name: 'Hospital Wing B', jobCode: 'DEMO-26-002' },
+  { name: 'Campus Utility Upgrade', jobCode: 'DEMO-26-003' },
 ] as const;
 
 type DemoStoreSlice = {

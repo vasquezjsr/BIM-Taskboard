@@ -144,6 +144,58 @@
   border-color: var(--level3-border);
 }
 
+.projectTabInput {
+  padding: 5px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--level3-text);
+  background: var(--level3-bg-active);
+  border: 1px solid var(--level3-border);
+  min-width: 80px;
+  max-width: 220px;
+}
+
+.projectTabInput:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.contextMenu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 160px;
+  padding: 4px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.contextMenu button {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--text-primary);
+  border-radius: var(--radius-sm);
+  text-align: left;
+}
+
+.contextMenu button:hover:not(:disabled) {
+  background: var(--level3-bg);
+  color: var(--level3-text);
+}
+
+.contextMenuDelete {
+  color: var(--status-not-ready) !important;
+}
+
+.contextMenuDelete:hover {
+  background: rgba(251, 113, 133, 0.12) !important;
+  color: var(--status-not-ready) !important;
+}
+
 /* Level 4 — Board tabs — Pastel Sky */
 .boardTab {
   padding: 6px 14px;

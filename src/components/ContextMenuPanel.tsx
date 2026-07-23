@@ -8,9 +8,17 @@ interface ContextMenuPanelProps {
   className?: string;
   children: ReactNode;
   onClick?: (e: MouseEvent<HTMLDivElement>) => void;
+  onMouseDown?: (e: MouseEvent<HTMLDivElement>) => void;
 }
 
-export function ContextMenuPanel({ x, y, className, children, onClick }: ContextMenuPanelProps) {
+export function ContextMenuPanel({
+  x,
+  y,
+  className,
+  children,
+  onClick,
+  onMouseDown,
+}: ContextMenuPanelProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ top: y, left: x });
 
@@ -43,6 +51,7 @@ export function ContextMenuPanel({ x, y, className, children, onClick }: Context
       className={className}
       style={{ top: position.top, left: position.left }}
       onClick={onClick}
+      onMouseDown={onMouseDown}
     >
       {children}
     </div>

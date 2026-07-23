@@ -125,6 +125,7 @@ export interface CustomBoard {
 
 export type MainTab =
   | 'clients'
+  | 'my-work'
   | 'task-board'
   | 'time-tracking'
   | 'employees'
@@ -321,7 +322,7 @@ export interface Project {
   totalHoursSpent: number | null;
   projectStartDate: string | null;
   projectEndDate: string | null;
-  /** Short code used in task numbers, e.g. TMPL or 24-1847 */
+  /** Job number, e.g. BKI-26-006 (client-year-sequence). Used as the task-number prefix. */
   jobCode?: string | null;
   /** Next sequence number when creating tasks on this project */
   nextTaskNumber?: number;
@@ -330,6 +331,11 @@ export interface Project {
 export interface Client {
   id: string;
   name: string;
+  /**
+   * Short code used in job numbers, e.g. BKI or DEMO.
+   * Defaults from the first word of the client name.
+   */
+  code?: string | null;
 }
 
 /** @deprecated Use taskStatuses from store — kept for seed/migration reference */
@@ -447,7 +453,7 @@ export const MAIN_SECTION_BOARDS: BuiltInProjectBoardType[] = [
   'spooling',
 ];
 
-/** Built-in sub-board tabs that do not get a Main Overview section group by default. */
+/** Built-in shop boards — also get Main Overview sections (via ensureMainSections). */
 export const EXTENDED_SUB_BOARD_TAB_TYPES: BuiltInProjectBoardType[] = [
   'fab',
   'shipping',

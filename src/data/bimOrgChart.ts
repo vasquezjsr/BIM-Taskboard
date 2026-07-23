@@ -1,5 +1,5 @@
 import type { Employee, OrgCategory } from '../types';
-import { JOE_VASQUEZ_ID, TAYLOR_MORGAN_ID } from './employees';
+import { JOE_VASQUEZ_ID, TAYLOR_MORGAN_ID, SEED_ROLE_DISPLAY_NAMES, applySeedRoleDisplayNames } from './employees';
 import { DEPARTMENT_STAFF } from './departmentStaff';
 import type { EmployeeReportsToMap } from '../utils/orgChart';
 
@@ -7,13 +7,13 @@ import type { EmployeeReportsToMap } from '../utils/orgChart';
 export const BIM_LEADERSHIP_EMPLOYEES: Employee[] = [
   {
     id: 'emp-bim-mgr-1',
-    name: 'Priya Shah',
+    name: SEED_ROLE_DISPLAY_NAMES['emp-bim-mgr-1']!,
     role: 'support-specialist',
     orgCategory: 'bim-manager',
   },
   {
     id: 'emp-ops-mgr-1',
-    name: 'Derek Coleman',
+    name: SEED_ROLE_DISPLAY_NAMES['emp-ops-mgr-1']!,
     role: 'operations',
     orgCategory: 'operations-manager',
   },
@@ -21,8 +21,18 @@ export const BIM_LEADERSHIP_EMPLOYEES: Employee[] = [
 
 /** Additional operations roster */
 export const BIM_EXTRA_OPERATIONS: Employee[] = [
-  { id: 'emp-fab-6', name: 'Olivia Marsh', role: 'operations', orgCategory: 'operations-staff' },
-  { id: 'emp-fab-7', name: 'Jaden Cole', role: 'operations', orgCategory: 'operations-staff' },
+  {
+    id: 'emp-fab-6',
+    name: SEED_ROLE_DISPLAY_NAMES['emp-fab-6']!,
+    role: 'operations',
+    orgCategory: 'operations-staff',
+  },
+  {
+    id: 'emp-fab-7',
+    name: SEED_ROLE_DISPLAY_NAMES['emp-fab-7']!,
+    role: 'operations',
+    orgCategory: 'operations-staff',
+  },
 ];
 
 const DETAILER_TRADE_BY_ID: Record<string, OrgCategory> = {
@@ -64,7 +74,7 @@ export function applyBimDetailerOrgCategories(employees: Employee[]): Employee[]
 /**
  * Typical BIM / MEP contractor org chart:
  * Owner → BIM Manager, Operations Manager, Support Manager
- * Detailers & juniors under BIM; PM/Field/Fab/Ship under Operations; support under Taylor.
+ * Detailers & juniors under BIM; PM/Field/Fab/Ship under Operations; support under Support Manager.
  */
 export function createBimOrgChartReportsTo(): EmployeeReportsToMap {
   return {
@@ -118,5 +128,7 @@ export function buildBimOrgRoster(baseEmployees: Employee[]): Employee[] {
       });
     }
   }
-  return applyBimDetailerOrgCategories(mergeBimOrgChartEmployees(withDepartment));
+  return applySeedRoleDisplayNames(
+    applyBimDetailerOrgCategories(mergeBimOrgChartEmployees(withDepartment))
+  );
 }

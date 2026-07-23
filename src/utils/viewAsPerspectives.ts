@@ -17,8 +17,9 @@ export interface ViewAsGroup {
 const OPERATIONS_PERSPECTIVES: { label: string; employeeId: string }[] = [
   { label: 'PM Lead', employeeId: 'emp-pm-1' },
   { label: 'Assistant PM', employeeId: 'emp-pm-2' },
-  { label: 'Site Superintendent', employeeId: 'emp-field-1' },
-  { label: 'Field Foreman', employeeId: 'emp-field-2' },
+  { label: 'Field Worker 1', employeeId: 'emp-field-1' },
+  { label: 'Field Worker 2', employeeId: 'emp-field-2' },
+  { label: 'Field Worker 3', employeeId: 'emp-field-3' },
   { label: 'Shipping Manager', employeeId: 'emp-ship-1' },
   { label: 'Shipping Worker', employeeId: 'emp-ship-2' },
 ];

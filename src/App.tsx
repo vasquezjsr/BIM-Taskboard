@@ -21,6 +21,7 @@ import { FieldWorkstationView } from './components/FieldWorkstationView';
 import { ShippingWorkstationView } from './components/ShippingWorkstationView';
 import { WeldLogDashboardView } from './components/WeldLogDashboardView';
 import { SpoolingDashboardView } from './components/SpoolingDashboardView';
+import { MyWorkDashboardView } from './components/MyWorkDashboardView';
 
 import { OwnerDashboardView } from './components/OwnerDashboardView';
 import { VisibilityDashboardView } from './components/VisibilityDashboardView';
@@ -33,6 +34,7 @@ import { EmployeeDashboardView } from './components/EmployeeDashboardView';
 import { ReportsDialog } from './components/ReportsDialog';
 
 import { ViewAsPicker } from './components/ViewAsPicker';
+import { ZoomIndicator } from './components/ZoomIndicator';
 
 import { useBoardroomExportWatcher } from './hooks/useBoardroomExportWatcher';
 import {
@@ -211,6 +213,7 @@ function App() {
       <div className={styles.app}>
 
         <LoginScreen />
+        <ZoomIndicator />
 
       </div>
 
@@ -287,6 +290,8 @@ function App() {
 
         {activeMainTab === 'clients' && <ClientView />}
 
+        {activeMainTab === 'my-work' && <MyWorkDashboardView />}
+
         {activeMainTab === 'task-board' && <EmployeeView />}
 
         {activeMainTab === 'time-tracking' && <TimeTrackingView />}
@@ -314,6 +319,8 @@ function App() {
         {activeMainTab === 'shipping-dashboard' && <ShippingWorkstationView />}
 
       </main>
+
+      <ZoomIndicator />
 
     </div>
 

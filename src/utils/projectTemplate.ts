@@ -1,6 +1,6 @@
 import { v4 as uuid } from 'uuid';
 import type { CustomBoard, Project, ProjectBoardType, Task, TaskGroup, TaskStatus } from '../types';
-import { defaultProjectFields, MAIN_SECTION_BOARDS, normalizeProject } from '../types';
+import { defaultProjectFields, DEFAULT_SUB_BOARD_TAB_ORDER, normalizeProject } from '../types';
 import { isLevelGroupName } from './buildingLevels';
 import {
   applyTradeFirstProjectLevelConfig,
@@ -21,7 +21,7 @@ export function createTemplateProjectMetadata(): Pick<Project, 'isTemplate'> {
 
 /** Empty main-overview sections — one per built-in board tab, no tasks or nested groups. */
 export function buildEmptyProjectBoards(clientId: string, projectId: string): TaskGroup[] {
-  return MAIN_SECTION_BOARDS.map((sectionBoardType, index) => ({
+  return DEFAULT_SUB_BOARD_TAB_ORDER.map((sectionBoardType, index) => ({
     id: uuid(),
     name: defaultSectionName(sectionBoardType),
     clientId,

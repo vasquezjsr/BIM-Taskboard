@@ -671,6 +671,30 @@ function sortTasksForBoard(tasks: Task[], boardType: ProjectBoardType): Task[] {
   return boardType === 'spooling' ? sortTasksBySpoolingDueDate(tasks) : sortTasksByPriority(tasks);
 }
 
+/** Complete tasks stay visible on Main Overview + Detailers; hidden on other board sheets. */
+export function boardSheetShowsCompleteTasks(boardType: ProjectBoardType): boolean {
+  return boardType === 'main' || boardType === 'detailers';
+}
+
+function filterOutCompleteTasksForBoard(
+  tasks: Task[],
+  boardType: ProjectBoardType,
+  boardTaskStatuses: BoardTaskStatusesMap = {},
+  projectBoardTaskStatuses?: ProjectBoardTaskStatusesMap,
+  projectId?: string
+): Task[] {
+  if (boardSheetShowsCompleteTasks(boardType)) return tasks;
+  return tasks.filter((task) => {
+    const statuses = getBoardTaskStatuses(
+      boardType,
+      boardTaskStatuses,
+      projectId ?? task.projectId,
+      projectBoardTaskStatuses
+    );
+    return !isCompleteStatus(task.status, statuses);
+  });
+}
+
 export function buildSheetRows(
   groups: TaskGroup[],
   tasks: Task[],
@@ -679,7 +703,9 @@ export function buildSheetRows(
   boardType: ProjectBoardType,
   collapsedIds: Set<string>,
   subBoardOrder?: ProjectBoardType[],
-  customBoards: CustomBoard[] = []
+  customBoards: CustomBoard[] = [],
+  boardTaskStatuses: BoardTaskStatusesMap = {},
+  projectBoardTaskStatuses?: ProjectBoardTaskStatusesMap
 ): SheetRow[] {
   const rows: SheetRow[] = [];
   const isOverview = boardType === 'main';
@@ -694,13 +720,20 @@ export function buildSheetRows(
   );
 
   /** Sub-board ghost view: tasks assigned to this board (by boardType or group placement) */
-  const ghostTasks = isGhostBoard
+  const ghostTasksRaw = isGhostBoard
     ? projectTasks.filter((t) =>
         taskBelongsToGhostBoard(t, boardType, groups, clientId, projectId, projectTasks)
       )
     : [];
+  const ghostTasks = filterOutCompleteTasksForBoard(
+    ghostTasksRaw,
+    boardType,
+    boardTaskStatuses,
+    projectBoardTaskStatuses,
+    projectId
+  );
 
-  /** Main board: every project task */
+  /** Main board: every project task (including complete) */
   const boardTasks = isOverview ? projectTasks : ghostTasks;
 
   const childrenOf = (parentId: string) =>
@@ -919,15 +952,18 @@ export function buildSheetRows(
 /**
  * Spooling Dashboard: concatenate each non-template project's Spooling board rows,
  * ordered by project job label so jobs cluster without Clients-style nav.
+ * Group header rows are omitted (groups remain in the project; this is display-only).
  */
 export function buildCrossProjectSpoolingSheetRows(
   groups: TaskGroup[],
   tasks: Task[],
   projects: Project[],
   clients: Client[],
-  collapsedIds: Set<string>,
+  _collapsedIds: Set<string>,
   subBoardTabOrder: ProjectBoardType[],
-  customBoards: CustomBoard[] = []
+  customBoards: CustomBoard[] = [],
+  boardTaskStatuses: BoardTaskStatusesMap = {},
+  projectBoardTaskStatuses?: ProjectBoardTaskStatusesMap
 ): SheetRow[] {
   const sortedProjects = projects
     .filter((project) => !isTemplateProject(project))
@@ -944,18 +980,28 @@ export function buildCrossProjectSpoolingSheetRows(
       subBoardTabOrder,
       customBoards
     );
+    // Expand all groups on the dashboard so collapse state does not hide tasks.
     const projectRows = buildSheetRows(
       groups,
       tasks,
       project.clientId,
       project.id,
       'spooling',
-      collapsedIds,
+      new Set(),
       projectOrder,
-      customBoards
+      customBoards,
+      boardTaskStatuses,
+      projectBoardTaskStatuses
     );
     if (projectRows.length === 0) continue;
-    rows.push(...projectRows);
+    for (const row of projectRows) {
+      if (row.type !== 'task') continue;
+      rows.push({
+        ...row,
+        // Flat list under Project column — subtasks stay one level indented.
+        depth: row.task.parentTaskId ? 1 : 0,
+      });
+    }
   }
   return rows;
 }

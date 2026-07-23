@@ -180,13 +180,13 @@ export function ProjectSettings({ project, employees, onUpdate, onClose }: Proje
           </label>
 
           <label className={styles.field}>
-            <span className={styles.fieldLabel}>Job code</span>
+            <span className={styles.fieldLabel}>Job number</span>
             <input
               type="text"
               className={styles.input}
               defaultValue={project.jobCode ?? ''}
               key={`${project.id}-jobCode-${project.jobCode ?? ''}`}
-              placeholder="e.g. TMPL or 24-1847"
+              placeholder="e.g. BKI-26-006"
               disabled={!canEditProject}
               onBlur={(e) => {
                 if (!canEditProject) return;
@@ -197,7 +197,10 @@ export function ProjectSettings({ project, employees, onUpdate, onClose }: Proje
                 }
               }}
             />
-            <span className={styles.sectionHint}>Used in task numbers for this project.</span>
+            <span className={styles.sectionHint}>
+              Format: client-year-sequence (e.g. BKI-26-006). Auto-assigned on create. Task numbers
+              become JobNumber-0001, JobNumber-0002, …
+            </span>
           </label>
 
           <MemberPicker

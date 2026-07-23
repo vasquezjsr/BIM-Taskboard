@@ -257,6 +257,8 @@ function createWindow() {
   }
 
   mainWindow.webContents.on('did-finish-load', () => {
+    // Zoom is owned by the renderer (Ctrl+scroll + persisted preference).
+    // Apply default only as a first paint fallback before renderer boots.
     mainWindow?.webContents.setZoomFactor(DEFAULT_ZOOM_FACTOR);
   });
 

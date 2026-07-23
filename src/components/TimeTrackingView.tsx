@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../store/useStore';
 import {
-  canDeleteTime,
+  canDeleteTimeEntry,
   canLogTime as hasLogTimePermission,
   canViewEmployeeTime,
   getVisibleTimeEmployeeIds,
@@ -42,7 +42,15 @@ export function TimeTrackingView() {
   const removeTimeEntry = useStore((s) => s.removeTimeEntry);
 
   const allowLogTime = hasLogTimePermission(currentUserId, employees, employeePermissions);
-  const allowDeleteTime = canDeleteTime(currentUserId, employees, employeePermissions);
+
+  const canDeleteEntry = (entryEmployeeId: string) =>
+    canDeleteTimeEntry(
+      currentUserId,
+      entryEmployeeId,
+      employees,
+      employeePermissions,
+      employeeReportsTo
+    );
 
   const visibleEmployeeIds = useMemo(
     () => getVisibleTimeEmployeeIds(currentUserId, employees, employeeReportsTo),
@@ -203,13 +211,16 @@ export function TimeTrackingView() {
   };
 
   const handleDeleteEditingEntry = () => {
-    if (!editingEntryId || !allowDeleteTime) return;
+    if (!editingEntryId) return;
+    const entry = timeEntries.find((item) => item.id === editingEntryId);
+    if (!entry || !canDeleteEntry(entry.employeeId)) return;
     removeTimeEntry(editingEntryId);
     resetForm();
   };
 
   const handleDeleteEntry = (id: string) => {
-    if (!allowDeleteTime) return;
+    const entry = timeEntries.find((item) => item.id === id);
+    if (!entry || !canDeleteEntry(entry.employeeId)) return;
     removeTimeEntry(id);
     if (editingEntryId === id) resetForm();
   };
@@ -444,11 +455,19 @@ export function TimeTrackingView() {
                       type="button"
                       className={styles.deleteBtn}
                       onClick={handleDeleteEditingEntry}
-                      disabled={!allowDeleteTime}
+                      disabled={
+                        !canDeleteEntry(
+                          timeEntries.find((item) => item.id === editingEntryId)?.employeeId ??
+                            employeeId
+                        )
+                      }
                       title={
-                        allowDeleteTime
+                        canDeleteEntry(
+                          timeEntries.find((item) => item.id === editingEntryId)?.employeeId ??
+                            employeeId
+                        )
                           ? 'Delete entry'
-                          : 'You do not have permission to delete time entries'
+                          : 'You do not have permission to delete this time entry'
                       }
                     >
                       Delete

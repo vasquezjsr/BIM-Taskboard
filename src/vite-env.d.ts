@@ -57,6 +57,8 @@ interface ElectronAPI {
     | { ok: false; error?: string }
   >;
   clearPersistedStore?: () => Promise<{ ok: true } | { ok: false; error: string }>;
+  getZoomFactor?: () => number;
+  setZoomFactor?: (factor: number) => void;
 }
 
 declare global {

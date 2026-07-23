@@ -1,20 +1,22 @@
 ---
-description: Project Template is the canonical test template — typed content must persist
+description: Never delete or wipe user tasks/groups; Project Template must persist
 alwaysApply: true
 ---
+
+# Never wipe tasks or groups
+
+## Hard rule for agents
+
+1. **Never delete, clear, reset, or replace the user’s tasks or task groups** unless the user explicitly asks to delete/reset that specific data.
+2. Do not run `resetTemplateToEmptyBoards`, demo seed injectors, store restores, migrations, or “fixups” that drop or rewrite `tasks` / `taskGroups` without an explicit user request and a backup first.
+3. Prefer fixing display/column/UI bugs without rewriting persisted task or group data.
+4. When changing persist/hydrate (`durableStoreStorage`, `devStoreSyncStorage`, Zustand persist), verify existing projects (including Project Template) still round-trip after reload with the same tasks and groups.
+5. The user deletes their own groups/tasks when they want them gone — agents do not.
 
 # Project Template persistence
 
 **Project Template** (`isTemplate` / name `Project Template`) is the canonical board template that new projects and tests follow.
 
-## Rules for agents
-
 1. **Never wipe or reset Project Template content** unless the user explicitly asks to reset the template.
-2. Do not run `resetTemplateToEmptyBoards`, demo seed injectors, or store restores that drop template tasks/groups without an explicit user request and a backup first.
-3. Prefer fixing display/column bugs without rewriting `tasks` / `taskGroups` for the template project.
-4. When changing persist/hydrate (`durableStoreStorage`, `devStoreSyncStorage`, Zustand persist), verify template Detailers (and other boards) still round-trip after reload.
-5. Anything the user types on Project Template (titles, materials, dates, groups, statuses) must remain after HMR, app restart, and agent code edits.
-
-## Template purpose
-
-This template is what “everything needs to follow,” including test projects. Treat edits there as production data.
+2. Anything the user types on Project Template (titles, materials, dates, groups, statuses) must remain after HMR, app restart, and agent code edits.
+3. Treat edits there as production data — this template is what “everything needs to follow,” including test projects.

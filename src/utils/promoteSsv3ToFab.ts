@@ -21,7 +21,7 @@ import {
   type BoardroomPackageManifest,
 } from './boardroomPackageImport';
 import {
-  clearDetailersMirrorFlagKeepGroup,
+  DETAILERS_MIRROR_FIELD,
   DETAILERS_MIRROR_GROUP_FIELD,
   detailersMirrorGroupId,
   stampDetailersSpoolingMirror,
@@ -510,24 +510,25 @@ export function promoteSsv3SpoolingTaskToFab(
 
   tasks = tasks.map((task) => {
     if (!treeIds.has(task.id)) return task;
-    // Drop live Detailers mirror so Fab statuses aren't yanked back to Detailers,
-    // but keep bbDetailersGroupId sticky so demote can remirror.
+    const isRoot = task.id === spoolingTask.id;
+    // Keep Detailers origin group + mirror so the package remains on Detailers
+    // and demote can remirror cleanly.
     const sticky =
-      task.id === spoolingTask.id
-        ? stickyDetailersGroupId(task)
-        : detailersMirrorGroupId(task);
-    const fields = clearDetailersMirrorFlagKeepGroup(task.customFields);
-    if (sticky) {
-      fields[DETAILERS_MIRROR_GROUP_FIELD] = sticky;
-    }
-    if (task.id === spoolingTask.id) {
+      isRoot ? stickyDetailersGroupId(task) : detailersMirrorGroupId(task);
+    const fields: Record<string, string | null> = { ...(task.customFields ?? {}) };
+    if (isRoot) {
+      if (sticky) {
+        fields[DETAILERS_MIRROR_FIELD] = '1';
+        fields[DETAILERS_MIRROR_GROUP_FIELD] = sticky;
+      }
       fields[SSV3_FIELD.kind] = SSV3_KIND_PACKAGE;
       fields[SSV3_FIELD.fabPackageTaskId] = spoolingTask.id;
     }
     return {
       ...task,
       boardType: 'fab',
-      groupId: null,
+      // Root keeps Detailers level placement for the Detailers original copy.
+      groupId: isRoot ? (sticky ?? task.groupId) : null,
       status: 'queued',
       customFields: fields,
     };

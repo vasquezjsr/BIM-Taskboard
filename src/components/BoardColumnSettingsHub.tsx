@@ -21,12 +21,13 @@ import { getBoardSheetColumns } from '../utils/sheetColumns';
 import { BUILT_IN_BOARD_TYPES, isDashboardDrivenStatusBoard } from '../utils/taskStatuses';
 import { ColumnSettings } from './ColumnSettings';
 import { StatusSettings } from './StatusSettings';
+import { WorkflowDueDateOffsetsPanel } from './WorkflowDueDateOffsetsPanel';
 import styles from './ColumnSettings.module.css';
 import hubStyles from './BoardColumnSettingsHub.module.css';
 
 export const OPEN_COLUMN_SETTINGS_EVENT = 'bim-open-column-settings';
 
-export type ColumnSettingsHubTab = 'columns' | 'statuses' | `dropdown:${string}`;
+export type ColumnSettingsHubTab = 'columns' | 'statuses' | 'due-dates' | `dropdown:${string}`;
 
 export interface OpenColumnSettingsDetail {
   tab?: ColumnSettingsHubTab;
@@ -356,7 +357,8 @@ export function BoardColumnSettingsHub({
     if (initialTab) return initialTab;
     if (allowColumns || allowManageColumns) return 'columns';
     if (allowDropdowns && dropdownTabs[0]) return dropdownTabs[0].tab;
-    return 'statuses';
+    if (allowStatuses) return 'statuses';
+    return 'due-dates';
   })();
 
   const [tab, setTab] = useState<HubTab>(defaultTab);
@@ -424,6 +426,9 @@ export function BoardColumnSettingsHub({
 
   const canOpen =
     allowColumns || allowManageColumns || allowDropdowns || allowStatuses;
+
+  // Due Dates offsets: visible to anyone who can open Column Settings (edit gated inside panel).
+  const allowDueDates = canOpen;
 
   const activeDropdownColumnId =
     tab.startsWith('dropdown:') ? tab.slice('dropdown:'.length) : null;
@@ -495,6 +500,17 @@ export function BoardColumnSettingsHub({
                   Statuses
                 </button>
               )}
+              {allowDueDates && (
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={tab === 'due-dates'}
+                  className={`${hubStyles.tab} ${tab === 'due-dates' ? hubStyles.tabActive : ''}`}
+                  onClick={() => setTab('due-dates')}
+                >
+                  Due Dates
+                </button>
+              )}
             </div>
 
             <div className={hubStyles.panel}>
@@ -529,6 +545,9 @@ export function BoardColumnSettingsHub({
                   projectId={activeProjectId}
                   onClose={onClose}
                 />
+              )}
+              {tab === 'due-dates' && allowDueDates && (
+                <WorkflowDueDateOffsetsPanel canEdit={allowColumns || allowManageColumns} />
               )}
             </div>
           </>

@@ -13,6 +13,8 @@ import {
   FAB_WAREHOUSE_ACTIVE_STATUSES,
   FAB_WAREHOUSE_STATUS_OPTIONS,
   FAB_QUEUE_ACTIVE_STATUSES,
+  isFabInFabStatus,
+  isFabShippedStatus,
 } from './taskStatuses';
 
 export const FAB_DEPT_MANAGER_ROLES: FabDashboardRole[] = [
@@ -199,6 +201,30 @@ export function listFabWorkers(
   return options.sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/** True when this person is a fab floor worker (not Shop Super / warehouse / dept lead). */
+export function isFabShopFloorWorker(
+  employeeId: string | null | undefined,
+  assignments: DashboardAssignments | null | undefined,
+  employees: Employee[]
+): boolean {
+  if (!employeeId) return false;
+  return getPrimaryFabRole(employeeId, assignments, employees) === 'worker';
+}
+
+/** Owner, Shop Super, or Shop Dept Manager — can browse other workstations. */
+export function canBrowseFabWorkstations(
+  employeeId: string | null | undefined,
+  assignments: DashboardAssignments | null | undefined,
+  employees: Employee[]
+): boolean {
+  if (!employeeId) return false;
+  const role = getPrimaryFabRole(employeeId, assignments, employees);
+  if (role === 'owner-queue' || role === 'shop-super') return true;
+  if (role && FAB_DEPT_MANAGER_ROLES.includes(role as FabDashboardRole)) return true;
+  const employee = employees.find((entry) => entry.id === employeeId);
+  return isOwnerEmployee(employee) || isOrgOwner(employee);
+}
+
 export type FabWorkstationGroup = {
   manager: FabPersonOption;
   workers: FabPersonOption[];
@@ -270,13 +296,46 @@ export function packageVisibleToUser(
   pkg: Task,
   assemblies: Task[],
   userId: string,
-  mode: FabWorkstationMode
+  mode: FabWorkstationMode,
+  assignments: DashboardAssignments | null | undefined = null,
+  employees: Employee[] = []
 ): boolean {
   if (mode === 'queue') return isQueueActiveStatus(pkg.status);
   if (mode === 'warehouse') return isWarehouseActiveStatus(pkg.status);
   if (getPackageDeptLeadId(pkg) === userId) return true;
   if (getPackageWorkerId(pkg) === userId) return true;
-  return assemblies.some((assembly) => (assembly.assigneeIds ?? []).includes(userId));
+  if (assemblies.some((assembly) => (assembly.assigneeIds ?? []).includes(userId))) {
+    return true;
+  }
+
+  // Active fab work: matching Shop Dept Manager sees packages even before lead is stamped.
+  if (mode === 'personal' && !isFabShippedStatus(pkg.status)) {
+    const role = getPrimaryFabRole(userId, assignments, employees);
+    if (role === 'shop-super' || role === 'owner-queue') {
+      return pkg.status === 'in-progress' || isFabInFabStatus(pkg.status);
+    }
+    if (role && FAB_DEPT_MANAGER_ROLES.includes(role as FabDashboardRole)) {
+      const tradeStatus =
+        role === 'dept-manager-mech'
+          ? 'in-fab-mech'
+          : role === 'dept-manager-plmb'
+            ? 'in-fab-plmb'
+            : role === 'dept-manager-hvac'
+              ? 'in-fab-hvac'
+              : null;
+      if (
+        tradeStatus &&
+        (pkg.status === tradeStatus ||
+          assemblies.some((assembly) => assembly.status === tradeStatus) ||
+          (pkg.status === 'in-progress' &&
+            assemblies.some((assembly) => isFabInFabStatus(assembly.status))))
+      ) {
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
 export function assembliesVisibleToUser(

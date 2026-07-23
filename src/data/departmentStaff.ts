@@ -1,5 +1,6 @@
 import type { AppPermission } from '../types';
 import type { DashboardAssignments, Employee } from '../types';
+import { SEED_ROLE_DISPLAY_NAMES } from './employees';
 
 /** Project Management coordinators */
 export const PM_STAFF_IDS = ['emp-pm-1', 'emp-pm-2'] as const;
@@ -21,27 +22,30 @@ export const FAB_STAFF_IDS = [
   'emp-fab-10',
 ] as const;
 
+/** Floor fab workers only (not Shop Super / dept leads / warehouse). */
+export const FAB_SHOP_WORKER_IDS = ['emp-fab-5', 'emp-fab-6', 'emp-fab-7'] as const;
+
 /** Shipping roster */
 export const SHIPPING_STAFF_IDS = ['emp-ship-1', 'emp-ship-2'] as const;
 
 export const DEPARTMENT_STAFF: Employee[] = [
-  { id: 'emp-pm-1', name: 'Kendra Walsh', role: 'operations', orgCategory: 'operations-staff' },
-  { id: 'emp-pm-2', name: 'Damon Pierce', role: 'operations', orgCategory: 'operations-staff' },
-  { id: 'emp-field-1', name: 'Marcus Reed', role: 'operations', orgCategory: 'operations-staff' },
-  { id: 'emp-field-2', name: 'Elena Vargas', role: 'operations', orgCategory: 'operations-staff' },
-  { id: 'emp-field-3', name: 'Tyler Nash', role: 'operations', orgCategory: 'operations-staff' },
-  { id: 'emp-fab-1', name: 'Gina Ortega', role: 'operations', orgCategory: 'operations-staff' },
-  { id: 'emp-fab-2', name: 'Liam Porter', role: 'operations', orgCategory: 'operations-staff' },
-  { id: 'emp-fab-3', name: 'Sophia Knox', role: 'operations', orgCategory: 'operations-staff' },
-  { id: 'emp-fab-4', name: 'Noah Griffin', role: 'operations', orgCategory: 'operations-staff' },
-  { id: 'emp-fab-5', name: 'Ethan Walsh', role: 'operations', orgCategory: 'operations-staff' },
-  { id: 'emp-fab-6', name: 'Olivia Marsh', role: 'operations', orgCategory: 'operations-staff' },
-  { id: 'emp-fab-7', name: 'Jaden Cole', role: 'operations', orgCategory: 'operations-staff' },
-  { id: 'emp-fab-8', name: 'Ava Brooks', role: 'operations', orgCategory: 'operations-staff' },
-  { id: 'emp-fab-9', name: 'Miles Chen', role: 'operations', orgCategory: 'operations-staff' },
-  { id: 'emp-fab-10', name: 'Priya Nair', role: 'operations', orgCategory: 'operations-staff' },
-  { id: 'emp-ship-1', name: 'Harper Sloan', role: 'operations', orgCategory: 'operations-staff' },
-  { id: 'emp-ship-2', name: 'Mason Price', role: 'operations', orgCategory: 'operations-staff' },
+  { id: 'emp-pm-1', name: SEED_ROLE_DISPLAY_NAMES['emp-pm-1']!, role: 'operations', orgCategory: 'operations-staff' },
+  { id: 'emp-pm-2', name: SEED_ROLE_DISPLAY_NAMES['emp-pm-2']!, role: 'operations', orgCategory: 'operations-staff' },
+  { id: 'emp-field-1', name: SEED_ROLE_DISPLAY_NAMES['emp-field-1']!, role: 'operations', orgCategory: 'operations-staff' },
+  { id: 'emp-field-2', name: SEED_ROLE_DISPLAY_NAMES['emp-field-2']!, role: 'operations', orgCategory: 'operations-staff' },
+  { id: 'emp-field-3', name: SEED_ROLE_DISPLAY_NAMES['emp-field-3']!, role: 'operations', orgCategory: 'operations-staff' },
+  { id: 'emp-fab-1', name: SEED_ROLE_DISPLAY_NAMES['emp-fab-1']!, role: 'operations', orgCategory: 'operations-staff' },
+  { id: 'emp-fab-2', name: SEED_ROLE_DISPLAY_NAMES['emp-fab-2']!, role: 'operations', orgCategory: 'operations-staff' },
+  { id: 'emp-fab-3', name: SEED_ROLE_DISPLAY_NAMES['emp-fab-3']!, role: 'operations', orgCategory: 'operations-staff' },
+  { id: 'emp-fab-4', name: SEED_ROLE_DISPLAY_NAMES['emp-fab-4']!, role: 'operations', orgCategory: 'operations-staff' },
+  { id: 'emp-fab-5', name: SEED_ROLE_DISPLAY_NAMES['emp-fab-5']!, role: 'operations', orgCategory: 'operations-staff' },
+  { id: 'emp-fab-6', name: SEED_ROLE_DISPLAY_NAMES['emp-fab-6']!, role: 'operations', orgCategory: 'operations-staff' },
+  { id: 'emp-fab-7', name: SEED_ROLE_DISPLAY_NAMES['emp-fab-7']!, role: 'operations', orgCategory: 'operations-staff' },
+  { id: 'emp-fab-8', name: SEED_ROLE_DISPLAY_NAMES['emp-fab-8']!, role: 'operations', orgCategory: 'operations-staff' },
+  { id: 'emp-fab-9', name: SEED_ROLE_DISPLAY_NAMES['emp-fab-9']!, role: 'operations', orgCategory: 'operations-staff' },
+  { id: 'emp-fab-10', name: SEED_ROLE_DISPLAY_NAMES['emp-fab-10']!, role: 'operations', orgCategory: 'operations-staff' },
+  { id: 'emp-ship-1', name: SEED_ROLE_DISPLAY_NAMES['emp-ship-1']!, role: 'operations', orgCategory: 'operations-staff' },
+  { id: 'emp-ship-2', name: SEED_ROLE_DISPLAY_NAMES['emp-ship-2']!, role: 'operations', orgCategory: 'operations-staff' },
 ];
 
 const DEPARTMENT_STAFF_IDS = new Set(DEPARTMENT_STAFF.map((employee) => employee.id));
@@ -155,7 +159,12 @@ export function operationsDashboardPermissions(employeeId: string): AppPermissio
     permissions.push('view-field-dashboard', 'view-weld-log-dashboard');
   }
   if ((FAB_STAFF_IDS as readonly string[]).includes(employeeId)) {
-    permissions.push('view-fab-dashboard', 'view-weld-log-dashboard');
+    if ((FAB_SHOP_WORKER_IDS as readonly string[]).includes(employeeId)) {
+      // Floor workers: Shop Dashboard + time logging only (nav enforces the rest).
+      permissions.push('view-fab-dashboard');
+    } else {
+      permissions.push('view-fab-dashboard', 'view-weld-log-dashboard');
+    }
   }
   if ((SHIPPING_STAFF_IDS as readonly string[]).includes(employeeId)) {
     permissions.push('view-shipping-dashboard');

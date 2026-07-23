@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webFrame } from 'electron';
 
 export type BoardroomPackageReadResult = {
   manifest: unknown;
@@ -87,4 +87,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   > => ipcRenderer.invoke('boardroom:load-persisted-store'),
   clearPersistedStore: (): Promise<{ ok: true } | { ok: false; error: string }> =>
     ipcRenderer.invoke('boardroom:clear-persisted-store'),
+  getZoomFactor: (): number => webFrame.getZoomFactor(),
+  setZoomFactor: (factor: number): void => {
+    const n = Number(factor);
+    if (!Number.isFinite(n) || n <= 0) return;
+    webFrame.setZoomFactor(Math.min(2.5, Math.max(0.5, n)));
+  },
 });

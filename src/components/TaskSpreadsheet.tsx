@@ -18,6 +18,7 @@ import { CSS, add, getEventCoordinates } from '@dnd-kit/utilities';
 import { useStore } from '../store/useStore';
 import { AssigneeCell } from './AssigneeCell';
 import { ContextMenuPanel } from './ContextMenuPanel';
+import { ConfirmDialog } from './ConfirmDialog';
 import { employeeInitials } from '../data/employees';
 import { spoolingTaskHasSsv3Export } from '../utils/boardroomPackageImport';
 import {
@@ -169,6 +170,13 @@ import {
 import { isFlatBoard } from '../utils/flatBoards';
 import { applyFindReplaceToTask, applyFindReplaceToGroup, type FindReplaceOptions } from '../utils/findReplace';
 import { buildTaskCommentReadStateMap, type TaskCommentReadState } from '../utils/taskComments';
+import {
+  computeFollowingWorkflowDueDates,
+  followingWorkflowDueDateColumnIds,
+  hasFilledFollowingWorkflowDueDates,
+  isWorkflowDueDateChainColumn,
+  labelsForWorkflowDueDateColumns,
+} from '../utils/workflowDueDateCascade';
 import { AttachmentDialog } from './AttachmentDialog';
 import { CommentDialog } from './CommentDialog';
 import { FindReplaceDialog } from './FindReplaceDialog';
@@ -1334,6 +1342,12 @@ function CustomColumnCell({
 }) {
   const align = (column.cellAlignment ?? DEFAULT_SHEET_COLUMN_ALIGNMENT);
   const textStyle = { textAlign: align as React.CSSProperties['textAlign'] };
+  const workflowDueDateOffsets = useStore((s) => s.workflowDueDateOffsets);
+  const [dueDateCascadePrompt, setDueDateCascadePrompt] = useState<{
+    nextValue: string;
+    followingLabels: string;
+    followingFields: Record<string, string>;
+  } | null>(null);
 
   if (column.type === 'duration') {
     return <div className={styles.customColumnCell} aria-hidden />;
@@ -1346,18 +1360,79 @@ function CustomColumnCell({
           type="date"
           className={styles.cellDate}
           style={textStyle}
-          value={task.customFields?.[column.id] ?? ''}
-          readOnly={readOnly}
-          onChange={(e) =>
-            !readOnly &&
-            onUpdate(task.id, {
-              // Patch only this column — bulk apply must not copy sibling fields.
-              customFields: {
-                [column.id]: e.target.value || null,
-              },
-            })
+          value={
+            dueDateCascadePrompt
+              ? dueDateCascadePrompt.nextValue
+              : (task.customFields?.[column.id] ?? '')
           }
+          readOnly={readOnly}
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+          onChange={(e) => {
+            if (readOnly) return;
+            const nextValue = e.target.value || null;
+            if (
+              nextValue &&
+              isWorkflowDueDateChainColumn(column.id) &&
+              hasFilledFollowingWorkflowDueDates(task.customFields, column.id)
+            ) {
+              const following = followingWorkflowDueDateColumnIds(column.id);
+              const computed = computeFollowingWorkflowDueDates(
+                column.id,
+                nextValue,
+                workflowDueDateOffsets
+              );
+              if (computed) {
+                setDueDateCascadePrompt({
+                  nextValue,
+                  followingLabels: labelsForWorkflowDueDateColumns(following),
+                  followingFields: computed,
+                });
+                return;
+              }
+            }
+
+            onUpdate(task.id, {
+              customFields: {
+                [column.id]: nextValue,
+              },
+            });
+          }}
         />
+        {dueDateCascadePrompt ? (
+          <ConfirmDialog
+            title="Update following due dates?"
+            message={`Also update ${dueDateCascadePrompt.followingLabels} using your Due Dates offsets?`}
+            confirmLabel="Update following"
+            cancelLabel="Only this date"
+            onConfirm={() => {
+              onUpdate(task.id, {
+                customFields: {
+                  [column.id]: dueDateCascadePrompt.nextValue,
+                  ...dueDateCascadePrompt.followingFields,
+                },
+              });
+              setDueDateCascadePrompt(null);
+            }}
+            onCancel={() => {
+              onUpdate(task.id, {
+                customFields: {
+                  [column.id]: dueDateCascadePrompt.nextValue,
+                },
+              });
+              setDueDateCascadePrompt(null);
+            }}
+            onDismiss={() => {
+              // Same as "Only this date" — never drop the value the user just picked.
+              onUpdate(task.id, {
+                customFields: {
+                  [column.id]: dueDateCascadePrompt.nextValue,
+                },
+              });
+              setDueDateCascadePrompt(null);
+            }}
+          />
+        ) : null}
       </div>
     );
   }
@@ -1628,6 +1703,8 @@ function renderFixedColumnCell(
           className={styles.cellDate}
           value={task.dueDate ?? ''}
           readOnly={readOnly}
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
           onChange={(e) => onUpdate(task.id, { dueDate: e.target.value || null })}
         />
       );
@@ -2689,7 +2766,9 @@ export function TaskSpreadsheet({
         clients,
         collapsedIds,
         subBoardTabOrder,
-        customBoards
+        customBoards,
+        boardTaskStatuses,
+        projectBoardTaskStatuses
       );
     }
     return buildSheetRows(
@@ -2700,7 +2779,9 @@ export function TaskSpreadsheet({
       boardType,
       collapsedIds,
       projectBoardOrder,
-      customBoards
+      customBoards,
+      boardTaskStatuses,
+      projectBoardTaskStatuses
     );
   }, [
     isAllProjectsScope,
@@ -2715,6 +2796,8 @@ export function TaskSpreadsheet({
     projectBoardOrder,
     subBoardTabOrder,
     customBoards,
+    boardTaskStatuses,
+    projectBoardTaskStatuses,
   ]);
 
   const overviewSplitRows = useMemo(
@@ -2997,7 +3080,9 @@ export function TaskSpreadsheet({
 
   const pushSharedFieldsToAssembliesFromParents = useCallback(
     (parentIds: Iterable<string>, updates: Partial<Task>) => {
-      if (!isAllProjectsScope || !parentHasAssemblyCascade(updates)) return;
+      // Spooling Dashboard + Fab board: package field changes follow to assemblies.
+      const allowCascade = isAllProjectsScope || boardType === 'fab';
+      if (!allowCascade || !parentHasAssemblyCascade(updates)) return;
       const cascade = assemblyCascadeUpdatesFromParent(updates);
       const childIds = new Set<string>();
       for (const parentId of parentIds) {
@@ -3008,9 +3093,17 @@ export function TaskSpreadsheet({
         }
       }
       if (childIds.size === 0) return;
+      // Status cascade for Fab packages is handled in the store (In Fab → assemblies +
+      // package In Progress). Skip duplicate status pushes here on Fab.
+      if (boardType === 'fab' && cascade.status !== undefined) {
+        const { status: _status, ...rest } = cascade;
+        if (Object.keys(rest).length === 0) return;
+        updateTasks([...childIds], rest);
+        return;
+      }
       updateTasks([...childIds], cascade);
     },
-    [isAllProjectsScope, tasks, updateTasks]
+    [isAllProjectsScope, boardType, tasks, updateTasks]
   );
 
   const handleBulkStatusChange = useCallback(

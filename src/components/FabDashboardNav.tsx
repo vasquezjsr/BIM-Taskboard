@@ -1,7 +1,10 @@
 import { useMemo } from 'react';
 import { useStore } from '../store/useStore';
 import {
+  canBrowseFabWorkstations,
+  isFabShopFloorWorker,
   listFabFabricationWorkstationGroups,
+  listFabWorkers,
   type FabPersonOption,
   type FabWorkstationGroup,
 } from '../utils/fabWorkstationAccess';
@@ -32,10 +35,8 @@ function findActiveGroup(
 
 /**
  * Shop dashboard strip — Queued / Warehouse / Fabrication (+ workstations).
- * Styled like Clients → Projects → Boards. Never changes the signed-in user.
- *
- * Workstations row = supervisors only.
- * Workers row = only the selected supervisor's reports.
+ * Owners/managers see all leads + all workers.
+ * Floor workers get Queued (view-only) + their own station.
  */
 export function FabDashboardNav({
   shopSection,
@@ -46,6 +47,18 @@ export function FabDashboardNav({
   const employees = useStore((s) => s.employees);
   const dashboardAssignments = useStore((s) => s.dashboardAssignments);
   const employeeReportsTo = useStore((s) => s.employeeReportsTo);
+  const currentUserId = useStore((s) => s.currentUserId);
+
+  const floorWorker = isFabShopFloorWorker(
+    currentUserId,
+    dashboardAssignments,
+    employees
+  );
+  const canBrowse = canBrowseFabWorkstations(
+    currentUserId,
+    dashboardAssignments,
+    employees
+  );
 
   const { groups, unassignedWorkers } = useMemo(
     () =>
@@ -53,13 +66,15 @@ export function FabDashboardNav({
     [employees, dashboardAssignments, employeeReportsTo]
   );
 
+  const allWorkers = useMemo(
+    () => listFabWorkers(employees, dashboardAssignments),
+    [employees, dashboardAssignments]
+  );
+
   const activeGroup = useMemo(
     () => findActiveGroup(groups, selectedWorkstationId),
     [groups, selectedWorkstationId]
   );
-
-  const teamWorkers = activeGroup?.workers ?? [];
-  const showWorkersRow = Boolean(activeGroup && teamWorkers.length > 0);
 
   const renderManagerTab = (option: FabPersonOption, active: boolean) => (
     <button
@@ -89,7 +104,55 @@ export function FabDashboardNav({
     </button>
   );
 
-  const hasWorkstations = groups.length > 0 || unassignedWorkers.length > 0;
+  const hasWorkstations = groups.length > 0 || unassignedWorkers.length > 0 || allWorkers.length > 0;
+
+  // Floor workers: Queued (view-only) + their own fabrication station. No warehouse / other people.
+  if (floorWorker && currentUserId) {
+    const selfWorker =
+      allWorkers.find((worker) => worker.id === currentUserId) ??
+      ({
+        id: currentUserId,
+        name: employees.find((employee) => employee.id === currentUserId)?.name ?? 'My workstation',
+        roleId: 'worker' as const,
+        roleLabel: 'Worker',
+      } satisfies FabPersonOption);
+
+    return (
+      <div className={styles.navArea} aria-label="Shop dashboards">
+        <div className={styles.tabRows}>
+          <div className={styles.tabRow}>
+            <span className={styles.tabLabel}>Dashboards</span>
+            <div className={styles.tabs}>
+              <button
+                type="button"
+                className={`${styles.dashTab} ${shopSection === 'queue' ? styles.dashTabActive : ''}`}
+                onClick={() => onShopSectionChange('queue')}
+              >
+                Queued Dashboard
+              </button>
+              <button
+                type="button"
+                className={`${styles.dashTab} ${
+                  shopSection === 'fabrication' ? styles.dashTabActive : ''
+                }`}
+                onClick={() => onWorkstationSelect(selfWorker.id)}
+              >
+                Fabrication Dashboard
+              </button>
+            </div>
+          </div>
+          {shopSection === 'fabrication' && (
+            <div className={styles.tabRow}>
+              <span className={styles.tabLabel}>Workstation</span>
+              <div className={styles.tabs}>
+                {renderWorkerTab(selfWorker, selectedWorkstationId === selfWorker.id)}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={styles.navArea} aria-label="Shop dashboards">
@@ -138,21 +201,34 @@ export function FabDashboardNav({
                   {groups.map((group) =>
                     renderManagerTab(
                       group.manager,
-                      activeGroup?.manager.id === group.manager.id
+                      selectedWorkstationId === group.manager.id
                     )
                   )}
-                  {unassignedWorkers.map((worker) =>
-                    renderWorkerTab(worker, selectedWorkstationId === worker.id)
-                  )}
+                  {/* Unassigned workers only here when we aren't showing the full Workers row */}
+                  {!canBrowse &&
+                    unassignedWorkers.map((worker) =>
+                      renderWorkerTab(worker, selectedWorkstationId === worker.id)
+                    )}
                 </div>
               )}
             </div>
 
-            {showWorkersRow && (
+            {canBrowse && allWorkers.length > 0 && (
               <div className={styles.tabRow}>
                 <span className={styles.tabLabel}>Workers</span>
                 <div className={styles.tabs}>
-                  {teamWorkers.map((worker) =>
+                  {allWorkers.map((worker) =>
+                    renderWorkerTab(worker, selectedWorkstationId === worker.id)
+                  )}
+                </div>
+              </div>
+            )}
+
+            {!canBrowse && activeGroup && activeGroup.workers.length > 0 && (
+              <div className={styles.tabRow}>
+                <span className={styles.tabLabel}>Workers</span>
+                <div className={styles.tabs}>
+                  {activeGroup.workers.map((worker) =>
                     renderWorkerTab(worker, selectedWorkstationId === worker.id)
                   )}
                 </div>
